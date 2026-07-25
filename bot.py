@@ -1,11 +1,12 @@
 import telebot
 from telebot import types
 import time
+import os
 from flask import Flask
 from threading import Thread
 
 # ==========================================
-# 1. إعدادات سيرفر الويب المصغر لمنع إغلاق السيرفر
+# 1. إعدادات سيرفر الويب المصغر المتوافق مع Render
 # ==========================================
 app = Flask('')
 
@@ -14,7 +15,9 @@ def home():
     return "Bahr Team Bot is running 24/7 strictly on Render!"
 
 def run_web_server():
-    app.run(host='0.0.0.0', port=8080)
+    # جلب منفذ السيرفر المفتوح تلقائياً من المنصة أو استخدام 8080 كافتراضي
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
     t = Thread(target=run_web_server)
@@ -177,6 +180,3 @@ def handle_text(message):
             bot.send_message(chat_id=GROUP_CHAT_ID, text=group_alert, reply_markup=admin_action_keyboard(user_id), parse_mode="Markdown")
         except Exception as e:
             print(f"فشل إرسال الطلب إلى المجموعة: {e}")
-            
-        del user_states[user_id]
-    else:
