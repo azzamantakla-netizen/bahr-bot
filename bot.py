@@ -3,27 +3,20 @@ from telebot import types
 import time
 
 # ==========================================
-# 1. الإعدادات الأساسية والمعرفات الحقيقية
+# 1. إعدادات البوت والروابط الرسمية والمجموعة
 # ==========================================
 TOKEN = "8624354425:AAHozeXZgVkYS2njISkMA6IMEuCbyMno7Lg"
-SUPPORT_USERNAME = "@azzaman92"                      # حساب الدعم الفني الخاص بك
-CHANNEL_URL = "https://t.me"      # رابط قناتك الرسمية
-
-# تم وضع المعرف الحقيقي لمجموعتك مباشرة في الكود ليعمل فوراً
-GROUP_CHAT_ID = -1003983996094  
+SUPPORT_USERNAME = "@azzaman92"
+CHANNEL_URL = "https://t.me"
+GROUP_CHAT_ID = -1003983996094  # تم تثبيت الـ ID الخاص بمجموعتك بنجاح
 
 bot = telebot.TeleBot(TOKEN)
 user_states = {}
-
-# قائمة الملاك والمشرفين البرمجية (المعرف الخاص بك هو المالك الأساسي المدمج)
-# المشرفون الجدد الذين ستقوم بإضافتهم عبر الأوامر سيتم حفظهم في ذاكرة السيرفر تلقائياً
-ADMINS_LIST = [6693251012]
 
 # ==========================================
 # 2. دوال بناء القوائم والأزرار التفاعلية
 # ==========================================
 
-# دالة بناء القائمة الرئيسية الشفافة للبوت (الخاص بالعملاء)
 def main_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(types.InlineKeyboardButton("🎮 حساب BAHR", callback_data='account'))
@@ -36,7 +29,6 @@ def main_keyboard():
     markup.add(types.InlineKeyboardButton("📺 Bahr TEAM ↗️", url=CHANNEL_URL))
     return markup
 
-# دالة بناء قائمة خيارات الشحن
 def deposit_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
@@ -46,94 +38,20 @@ def deposit_keyboard():
     )
     return markup
 
-# دالة بناء أزرار التحكم بالموافقة والرفض المخصصة للمشرفين داخل المجموعة
 def admin_action_keyboard(user_id):
     markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_approve = types.InlineKeyboardButton("✅ قبول الطلب", callback_data=f"app_{user_id}")
-    btn_reject = types.InlineKeyboardButton("❌ رفض الطلب", callback_data=f"rej_{user_id}")
+    btn_approve = types.InlineKeyboardButton("✅ موافقة", callback_data=f"app_{user_id}")
+    btn_reject = types.InlineKeyboardButton("❌ رفض", callback_data=f"rej_{user_id}")
     markup.add(btn_approve, btn_reject)
     return markup
 
 # ==========================================
-# 3. نظام أوامر إدارة المشرفين والملاك من المجموعة
+# 3. معالجة أوامر البوت وضغطات الأزرار
 # ==========================================
 
-# أمر إضافة مشرف جديد من داخل المجموعة: يكتب المالك (/add_admin ثم الـ ID)
-@bot.message_handler(commands=['add_admin'])
-def add_admin_command(message):
-    if message.chat.id != GROUP_CHAT_ID: return
-    sender_id = message.from_user.id
-    
-    # التحقق من أن المرسل هو المالك الأساسي للبوت
-    if sender_id != 6693251012:
-        bot.reply_to(message, "⚠️ هذا الأمر مخصص للمالك الأساسي للبوت فقط!")
-        return
-        
-    try:
-        parts = message.text.split()
-        if len(parts) < 2:
-            bot.reply_to(message, "📝 الطريقة الصحيحة للأمر:\n`/add_admin وضع_رقم_الـID_هنا`", parse_mode="Markdown")
-            return
-            
-        new_admin_id = int(parts[1])
-        if new_admin_id not in ADMINS_LIST:
-            ADMINS_LIST.append(new_admin_id)
-            bot.reply_to(message, f"✅ تم بنجاح إضافة المشرف الجديد وتفعيل صلاحياته البرمجية في البوت!\n• الـ ID المضاف: `{new_admin_id}`", parse_mode="Markdown")
-        else:
-            bot.reply_to(message, "ℹ️ هذا المستخدم مضاف بالفعل كمشرف في النظام.")
-    except ValueError:
-        bot.reply_to(message, "❌ خطأ! يرجى إدخال رقم الـ ID بشكل صحيح (أرقام فقط).")
-
-# أمر حذف مشرف من المجموعة: يكتب المالك (/del_admin ثم الـ ID)
-@bot.message_handler(commands=['del_admin'])
-def del_admin_command(message):
-    if message.chat.id != GROUP_CHAT_ID: return
-    sender_id = message.from_user.id
-    
-    if sender_id != 6693251012:
-        bot.reply_to(message, "⚠️ هذا الأمر مخصص للمالك الأساسي للبوت فقط!")
-        return
-        
-    try:
-        parts = message.text.split()
-        if len(parts) < 2:
-            bot.reply_to(message, "📝 الطريقة الصحيحة للأمر:\n`/del_admin وضع_رقم_الـID_هنا`", parse_mode="Markdown")
-            return
-            
-        target_id = int(parts[1])
-        if target_id == 6693251012:
-            bot.reply_to(message, "❌ لا يمكنك حذف نفسك من الملكية الأساسية للبوت!")
-            return
-            
-        if target_id in ADMINS_LIST:
-            ADMINS_LIST.remove(target_id)
-            bot.reply_to(message, f"🗑 تم إلغاء صلاحيات المشرف بنجاح وسحب ملكيته من البوت.\n• الـ ID المحذوف: `{target_id}`", parse_mode="Markdown")
-        else:
-            bot.reply_to(message, "ℹ️ هذا المستخدم ليس مشرفاً في البوت حالياً.")
-    except ValueError:
-        bot.reply_to(message, "❌ خطأ! يرجى إدخال رقم الـ ID بشكل صحيح (أرقام فقط).")
-
-# أمر عرض قائمة المشرفين الحاليين في المجموعة
-@bot.message_handler(commands=['list_admins'])
-def list_admins_command(message):
-    if message.chat.id != GROUP_CHAT_ID: return
-    if message.from_user.id not in ADMINS_LIST: return
-    
-    admins_text = "👥 *قائمة المشرفين والملاك الحاليين في البوت:*\n\n"
-    for idx, admin_id in enumerate(ADMINS_LIST, 1):
-        role = "👑 المالك الأساسي" if admin_id == 6693251012 else "👤 مشرف مضاف"
-        admins_text += f"{idx}. المعرف المالي: `{admin_id}` | الصلاحية: *{role}*\n"
-        
-    bot.reply_to(message, admins_text, parse_mode="Markdown")
-
-# ==========================================
-# 4. معالجة أوامر المستخدم العادية والرسائل
-# ==========================================
-
-# معالج أمر البدء /start في الخاص بالعملاء
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    if message.chat.type != 'private': return 
+    if message.chat.type != 'private': return
     user_id = message.from_user.id
     if user_id in user_states: del user_states[user_id]
         
@@ -151,16 +69,13 @@ def send_welcome(message):
     except Exception as e:
         print(f"خطأ إرسال الترحيب: {e}")
 
-# معالج الضغط على الأزرار الشفافة التفاعلية (للمستخدمين والمشرفين)
 @bot.callback_query_handler(func=lambda call: True)
 def callback_listener(call):
     user_id = call.from_user.id
     
-    # [أ] معالجة أزرار التحكم بالقبول والرفض داخل مجموعة الإدارة
     if call.data.startswith("app_") or call.data.startswith("rej_"):
-        # التحقق من أن المستخدم الضاغط على الزر مسجل في قائمة المشرفين
-        if user_id not in ADMINS_LIST:
-            bot.answer_callback_query(call.id, "⚠️ عذراً، أنت لست مشرفاً أو مالكاً للبوت لتتخذ هذا الإجراء المالية!", show_alert=True)
+        if call.message.chat.id != GROUP_CHAT_ID:
+            bot.answer_callback_query(call.id, "⚠️ هذه الأزرار مخصصة للاستخدام داخل مجموعة الإدارة فقط!", show_alert=True)
             return
             
         target_user_id = int(call.data.split("_")[1])
@@ -168,23 +83,22 @@ def callback_listener(call):
         original_text = call.message.text
         
         if call.data.startswith("app_"):
-            updated_text = f"{original_text}\n\n====================\n⚙️ *الإجراء:* ✅ تم قبول الطلب وشحن الحساب بواسطة المشرف: *{admin_name}*"
+            updated_text = f"{original_text}\n\n====================\n⚙️ *الحالة:* ✅ تم قبول الطلب وشحن الحساب بواسطة المشرف: {admin_name}"
             bot.edit_message_text(chat_id=GROUP_CHAT_ID, message_id=call.message.message_id, text=updated_text, parse_mode="Markdown")
-            bot.answer_callback_query(call.id, "✅ تم قبول العملية بنجاح!")
+            bot.answer_callback_query(call.id, "✅ تم شحن حساب العميل وإرسال إشعار له بنجاح!")
             try:
                 bot.send_message(target_user_id, "🎉 *تحديث من الإدارة:*\n\n✅ تم التحقق من عملية الإيداع الخاصة بك بنجاح وتم شحن رصيدك في الحساب! شكراً لتعاملك معنا ومرحباً بك.", parse_mode="Markdown")
             except: pass
             
         elif call.data.startswith("rej_"):
-            updated_text = f"{original_text}\n\n====================\n⚙️ *الإجراء:* ❌ تم رفض الطلب بواسطة المشرف: *{admin_name}*"
+            updated_text = f"{original_text}\n\n====================\n⚙️ *الحالة:* ❌ تم رفض الطلب بواسطة المشرف: {admin_name}"
             bot.edit_message_text(chat_id=GROUP_CHAT_ID, message_id=call.message.message_id, text=updated_text, parse_mode="Markdown")
-            bot.answer_callback_query(call.id, "❌ تم رفض العملية بنجاح!")
+            bot.answer_callback_query(call.id, "❌ تم رفض الطلب وإرسال التنبيه للمستخدم")
             try:
                 bot.send_message(target_user_id, "⚠️ *تحديث من الإدارة:*\n\n❌ عذراً، تم رفض طلب الشحن الخاص بك نظراً لعدم صحة البيانات المرسلة أو عدم وصول التحويل. يرجى مراجعة الدعم الفني.", parse_mode="Markdown")
             except: pass
         return
 
-    # [ب] معالجة خيارات أزرار المستخدم العادية في الخاص
     try:
         if call.data == 'main_menu':
             if user_id in user_states: del user_states[user_id]
@@ -195,3 +109,62 @@ def callback_listener(call):
             user_states[user_id] = 'cham'
             bot.send_message(call.message.chat.id, "📱 *إيداع عبر شام كاش (بونص 5%):*\n\nيرجى كتابة أو إرسال *كود شام كاش* الخاص بك هنا في المحادثة مباشرة.\nسيتلقى فريق العمل الكود فوراً في المجموعة لتأكيده وشحن حسابك.", parse_mode="Markdown")
         elif call.data == 'pay_syriatel':
+            user_states[user_id] = 'syriatel'
+            bot.send_message(call.message.chat.id, "📞 *إيداع عبر سيرياتيل كاش:*\n\n1. قم بتحويل المبلغ المطلوب إلى رقم محفظتنا الإدارية.\n2. بعد التحويل، يرجى كتابة *رقم عملية التحويل (الرقم المرجعي)* والمبلغ هنا مباشرة لتأكيد الطلب.", parse_mode="Markdown")
+        elif call.data == 'account':
+            bot.send_message(call.message.chat.id, "🎮 *تفاصيل حساب BAHR:* \n\nلا يوجد حساب مرتبط حالياً.", parse_mode="Markdown")
+        elif call.data == 'withdraw':
+            bot.send_message(call.message.chat.id, "⬇️ *سحب رصيد:*\n\nأدخل المبلغ الذي ترغب في سحبه وطريقة المستلم وعنوان محفظتك للتنفيذ.", parse_mode="Markdown")
+        elif call.data == 'gift':
+            bot.send_message(call.message.chat.id, "🎁 *نظام الإهداء:*\n\nيمكنك تحويل رصيد أو إرسال هدايا لأصدقائك داخل البوت.", parse_mode="Markdown")
+        elif call.data == 'referrals':
+            bot.send_message(call.message.chat.id, "🔗 *نظام الإحالات:*\n\nاربح مكافآت وعمولات إضافية عند دعوة أصدقائك للبوت عبر الرابط الخاص بك.", parse_mode="Markdown")
+        elif call.data == 'history':
+            bot.send_message(call.message.chat.id, "📋 *السجل:*\n\nلم تقم بأي عمليات سحب أو إيداع مؤخراً.", parse_mode="Markdown")
+        elif call.data == 'rewards':
+            bot.send_message(call.message.chat.id, "🎉 *الجوائز:*\n\nتفقد قنواتنا للمشاركة في المسابقات اليومية والجوائز العشوائية العظمى.", parse_mode="Markdown")
+        elif call.data == 'my_info':
+            info = f"👤 *معلومات المستخدم:*\n\n• الاسم: {call.from_user.first_name}\n• الـ ID الخاص بك: `{user_id}`"
+            bot.send_message(call.message.chat.id, info, parse_mode="Markdown")
+        elif call.data == 'support':
+            support_text = f"🆘 *الدعم الفني لـ BAHR TEAM:*\n\nفريقنا جاهز لخدمتك على مدار الساعة بخصوص عمليات السحب والإيداع والتثبيت.\n\n💬 للتواصل المباشر مع الإدارة والتحقق: {SUPPORT_USERNAME}"
+            bot.send_message(call.message.chat.id, support_text, reply_markup=main_keyboard(), parse_mode="Markdown")
+        elif call.data == 'vip':
+            bot.send_message(call.message.chat.id, "🔱 *نظام VIP:*\n\nمميزات حصرية وعروض خاصة بالمستثمرين ذوي المبالغ العالية.", parse_mode="Markdown")
+    except Exception as e:
+        print(f"خطأ في معالجة الأزرار: {e}")
+
+# معالج الرسائل النصية لاستلام البيانات وتمريرها للمجموعة
+@bot.message_handler(func=lambda message: True)
+def handle_text(message):
+    if message.chat.type != 'private': return
+    user_id = message.from_user.id
+    
+    if user_id in user_states:
+        method = user_states[user_id]
+        method_name = "شام كاش 📱" if method == "cham" else "سيرياتيل كاش 📞"
+        
+        bot.send_message(message.chat.id, "✅ *تم تلقي طلب الشحن بنجاح!*\n\nجاري مراجعة البيانات وفحصها من قبل الإدارة في المجموعة وسيتم إخطارك بالنتيجة فوراً هنا.", parse_mode="Markdown")
+        
+        group_alert = (
+            f"🔔 *طلب شحن رصيد جديد جاري الفحص!*\n\n"
+            f"• *العميل:* {message.from_user.first_name} (@{message.from_user.username if message.from_user.username else 'لا يوجد'})\n"
+            f"• *الـ ID الخاص به:* `{user_id}`\n"
+            f"• *وسيلة الشحن المحددة:* {method_name}\n"
+            f"• *البيانات / الأكواد المستلمة:* `{message.text}`\n\n"
+            f"📥 يرجى التحقق يدوياً واتخاذ إجراء فوري للطلب:"
+        )
+        
+        try:
+            bot.send_message(chat_id=GROUP_CHAT_ID, text=group_alert, reply_markup=admin_action_keyboard(user_id), parse_mode="Markdown")
+        except Exception as e:
+            print(f"فشل إرسال الطلب إلى المجموعة: {e}")
+            
+        del user_states[user_id]
+    else:
+        try:
+            bot.send_message(message.chat.id, "يرجى استخدام القوائم والأزرار المتاحة لتوجيه طلبك بشكل صحيح.", reply_markup=main_keyboard(), parse_mode="Markdown")
+        except: pass
+
+# ==========================================
+# 4. تشغيل البوت بنظام حماية وإعادة اتصال تلقائي
