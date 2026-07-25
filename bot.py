@@ -2,7 +2,7 @@ import subprocess
 import sys
 import logging
 
-# كود إجباري لتثبيت مكتبة التيليجرام تلقائياً لمنع خطأ ModuleNotFoundError في السيرفر
+# كود إجباري لتثبيت مكتبة التيليجرام تلقائياً في السيرفر
 try:
     import telegram
 except ModuleNotFoundError:
@@ -20,15 +20,24 @@ from telegram.ext import (
     ConversationHandler
 )
 
-# تفعيل سجل الأخطاء (Logging) لمراقبة عمل البوت
+# تفعيل سجل الأخطاء
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # تعريف حالات المحادثة للتنقل بين القوائم
 GET_USERNAME, GET_PASSWORD = range(2)
 DEPOSIT_MENU, WITHDRAW_MENU = range(2, 4)
 
-# إرسال الرسائل والتنبيهات إلى آيدي المجموعة الخاص بكم
+# 📌 إعدادات الآيديهات الخاصة بكم
 GROUP_CHAT_ID = -1003983996094  
+OWNER_ID = 6693251012  # الآيدي الخاص بك كمالك ومطور للبوت
+
+# 📌 قاموس وهمي لمحاكاة قاعدة البيانات (لحفظ أرصدة اللاعبين مؤقتاً)
+# الهيكل سيكون: { user_id: balance }
+user_balances = {}
+
+# دالة مساعدة لجلب رصيد اللاعب الحالي (إذا لم يكن مسجلاً، يبدأ من 0.0)
+def get_user_balance(user_id: int) -> float:
+    return user_balances.get(user_id, 0.0)
 
 # دالة توليد القائمة الرئيسية للبوت
 def get_main_keyboard():
@@ -94,14 +103,14 @@ async def receive_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         print(f"فشل إرسال التنبيه إلى المجموعة: {e}")
     return ConversationHandler.END
 
-# 3. واجهة شحن الرصيد
+# 3. واجهة شحن الرصيد (تم ربطها بالرصيد المتغير تلقائياً)
 async def deposit_clicked(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
-    current_balance = 0 
+    current_balance = get_user_balance(user_id) # جلب الرصيد الفعلي للاعب من قاعدة البيانات
     
-    deposit_text = f"UserID : `{user_id}`\n\nالرصيد : {current_balance}\nيرجى اختيار طريقة الشحن المناسبة :"
+    deposit_text = f"UserID : `{user_id}`\n\nالرصيد : **{current_balance}$**\nيرجى اختيار طريقة الشحن المناسبة :"
     deposit_keyboard = [
         [InlineKeyboardButton("Syriatel Cash 💳", callback_data="pay_syriatel")],
         [InlineKeyboardButton("🔴 شام كاش ليرة سورية", callback_data="pay_sham_syr")],
@@ -111,14 +120,14 @@ async def deposit_clicked(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await query.message.edit_text(text=deposit_text, reply_markup=InlineKeyboardMarkup(deposit_keyboard), parse_mode="Markdown")
     return DEPOSIT_MENU
 
-# 4. واجهة سحب الرصيد
+# 4. واجهة سحب الرصيد (تم ربطها بالرصيد المتغير تلقائياً)
 async def withdraw_clicked(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
-    current_balance = 0  
+    current_balance = get_user_balance(user_id) # جلب الرصيد الفعلي للاعب من قاعدة البيانات
     
-    withdraw_text = f"UserID : `{user_id}`\n\nالرصيد : {current_balance}\nيرجى اختيار طريقة السحب المناسبة :"
+    withdraw_text = f"UserID : `{user_id}`\n\nالرصيد : **{current_balance}$**\nيرجى اختيار طريقة السحب المناسبة :"
     withdraw_keyboard = [
         [InlineKeyboardButton("Syriatel Cash 💳", callback_data="wd_syriatel")],
         [InlineKeyboardButton("ShamCash SYP", callback_data="wd_sham_syp")],
@@ -157,11 +166,12 @@ async def general_buttons_handler(update: Update, context: ContextTypes.DEFAULT_
     elif query.data == "rewards":
         await query.message.reply_text("🎉 **قسم الجوائز والمسابقات:**\nتابع قنواتنا الرسمية لمعرفة أكواد الخصم والمسابقات اليومية المخصصة لأعضاء الفريق!", parse_mode="Markdown")
     elif query.data == "my_info":
+        current_balance = get_user_balance(user.id) # جلب الرصيد الحالي للملف الشخصي للاعب
         info_text = (
             f"👤 **ملف معلوماتك الشخصية:**\n\n"
             f"▫️ الاسم: {user.first_name}\n"
             f"▫️ المعرف الذاتي (ID): `{user.id}`\n"
-            f"▫️ الرصيد الحالي: `0.00$`\n"
+            f"▫️ الرصيد الحالي: **{current_balance}$**\n"
             f"▫️ مستوى الحساب: لاعب عادي"
         )
         await query.message.reply_text(text=info_text, parse_mode="Markdown")
@@ -170,38 +180,26 @@ async def general_buttons_handler(update: Update, context: ContextTypes.DEFAULT_
     elif query.data == "vip":
         await query.message.reply_text("🔱 **مميزات عضوية VIP:**\nاحصل على سرعة فائقة في معالجة عمليات السحب والإيداع، ونسب كاش باك حصرية للاعبي النخبة. للتفعيل تواصل مع الإدارة.", parse_mode="Markdown")
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("❌ تم إلغاء العملية. يمكنك العودة للقائمة بكتابة /start")
-    return ConversationHandler.END
-
-def main() -> None:
-    # 📌 التحديث: تم وضع التوكن الخاص بك بنجاح ومباشرة هنا لحماية عمل البوت
-    TOKEN = "8624354425:AAHozeXZgVkYS2njISkMA6IMEuCbyMno7Lg"  
+# 6. 👑 أوامر لوحة تحكم الإدارة (خاصة بالمالك أو مشرفي المجموعة) 👑
+async def admin_add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    sender_id = update.effective_user.id
+    chat_id = update.effective_chat.id
     
-    application = Application.builder().token(TOKEN).build()
-    
-    main_conv = ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(texas_account_clicked, pattern="^texas_account$"),
-            CallbackQueryHandler(deposit_clicked, pattern="^deposit$"),
-            CallbackQueryHandler(withdraw_clicked, pattern="^withdraw$")
-        ],
-        states={
-            GET_USERNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_username)],
-            GET_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_password)],
-            DEPOSIT_MENU: [CallbackQueryHandler(back_handler)],
-            WITHDRAW_MENU: [CallbackQueryHandler(back_handler)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-        per_message=False
-    )
-    
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(main_conv)
-    application.add_handler(CallbackQueryHandler(general_buttons_handler, pattern="^(gift|referrals|history|rewards|my_info|support|vip)$"))
-    
-    print("البوت يعمل بالتوكن الرسمي لـ BAHR TEAM...")
-    application.run_polling()
-
-if __name__ == '__main__':
-    main()
+    # التحقق من أن مرسل الأمر هو المالك أو أن الأمر مرسل داخل مجموعة العمليات الخاصة بكم
+    if sender_id != OWNER_ID and chat_id != GROUP_CHAT_ID:
+        await update.message.reply_text("❌ عذراً، هذا الأمر مخصص للإدارة والمشرفين فقط.")
+        return
+        
+    try:
+        # قراءة المدخلات (الآيدي والمبلغ)
+        target_user_id = int(context.args[0])
+        amount = float(context.args[1])
+        
+        # إضافة المبلغ لرصيد اللاعب
+        user_balances[target_user_id] = user_balances.get(target_user_id, 0.0) + amount
+        new_balance = user_balances[target_user_id]
+        
+        await update.message.reply_text(
+            f"✅ **تم شحن الرصيد بنجاح!**\n\n"
+            f"👤 تم شحن حساب اللاعب ذو الآيدي: `{target_user_id}`\n"
+            f"💰 القيمة المضافة: `+{amount}$`\n"
