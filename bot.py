@@ -14,7 +14,6 @@ def home():
     return "Bahr Team Bot is running 24/7 strictly on Render!"
 
 def run_web_server():
-    # تشغيل السيرفر على بورت 8080 وهو البورت الافتراضي المدعوم
     app.run(host='0.0.0.0', port=8080)
 
 def keep_alive():
@@ -70,9 +69,11 @@ def admin_action_keyboard(user_id):
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    if message.chat.type != 'private': return
+    if message.chat.type != 'private': 
+        return
     user_id = message.from_user.id
-    if user_id in user_states: del user_states[user_id]
+    if user_id in user_states: 
+        del user_states[user_id]
         
     welcome_text = (
         f"مرحباً بك يا {message.from_user.first_name} في بوت *BAHR TEAM* 🌊\n\n"
@@ -83,10 +84,7 @@ def send_welcome(message):
         "• بونص 10% على مبالغ الإيداع العالية.\n\n"
         "⚡ *ماذا تريد أن تفعل اليوم؟ اختر من القائمة أدناه لتنفيذ طلبك فوراً:*"
     )
-    try:
-        bot.send_message(message.chat.id, welcome_text, reply_markup=main_keyboard(), parse_mode="Markdown")
-    except Exception as e:
-        print(f"خطأ إرسال الترحيب: {e}")
+    bot.send_message(message.chat.id, welcome_text, reply_markup=main_keyboard(), parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_listener(call):
@@ -107,7 +105,8 @@ def callback_listener(call):
             bot.answer_callback_query(call.id, "✅ تم شحن حساب العميل وإرسال إشعار له بنجاح!")
             try:
                 bot.send_message(target_user_id, "🎉 *تحديث من الإدارة:*\n\n✅ تم التحقق من عملية الإيداع الخاصة بك بنجاح وتم شحن رصيدك في الحساب! شكراً لتعاملك معنا ومرحباً بك.", parse_mode="Markdown")
-            except: pass
+            except: 
+                pass
             
         elif call.data.startswith("rej_"):
             updated_text = f"{original_text}\n\n====================\n⚙️ *الحالة:* ❌ تم رفض الطلب بواسطة المشرف: {admin_name}"
@@ -115,48 +114,48 @@ def callback_listener(call):
             bot.answer_callback_query(call.id, "❌ تم رفض الطلب وإرسال التنبيه للمستخدم")
             try:
                 bot.send_message(target_user_id, "⚠️ *تحديث من الإدارة:*\n\n❌ عذراً، تم رفض طلب الشحن الخاص بك نظراً لعدم صحة البيانات المرسلة أو عدم وصول التحويل. يرجى مراجعة الدعم الفني.", parse_mode="Markdown")
-            except: pass
+            except: 
+                pass
         return
 
-    try:
-        if call.data == 'main_menu':
-            if user_id in user_states: del user_states[user_id]
-            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="⚡ *ماذا تريد أن تفعل اليوم؟ اختر من القائمة أدناه:*", reply_markup=main_keyboard(), parse_mode="Markdown")
-        elif call.data == 'deposit_menu':
-            bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="⬆️ *قسم شحن الرصيد:*\n\nيرجى اختيار وسيلة الشحن المناسبة لك لوضع الطلب واستلام البونص:", reply_markup=deposit_keyboard(), parse_mode="Markdown")
-        elif call.data == 'pay_cham':
-            user_states[user_id] = 'cham'
-            bot.send_message(call.message.chat.id, "📱 *إيداع عبر شام كاش (بونص 5%):*\n\nيرجى كتابة أو إرسال *كود شام كاش* الخاص بك هنا في المحادثة مباشرة.\nسيتلقى فريق العمل الكود فوراً في المجموعة لتأكيده وشحن حسابك.", parse_mode="Markdown")
-        elif call.data == 'pay_syriatel':
-            user_states[user_id] = 'syriatel'
-            bot.send_message(call.message.chat.id, "📞 *إيداع عبر سيرياتيل كاش:*\n\n1. قم بتحويل المبلغ المطلوب إلى رقم محفظتنا الإدارية.\n2. بعد التحويل، يرجى كتابة *رقم عملية التحويل (الرقم المرجعي)* والمبلغ هنا مباشرة لتأكيد الطلب.", parse_mode="Markdown")
-        elif call.data == 'account':
-            bot.send_message(call.message.chat.id, "🎮 *تفاصيل حساب BAHR:* \n\nلا يوجد حساب مرتبط حالياً.", parse_mode="Markdown")
-        elif call.data == 'withdraw':
-            bot.send_message(call.message.chat.id, "⬇️ *سحب رصيد:*\n\nأدخل المبلغ الذي ترغب في سحبه وطريقة المستلم وعنوان محفظتك للتنفيذ.", parse_mode="Markdown")
-        elif call.data == 'gift':
-            bot.send_message(call.message.chat.id, "🎁 *نظام الإهداء:*\n\nيمكنك تحويل رصيد أو إرسال هدايا لأصدقائك داخل البوت.", parse_mode="Markdown")
-        elif call.data == 'referrals':
-            bot.send_message(call.message.chat.id, "🔗 *نظام الإحالات:*\n\nاربح مكافآت وعمولات إضافية عند دعوة أصدقائك للبوت عبر الرابط الخاص بك.", parse_mode="Markdown")
-        elif call.data == 'history':
-            bot.send_message(call.message.chat.id, "📋 *السجل:*\n\nلم تقم بأي عمليات سحب أو إيداع مؤخراً.", parse_mode="Markdown")
-        elif call.data == 'rewards':
-            bot.send_message(call.message.chat.id, "🎉 *الجوائز:*\n\nتفقد قنواتنا للمشاركة في المسابقات اليومية والجوائز العشوائية العظمى.", parse_mode="Markdown")
-        elif call.data == 'my_info':
-            info = f"👤 *معلومات المستخدم:*\n\n• الاسم: {call.from_user.first_name}\n• الـ ID الخاص بك: `{user_id}`"
-            bot.send_message(call.message.chat.id, info, parse_mode="Markdown")
-        elif call.data == 'support':
-            support_text = f"🆘 *الدعم الفني لـ BAHR TEAM:*\n\nفريقنا جاهز لخدمتك على مدار الساعة بخصوص عمليات السحب والإيداع والتثبيت.\n\n💬 للتواصل المباشر مع الإدارة والتحقق: {SUPPORT_USERNAME}"
-            bot.send_message(call.message.chat.id, support_text, reply_markup=main_keyboard(), parse_mode="Markdown")
-        elif call.data == 'vip':
-            bot.send_message(call.message.chat.id, "🔱 *نظام VIP:*\n\nمميزات حصرية وعروض خاصة بالمستثمرين ذوي المبالغ العالية.", parse_mode="Markdown")
-    except Exception as e:
-        print(f"خطأ في معالجة الأزرار: {e}")
+    if call.data == 'main_menu':
+        if user_id in user_states: 
+            del user_states[user_id]
+        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="⚡ *ماذا تريد أن تفعل اليوم؟ اختر من القائمة أدناه:*", reply_markup=main_keyboard(), parse_mode="Markdown")
+    elif call.data == 'deposit_menu':
+        bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="⬆️ *قسم شحن الرصيد:*\n\nيرجى اختيار وسيلة الشحن المناسبة لك لوضع الطلب واستلام البونص:", reply_markup=deposit_keyboard(), parse_mode="Markdown")
+    elif call.data == 'pay_cham':
+        user_states[user_id] = 'cham'
+        bot.send_message(call.message.chat.id, "📱 *إيداع عبر شام كاش (بونص 5%):*\n\nيرجى كتابة أو إرسال *كود شام كاش* الخاص بك هنا في المحادثة مباشرة.\nسيتلقى فريق العمل الكود فوراً في المجموعة لتأكيده وشحن حسابك.", parse_mode="Markdown")
+    elif call.data == 'pay_syriatel':
+        user_states[user_id] = 'syriatel'
+        bot.send_message(call.message.chat.id, "📞 *إيداع عبر سيرياتيل كاش:*\n\n1. قم بتحويل المبلغ المطلوب إلى رقم محفظتنا الإدارية.\n2. بعد التحويل، يرجى كتابة *رقم عملية التحويل (الرقم المرجعي)* والمبلغ هنا مباشرة لتأكيد الطلب.", parse_mode="Markdown")
+    elif call.data == 'account':
+        bot.send_message(call.message.chat.id, "🎮 *تفاصيل حساب BAHR:* \n\nلا يوجد حساب مرتبط حالياً.", parse_mode="Markdown")
+    elif call.data == 'withdraw':
+        bot.send_message(call.message.chat.id, "⬇️ *سحب رصيد:*\n\nأدخل المبلغ الذي ترغب في سحبه وطريقة المستلم وعنوان محفظتك للتنفيذ.", parse_mode="Markdown")
+    elif call.data == 'gift':
+        bot.send_message(call.message.chat.id, "🎁 *نظام الإهداء:*\n\nيمكنك تحويل رصيد أو إرسال هدايا لأصدقائك داخل البوت.", parse_mode="Markdown")
+    elif call.data == 'referrals':
+        bot.send_message(call.message.chat.id, "🔗 *نظام الإحالات:*\n\nاربح مكافآت وعمولات إضافية عند دعوة أصدقائك للبوت عبر الرابط الخاص بك.", parse_mode="Markdown")
+    elif call.data == 'history':
+        bot.send_message(call.message.chat.id, "📋 *السجل:*\n\nلم تقم بأي عمليات سحب أو إيداع مؤخراً.", parse_mode="Markdown")
+    elif call.data == 'rewards':
+        bot.send_message(call.message.chat.id, "🎉 *الجوائز:*\n\nتفقد قنواتنا للمشاركة في المسابقات اليومية والجوائز العشوائية العظمى.", parse_mode="Markdown")
+    elif call.data == 'my_info':
+        info = f"👤 *معلومات المستخدم:*\n\n• الاسم: {call.from_user.first_name}\n• الـ ID الخاص بك: `{user_id}`"
+        bot.send_message(call.message.chat.id, info, parse_mode="Markdown")
+    elif call.data == 'support':
+        support_text = f"🆘 *الدعم الفني لـ BAHR TEAM:*\n\nفريقنا جاهز لخدمتك على مدار الساعة بخصوص عمليات السحب والإيداع والتثبيت.\n\n💬 للتواصل المباشر مع الإدارة والتحقق: {SUPPORT_USERNAME}"
+        bot.send_message(call.message.chat.id, support_text, reply_markup=main_keyboard(), parse_mode="Markdown")
+    elif call.data == 'vip':
+        bot.send_message(call.message.chat.id, "🔱 *نظام VIP:*\n\nمميزات حصرية وعروض خاصة بالمستثمرين ذوي المبالغ العالية.", parse_mode="Markdown")
 
 # معالج الرسائل النصية لاستلام البيانات وتمريرها للمجموعة
 @bot.message_handler(func=lambda message: True)
 def handle_text(message):
-    if message.chat.type != 'private': return
+    if message.chat.type != 'private': 
+        return
     user_id = message.from_user.id
     
     if user_id in user_states:
@@ -175,3 +174,9 @@ def handle_text(message):
         )
         
         try:
+            bot.send_message(chat_id=GROUP_CHAT_ID, text=group_alert, reply_markup=admin_action_keyboard(user_id), parse_mode="Markdown")
+        except Exception as e:
+            print(f"فشل إرسال الطلب إلى المجموعة: {e}")
+            
+        del user_states[user_id]
+    else:
