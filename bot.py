@@ -6,16 +6,16 @@ from flask import Flask
 from threading import Thread
 
 # ==========================================
-# 1. إعدادات سيرفر الويب المصغر المتوافق مع Render
+# 1. إعدادات سيرفر الويب الذكي لمنصة Render
 # ==========================================
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bahr Team Bot is running 24/7 strictly on Render!"
+    return "Bahr Team Bot is running 24/7 successfully on Render!"
 
 def run_web_server():
-    # جلب منفذ السيرفر المفتوح تلقائياً من المنصة أو استخدام 8080 كافتراضي
+    # كود ذكي لجلب البورت الإجباري لمنصة ريندر تلقائياً أو استخدام 8080 كافتراضي
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
@@ -132,7 +132,7 @@ def callback_listener(call):
         bot.send_message(call.message.chat.id, "📱 *إيداع عبر شام كاش (بونص 5%):*\n\nيرجى كتابة أو إرسال *كود شام كاش* الخاص بك هنا في المحادثة مباشرة.\nسيتلقى فريق العمل الكود فوراً في المجموعة لتأكيده وشحن حسابك.", parse_mode="Markdown")
     elif call.data == 'pay_syriatel':
         user_states[user_id] = 'syriatel'
-        bot.send_message(call.message.chat.id, "📞 *إيداع عبر سيرياتيل كاش:*\n\n1. قم بتحويل المبلغ المطلوب إلى رقم محفظتنا الإدارية.\n2. بعد التحويل، يرجى كتابة *رقم عملية التحويل (الرقم المرجعي)* والمبلغ هنا مباشرة لتأكيد الطلب.", parse_mode="Markdown")
+        bot.send_message(call.message.chat.id, "📞 *إيداع عبر سيرياتيل كاش:*\n\n1. قم بتحويل المبلغ المطلوب إلى رقم محفظتنا الإدارية.\n2. بعد التحويل, يرجى كتابة *رقم عملية التحويل (الرقم المرجعي)* والمبلغ هنا مباشرة لتأكيد الطلب.", parse_mode="Markdown")
     elif call.data == 'account':
         bot.send_message(call.message.chat.id, "🎮 *تفاصيل حساب BAHR:* \n\nلا يوجد حساب مرتبط حالياً.", parse_mode="Markdown")
     elif call.data == 'withdraw':
