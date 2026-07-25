@@ -1,20 +1,39 @@
 import telebot
 from telebot import types
 import time
+from flask import Flask
+from threading import Thread
 
 # ==========================================
-# 1. إعدادات البوت والروابط الرسمية والمجموعة
+# 1. إعدادات سيرفر الويب المصغر لمنع إغلاق السيرفر
+# ==========================================
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bahr Team Bot is running 24/7 strictly on Render!"
+
+def run_web_server():
+    # تشغيل السيرفر على بورت 8080 وهو البورت الافتراضي المدعوم
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run_web_server)
+    t.start()
+
+# ==========================================
+# 2. إعدادات البوت والروابط الرسمية والمجموعة
 # ==========================================
 TOKEN = "8624354425:AAHozeXZgVkYS2njISkMA6IMEuCbyMno7Lg"
 SUPPORT_USERNAME = "@azzaman92"
 CHANNEL_URL = "https://t.me"
-GROUP_CHAT_ID = -1003983996094  # تم تثبيت الـ ID الخاص بمجموعتك بنجاح
+GROUP_CHAT_ID = -1003983996094  # معرف مجموعتك الإدارية الحقيقي
 
 bot = telebot.TeleBot(TOKEN)
 user_states = {}
 
 # ==========================================
-# 2. دوال بناء القوائم والأزرار التفاعلية
+# 3. دوال بناء القوائم والأزرار التفاعلية
 # ==========================================
 
 def main_keyboard():
@@ -46,7 +65,7 @@ def admin_action_keyboard(user_id):
     return markup
 
 # ==========================================
-# 3. معالجة أوامر البوت وضغطات الأزرار
+# 4. معالجة أوامر البوت وضغطات الأزرار
 # ==========================================
 
 @bot.message_handler(commands=['start'])
@@ -156,15 +175,3 @@ def handle_text(message):
         )
         
         try:
-            bot.send_message(chat_id=GROUP_CHAT_ID, text=group_alert, reply_markup=admin_action_keyboard(user_id), parse_mode="Markdown")
-        except Exception as e:
-            print(f"فشل إرسال الطلب إلى المجموعة: {e}")
-            
-        del user_states[user_id]
-    else:
-        try:
-            bot.send_message(message.chat.id, "يرجى استخدام القوائم والأزرار المتاحة لتوجيه طلبك بشكل صحيح.", reply_markup=main_keyboard(), parse_mode="Markdown")
-        except: pass
-
-# ==========================================
-# 4. تشغيل البوت بنظام حماية وإعادة اتصال تلقائي
