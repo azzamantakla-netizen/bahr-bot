@@ -1,30 +1,9 @@
 import telebot
 from telebot import types
 import time
-import os
-from flask import Flask
-from threading import Thread
 
 # ==========================================
-# 1. إعدادات سيرفر الويب الذكي لمنصة Render
-# ==========================================
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Bahr Team Bot is running 24/7 successfully on Render!"
-
-def run_web_server():
-    # كود ذكي لجلب البورت الإجباري لمنصة ريندر تلقائياً أو استخدام 8080 كافتراضي
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
-
-def keep_alive():
-    t = Thread(target=run_web_server)
-    t.start()
-
-# ==========================================
-# 2. إعدادات البوت والروابط الرسمية والمجموعة
+# 1. إعدادات البوت والروابط الرسمية والمجموعة
 # ==========================================
 TOKEN = "8624354425:AAHozeXZgVkYS2njISkMA6IMEuCbyMno7Lg"
 SUPPORT_USERNAME = "@azzaman92"
@@ -35,7 +14,7 @@ bot = telebot.TeleBot(TOKEN)
 user_states = {}
 
 # ==========================================
-# 3. دوال بناء القوائم والأزرار التفاعلية
+# 2. دوال بناء القوائم والأزرار التفاعلية
 # ==========================================
 
 def main_keyboard():
@@ -67,7 +46,7 @@ def admin_action_keyboard(user_id):
     return markup
 
 # ==========================================
-# 4. معالجة أوامر البوت وضغطات الأزرار
+# 3. معالجة أوامر البوت وضغطات الأزرار
 # ==========================================
 
 @bot.message_handler(commands=['start'])
@@ -132,7 +111,7 @@ def callback_listener(call):
         bot.send_message(call.message.chat.id, "📱 *إيداع عبر شام كاش (بونص 5%):*\n\nيرجى كتابة أو إرسال *كود شام كاش* الخاص بك هنا في المحادثة مباشرة.\nسيتلقى فريق العمل الكود فوراً في المجموعة لتأكيده وشحن حسابك.", parse_mode="Markdown")
     elif call.data == 'pay_syriatel':
         user_states[user_id] = 'syriatel'
-        bot.send_message(call.message.chat.id, "📞 *إيداع عبر سيرياتيل كاش:*\n\n1. قم بتحويل المبلغ المطلوب إلى رقم محفظتنا الإدارية.\n2. بعد التحويل, يرجى كتابة *رقم عملية التحويل (الرقم المرجعي)* والمبلغ هنا مباشرة لتأكيد الطلب.", parse_mode="Markdown")
+        bot.send_message(call.message.chat.id, "📞 *إيداع عبر سيرياتيل كاش:*\n\n1. قم بتحويل المبلغ المطلوب إلى رقم محفظتنا الإدارية.\n2. بعد التحويل، يرجى كتابة *رقم عملية التحويل (الرقم المرجعي)* والمبلغ هنا مباشرة لتأكيد الطلب.", parse_mode="Markdown")
     elif call.data == 'account':
         bot.send_message(call.message.chat.id, "🎮 *تفاصيل حساب BAHR:* \n\nلا يوجد حساب مرتبط حالياً.", parse_mode="Markdown")
     elif call.data == 'withdraw':
@@ -180,3 +159,17 @@ def handle_text(message):
             bot.send_message(chat_id=GROUP_CHAT_ID, text=group_alert, reply_markup=admin_action_keyboard(user_id), parse_mode="Markdown")
         except Exception as e:
             print(f"فشل إرسال الطلب إلى المجموعة: {e}")
+        del user_states[user_id]
+    else:
+        bot.send_message(message.chat.id, "يرجى استخدام القوائم والأزرار المتاحة لتوجيه طلبك بشكل صحيح.", reply_markup=main_keyboard(), parse_mode="Markdown")
+
+# ==========================================
+# 4. تشغيل البوت المباشر بثبات كامل
+# ==========================================
+if __name__ == '__main__':
+    print("🚀 تم إطلاق اتصال البوت الآمن...")
+    while True:
+        try:
+            bot.polling(none_stop=True, interval=0, timeout=20)
+        except Exception as e:
+            time.sleep(3)
