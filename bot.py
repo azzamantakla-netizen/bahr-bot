@@ -16,14 +16,6 @@ def home():
 def health():
     return "OK", 200
 
-def run_web_server():
-    port = int(os.environ.get("PORT", 8080))
-    # تشغيل خادم الويب على المنفذ المطلوب بشكل متوافق تماماً مع Render
-    app.run(host='0.0.0.0', port=port)
-
-# تشغيل خادم الويب في الخلفية بشكل منفصل لمنع خروج المنصة
-threading.Thread(target=run_web_server, daemon=True).start()
-
 # ----------------- 2. إعدادات البوت والبيانات العامة المعتمدة -----------------
 BOT_TOKEN = "8624354425:AAHozeXZgVkYS2njISkMA6IMEuCbyMno7Lg"
 GROUP_ID = -1003983996094
@@ -198,3 +190,9 @@ def handle_callback_query(call):
             
             markup = types.InlineKeyboardMarkup()
             markup.add(types.InlineKeyboardButton("✅ موافقة", callback_data=f"adm_dep_ok_{user_id}_{bonus_amount}"))
+            admin_msg = f"💰 **طلب شحن حساب جديد**\n\n👤 اللاعب: `{user_id}`\n💵 المبلغ: {amount:,}\n🎁 مع البونص (5%): {bonus_amount:,}\n💳 الطريقة: {method}\n📝 التفاصيل: {proof_text}"
+            
+            if photo_id:
+                bot.send_photo(GROUP_ID, photo_id, caption=admin_msg, reply_markup=markup)
+            else:
+                bot.send_message(GROUP_ID, admin_msg, reply_markup=markup)
