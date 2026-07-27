@@ -1,11 +1,29 @@
 import telebot
 from telebot import types
 import sqlite3
+import threading
+import os
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# إعدادات البوت والبيانات الخاصة بك
-BOT_TOKEN = "8624354425:AAHozeXZgVkYS2njISkMA6IMEuCbyMno7Lg"
-GROUP_ID = -1003983996094
-ADMIN_ID = 6693251012
+# ----------------- خادم ويب مدمج لحل مشكلة Render -----------------
+class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running successfully!")
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler)
+    server.serve_forever()
+
+# تشغيل الخادم في الخلفية لإبقاء Render مستقراً ومستمراً بالعمل
+threading.Thread(target=run_web_server, daemon=True).start()
+
+# ----------------- إعدادات البوت والبيانات العامة -----------------
+BOT_TOKEN = "8024354421:AAHozoXzgVkYS2njISHMA9XEuCoyMmmTLg"
+GROUP_ID = -1002083996004
+ADMIN_ID = 6503251012
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -16,7 +34,6 @@ user_states = {}
 def init_db():
     conn = sqlite3.connect("texas_bank.db")
     cursor = conn.cursor()
-    # جدول الحسابات والمحافظ
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS accounts (
             user_id INTEGER PRIMARY KEY,
@@ -46,9 +63,9 @@ def db_query(query, params=(), fetchone=False, fetchall=False, commit=False):
 # ----------------- القوائم والأزرار (Keyboards) -----------------
 def get_main_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_texas = types.InlineKeyboardButton("🎮 حساب Texas", callback_data="menu_texas")
-    btn_info = types.InlineKeyboardButton("👤 معلوماتي", callback_data="main_info")
-    btn_support = types.InlineKeyboardButton("🆘 الدعم", callback_data="main_support")
+    btn_texas = types.InlineKeyboardButton("🏦 حساب Texas", callback_data="menu_texas")
+    btn_info = types.InlineKeyboardButton("ℹ️ معلومات", callback_data="main_info")
+    btn_support = types.InlineKeyboardButton("📞 الدعم", callback_data="main_support")
     markup.add(btn_texas)
     markup.row(btn_info)
     markup.row(btn_support)
@@ -58,10 +75,10 @@ def get_texas_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=2)
     btn_account = types.InlineKeyboardButton("👤 حسابي", callback_data="texas_account")
     btn_deposit = types.InlineKeyboardButton("💰 شحن الحساب", callback_data="texas_deposit")
-    btn_withdraw = types.InlineKeyboardButton("💳 سحب رصيد من الحساب", callback_data="texas_withdraw")
-    btn_back = types.InlineKeyboardButton("↩️ رجوع", callback_data="back_to_main")
+    btn_withdraw = types.InlineKeyboardButton("💳 سحب رصيد", callback_data="texas_withdraw")
+    btn_back = types.InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main")
     markup.add(btn_account)
-    markup.add(btn_deposit, btn_withdraw)
+    markup.row(btn_deposit, btn_withdraw)
     markup.row(btn_back)
     return markup
 
@@ -69,9 +86,9 @@ def get_texas_keyboard():
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     welcome_text = (
-        "أهلاً بك ضمن عائلتنا 🎮\n"
-        "هذا البوت صُمم خصيصاً لك، رصيدك بأمان معنا. "
-        "تمتع بمرونة عالية في السحب وسرعة قصوى في الإيداع!"
+        f"مرحباً بك {message.from_user.first_name} في بوت بنك تكساس!\n\n"
+        "هنا يمكنك إدارة حسابك البنكي وسحب وإيداع الأموال بكل سهولة والأمان.\n"
+        "اختر من القائمة في الأسفل وسوف نكون في الخدمة."
     )
     bot.send_message(message.chat.id, welcome_text, reply_markup=get_main_keyboard())
 
@@ -80,18 +97,15 @@ def send_welcome(message):
 def handle_all_messages(message):
     user_id = message.from_user.id
     
-    # التعامل مع ردود المسؤول (الآدمن) لتمريرها إلى الدعم SOS
-    if message.chat.type == "supergroup" or message.chat.id == GROUP_ID:
-        if message.reply_to_message:
-            rep = message.reply_to_message.text
-            if rep and "📬 بلاغ دعم جديد من" in rep:
-                try:
-                    target_id = int(rep.split("المعرف: ")[1].split("\n")[0].strip())
-                    if message.text:
-                        bot.send_message(target_id, f"📬 **رد الدعم الفني:**\n\n{message.text}", parse_mode="Markdown")
-                        bot.reply_to(message, "✅ تم إرسال ردك إلى اللاعب بنجاح.")
-                except Exception as e:
-                    bot.reply_to(message, f"❌ حدث خطأ أثناء توجيه الرد: {e}")
+    rep = message.reply_to_message
+    if rep and "طلب سحب من" in rep.text:
+        try:
+            target_id = int(rep.text.split("المعرف: ")[1].split("\n")[0].strip())
+            if message.text:
+                bot.send_message(target_id, f"**رد من الدعم الفني** 📩:\n\n{message.text}", parse_mode="Markdown")
+                bot.reply_to(message, "✅ تم إرسال ردك إلى اللاعب بنجاح.")
+        except Exception as e:
+            bot.reply_to(message, f"❌ حدث خطأ أثناء توجيه الرد: {e}")
         return
 
     if user_id not in user_states:
@@ -103,30 +117,28 @@ def handle_all_messages(message):
     if state == "create_step1":
         user_states[user_id]["reg_username"] = message.text
         user_states[user_id]["state"] = "create_step2"
-        bot.send_message(message.chat.id, "✍️ يرجى إدخال كلمة المرور المطلوبة:")
-        
+        bot.send_message(message.chat.id, "🔐 يرجى إدخال كلمة المرور المطلوبة:")
+
     elif state == "create_step2":
         username = user_states[user_id]["reg_username"]
         password = message.text
         user_states.pop(user_id)
-        
-        # إرسال طلب تدقيق للمجموعة
+
         markup = types.InlineKeyboardMarkup()
         markup.add(
             types.InlineKeyboardButton("✅ موافقة", callback_data=f"adm_acc_approve_{user_id}"),
             types.InlineKeyboardButton("❌ رفض", callback_data=f"adm_acc_reject_{user_id}")
         )
         admin_msg = (
-            f"🆕 **طلب إنشاء حساب جديد**\n\n"
-            f"🆔 المعرف: {user_id}\n"
-            f"👤 اسم المستخدم: {username}\n"
+            f"**🆕 طلب إنشاء حساب جديد**\n\n"
+            f"👤 المستخدم: <{user_id}>\n"
+            f"📝 اسم المستخدم: {username}\n"
             f"🔑 كلمة المرور: {password}"
         )
         bot.send_message(GROUP_ID, admin_msg, reply_markup=markup)
-        
-        # حفظ الحساب مؤقتا بانتظار التفعيل
+
         db_query("INSERT OR REPLACE INTO accounts (user_id, username, password, balance, status) VALUES (?, ?, ?, 0.0, 'pending')", (user_id, username, password), commit=True)
-        bot.send_message(message.chat.id, "⏳ تم إرسال طلب إنشاء الحساب للإدارة للتدقيق، يرجى الانتظار...")
+        bot.send_message(message.chat.id, "...تم إرسال طلب إنشاء الحساب للإدارة، يرجى الانتظار⏳")
 
     # خطوات شحن الحساب
     elif state == "dep_step_amount":
@@ -137,13 +149,13 @@ def handle_all_messages(message):
                 return
             user_states[user_id]["amount"] = amount
             user_states[user_id]["state"] = "dep_step_method"
-            
+
             markup = types.InlineKeyboardMarkup()
             markup.add(
-                types.InlineKeyboardButton("🔴 Syriatel Cash", callback_data="pay_syriatel"),
-                types.InlineKeyboardButton("🔵 Sham Cash", callback_data="pay_sham")
+                types.InlineKeyboardButton("📱 Syriatel Cash", callback_data="pay_syriatel"),
+                types.InlineKeyboardButton("💬 Sham Cash", callback_data="pay_sham")
             )
-            bot.send_message(message.chat.id, "📱 يرجى اختيار وسيلة الشحن المناسبة لك للحصول على بونص 5%:", reply_markup=markup)
+            bot.send_message(message.chat.id, "قم باختيار أحد وسائل الشحن التالية للحصول على رقم تحويل ⬇️", reply_markup=markup)
         except ValueError:
             bot.send_message(message.chat.id, "❌ يرجى إدخال مبلغ صحيح بالأرقام فقط.")
 
@@ -151,35 +163,34 @@ def handle_all_messages(message):
         amount = user_states[user_id]["amount"]
         method = user_states[user_id]["method"]
         acc_info = db_query("SELECT username, password FROM accounts WHERE user_id=?", (user_id,), fetchone=True)
-        
-        # إرسال إثبات الشحن للمجموعة
+
         markup = types.InlineKeyboardMarkup()
         markup.add(
             types.InlineKeyboardButton("✅ موافقة وتعبئة", callback_data=f"adm_dep_approve_{user_id}"),
             types.InlineKeyboardButton("❌ رفض الطلب", callback_data=f"adm_dep_reject_{user_id}")
         )
-        
+
         bonus_amount = amount * 1.05
         admin_msg = (
-            f"📥 **طلب شحن حساب جديد**\n\n"
-            f"🆔 المعرف: {user_id}\n"
-            f"👤 اسم المستخدم: {acc_info[0]}\n"
-            f"🔑 كلمة المرور: {acc_info[1]}\n"
-            f"💵 المبلغ الأساسي: {amount:,.0f}\n"
-            f"🎁 مع البونص (5%): {bonus_amount:,.0f}\n"
-            f"📱 وسيلة الشحن: {method}\n"
+            f"**💰 طلب شحن حساب جديد**\n\n"
+            f"👤 المستخدم: <{user_id}>\n"
+            f"📝 اسم المستخدم: {acc_info[0] if acc_info else 'لا يوجد'}\n"
+            f"🔑 كلمة المرور: {acc_info[1] if acc_info else 'لا يوجد'}\n"
+            f"💵 المبلغ الأساسي: {amount}\n"
+            f"🎁 المبلغ مع البونص (5%): {bonus_amount}\n"
+            f"💳 وسيلة الشحن: {method}"
         )
-        
+
         if message.content_type == 'photo':
             photo_id = message.photo[-1].file_id
-            admin_msg += "🖼 إثبات الدفع: مرفق كصورة بالأسفل"
+            admin_msg += "\n\n📸 إثبات الدفع المرفق بالأسفل:"
             bot.send_photo(GROUP_ID, photo_id, caption=admin_msg, reply_markup=markup)
         else:
-            admin_msg += f"✍️ رقم العملية/الإثبات: {message.text}"
+            admin_msg += f"\n\n📝 رقم العملية/الإثبات: {message.text}"
             bot.send_message(GROUP_ID, admin_msg, reply_markup=markup)
-            
+
         user_states.pop(user_id)
-        bot.send_message(message.chat.id, "⏳ تم إرسال إثبات الشحن إلى الإدارة وجاري مطابقة كود الكاشير الحالي...")
+        bot.send_message(message.chat.id, "⏳...تم إرسال إثبات الشحن إلى الإدارة وجاري معالجة كود التأكيد المالي")
 
     # خطوات سحب الرصيد
     elif state == "with_step_amount":
@@ -187,10 +198,15 @@ def handle_all_messages(message):
             amount = float(message.text)
             current_bal = db_query("SELECT balance FROM accounts WHERE user_id=?", (user_id,), fetchone=True)[0]
             if amount > current_bal or amount <= 0:
-                bot.send_message(message.chat.id, f"❌ الرصيد غير كافٍ أو المبلغ غير صحيح. رصيدك الحالي: {current_bal:,.0f}")
+                bot.send_message(message.chat.id, f"❌ الرصيد غير كافٍ أو المبلغ غير صحيح. رصيدك الحالي: {current_bal}")
                 return
             user_states[user_id]["amount"] = amount
             user_states[user_id]["state"] = "with_step_code"
-            bot.send_message(message.chat.id, "✍️ يرجى إرسال الكود أو رقم المحفظة المراد إرسال الأموال إليها:")
+            bot.send_message(message.chat.id, "📲 يرجى إرسال الكود أو رقم المحفظة المراد إرسال الأموال إليها:")
         except ValueError:
-            bot.send
+            bot.send_message(message.chat.id, "❌ يرجى إدخال مبلغ صحيح بالأرقام فقط.")
+
+# ----------------- أمر تشغيل البوت النهائي المستمر -----------------
+if __name__ == "__main__":
+    print("Bot is starting...")
+    bot.infinity_polling()
