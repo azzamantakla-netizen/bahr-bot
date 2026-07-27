@@ -4,5 +4,3 @@ services:
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: python bot.py
-    restartPolicy:
-      onFailure: retry
