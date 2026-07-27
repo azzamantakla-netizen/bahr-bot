@@ -1,42 +1,35 @@
 import telebot
 from telebot import types
 import sqlite3
-import threading
 import os
-import time
-from flask import Flask
+from flask import Flask, request
 
-# ----------------- 1. خادم ويب فوري وخفيف جداً لإرضاء Render -----------------
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Bot status: Active and Stable", 200
-
-@app.route('/health')
-def health():
-    return "OK", 200
-
-def start_flask():
-    port = int(os.environ.get("PORT", 10000))
-    # تشغيل السيرفر بدون ميزات إضافية ليكون فائق السرعة في الرد
-    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
-
-# تشغيل خادم الويب فوراً في البداية لتأمين حجز المنفذ (Port Binding)
-flask_thread = threading.Thread(target=start_flask)
-flask_thread.daemon = True
-flask_thread.start()
-
-# إعطاء السيرفر ثانية واحدة ليستقر تماماً قبل تشغيل البوت
-time.sleep(1)
-
-# ----------------- 2. إعدادات البوت والبيانات العامة المعتمدة -----------------
+# ----------------- 1. إعدادات البوت والروابط المعتمدة -----------------
 BOT_TOKEN = "8624354425:AAHozeXZgVkYS2njISkMA6IMEuCbyMno7Lg"
 GROUP_ID = -1003983996094
 ADMIN_ID = 6693251012
 
 bot = telebot.TeleBot(BOT_TOKEN)
 user_states = {}
+
+# ----------------- 2. إعداد خادم Flask والويب هوك المتكامل لـ Render -----------------
+app = Flask(__name__)
+
+# رابط استقبال تحديثات ورسائل التليجرام
+@app.route('/' + BOT_TOKEN, methods=['POST'])
+def getMessage():
+    json_string = request.stream.read().decode('utf-8')
+    update = telebot.types.Update.de_json(json_string)
+    bot.process_new_updates([update])
+    return "!", 200
+
+@app.route('/')
+def home():
+    return "Texas Bank Bot Webhook Server is Stable and Active!", 200
+
+@app.route('/health')
+def health():
+    return "OK", 200
 
 # ----------------- 3. قاعدة البيانات SQL -----------------
 def init_db():
@@ -203,3 +196,5 @@ def handle_callback_query(call):
             photo_id = user_states[user_id].get("photo_id")
             
             markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("✅ موافقة", callback_data=f"adm_dep_ok_{user_id}_{bonus_amount}"))
+ 
