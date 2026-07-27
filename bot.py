@@ -1,8 +1,36 @@
 import telebot
 from telebot import types
 import sqlite3
+import threading
+import os
+import time
+from flask import Flask
 
-# ----------------- 1. إعدادات البوت والبيانات العامة المعتمدة -----------------
+# ----------------- 1. خادم ويب فوري وخفيف جداً لإرضاء Render -----------------
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot status: Active and Stable", 200
+
+@app.route('/health')
+def health():
+    return "OK", 200
+
+def start_flask():
+    port = int(os.environ.get("PORT", 10000))
+    # تشغيل السيرفر بدون ميزات إضافية ليكون فائق السرعة في الرد
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+
+# تشغيل خادم الويب فوراً في البداية لتأمين حجز المنفذ (Port Binding)
+flask_thread = threading.Thread(target=start_flask)
+flask_thread.daemon = True
+flask_thread.start()
+
+# إعطاء السيرفر ثانية واحدة ليستقر تماماً قبل تشغيل البوت
+time.sleep(1)
+
+# ----------------- 2. إعدادات البوت والبيانات العامة المعتمدة -----------------
 BOT_TOKEN = "8624354425:AAHozeXZgVkYS2njISkMA6IMEuCbyMno7Lg"
 GROUP_ID = -1003983996094
 ADMIN_ID = 6693251012
@@ -10,7 +38,7 @@ ADMIN_ID = 6693251012
 bot = telebot.TeleBot(BOT_TOKEN)
 user_states = {}
 
-# ----------------- 2. قاعدة البيانات SQL -----------------
+# ----------------- 3. قاعدة البيانات SQL -----------------
 def init_db():
     conn = sqlite3.connect("texas_bank.db")
     cursor = conn.cursor()
@@ -39,7 +67,7 @@ def db_query(query, params=(), fetchone=False, fetchall=False, commit=False):
     conn.close()
     return res
 
-# ----------------- 3. القوائم والأزرار (Keyboards) -----------------
+# ----------------- 4. القوائم والأزرار (Keyboards) -----------------
 def get_main_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=1)
     btn_texas = types.InlineKeyboardButton("🐂 حساب Texas", callback_data="menu_texas")
@@ -64,7 +92,7 @@ def get_confirm_keyboard(callback_ok, callback_cancel):
     markup.add(btn_ok, btn_cancel)
     return markup
 
-# ----------------- 4. الأوامر والرسالة الترحيبية -----------------
+# ----------------- 5. الأوامر والرسالة الترحيبية -----------------
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     welcome_text = (
@@ -73,7 +101,7 @@ def send_welcome(message):
     )
     bot.send_message(message.chat.id, welcome_text, reply_markup=get_main_keyboard())
 
-# ----------------- 5. معالجة ضغطات الأزرار (Callback Query) -----------------
+# ----------------- 6. معالجة ضغطات الأزرار (Callback Query) -----------------
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
     user_id = call.from_user.id
@@ -175,17 +203,3 @@ def handle_callback_query(call):
             photo_id = user_states[user_id].get("photo_id")
             
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("✅ موافقة", callback_data=f"adm_dep_ok_{user_id}_{bonus_amount}"))
-            admin_msg = f"💰 **طلب شحن حساب جديد**\n\n👤 اللاعب: `{user_id}`\n💵 المبلغ: {amount:,}\n🎁 مع البونص (5%): {bonus_amount:,}\n💳 الطريقة: {method}\n📝 التفاصيل: {proof_text}"
-            
-            if photo_id:
-                bot.send_photo(GROUP_ID, photo_id, caption=admin_msg, reply_markup=markup)
-            else:
-                bot.send_message(GROUP_ID, admin_msg, reply_markup=markup)
-            user_states.pop(user_id, None)
-
-    elif call.data.startswith("adm_dep_ok_"):
-        raw_data = call.data.replace("adm_dep_ok_", "")
-        data_parts = raw_data.split("_")
-        if len(data_parts) >= 2:
- 
