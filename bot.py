@@ -5,25 +5,25 @@ import threading
 import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# ----------------- خادم ويب مدمج لحل مشكلة Render -----------------
+# ----------------- خادم ويب مدمج لحل مشكلة منصة Render -----------------
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is running successfully!")
+        self.wfile.write(b"Bot is running successfully on Render!")
 
 def run_web_server():
     port = int(os.environ.get("PORT", 8080))
     server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler)
     server.serve_forever()
 
-# تشغيل الخادم في الخلفية لإبقاء Render مستقراً ومستمراً بالعمل
+# تشغيل خادم الويب في الخلفية بشكل منفصل لمنع خروج المنصة
 threading.Thread(target=run_web_server, daemon=True).start()
 
-# ----------------- إعدادات البوت والبيانات العامة -----------------
-BOT_TOKEN = "8024354421:AAHozoXzgVkYS2njISHMA9XEuCoyMmmTLg"
-GROUP_ID = -1002083996004
-ADMIN_ID = 6503251012
+# ----------------- إعدادات البوت والبيانات العامة الجديدة -----------------
+BOT_TOKEN = "8624354425:AAHozeXZgVkYS2njISkMA6IMEuCbyMno7Lg"
+GROUP_ID = -1003983996094
+ADMIN_ID = 6693251012
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -100,7 +100,7 @@ def handle_all_messages(message):
     rep = message.reply_to_message
     if rep and "طلب سحب من" in rep.text:
         try:
-            target_id = int(rep.text.split("المعرف: ")[1].split("\n")[0].strip())
+            target_id = int(rep.text.split("المعرف: ").split("\n").strip())
             if message.text:
                 bot.send_message(target_id, f"**رد من الدعم الفني** 📩:\n\n{message.text}", parse_mode="Markdown")
                 bot.reply_to(message, "✅ تم إرسال ردك إلى اللاعب بنجاح.")
@@ -174,8 +174,8 @@ def handle_all_messages(message):
         admin_msg = (
             f"**💰 طلب شحن حساب جديد**\n\n"
             f"👤 المستخدم: <{user_id}>\n"
-            f"📝 اسم المستخدم: {acc_info[0] if acc_info else 'لا يوجد'}\n"
-            f"🔑 كلمة المرور: {acc_info[1] if acc_info else 'لا يوجد'}\n"
+            f"📝 اسم المستخدم: {acc_info if acc_info else 'لا يوجد'}\n"
+            f"🔑 كلمة المرور: {acc_info if acc_info else 'لا يوجد'}\n"
             f"💵 المبلغ الأساسي: {amount}\n"
             f"🎁 المبلغ مع البونص (5%): {bonus_amount}\n"
             f"💳 وسيلة الشحن: {method}"
@@ -196,7 +196,7 @@ def handle_all_messages(message):
     elif state == "with_step_amount":
         try:
             amount = float(message.text)
-            current_bal = db_query("SELECT balance FROM accounts WHERE user_id=?", (user_id,), fetchone=True)[0]
+            current_bal = db_query("SELECT balance FROM accounts WHERE user_id=?", (user_id,), fetchone=True)
             if amount > current_bal or amount <= 0:
                 bot.send_message(message.chat.id, f"❌ الرصيد غير كافٍ أو المبلغ غير صحيح. رصيدك الحالي: {current_bal}")
                 return
@@ -208,5 +208,5 @@ def handle_all_messages(message):
 
 # ----------------- أمر تشغيل البوت النهائي المستمر -----------------
 if __name__ == "__main__":
-    print("Bot is starting...")
+    print("Original Bot is starting on Render environment...")
     bot.infinity_polling()
