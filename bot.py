@@ -1,22 +1,8 @@
 import telebot
 from telebot import types
 import sqlite3
-import threading
-import os
-from flask import Flask
 
-# ----------------- 1. خادم ويب مدمج باستخدام Flask لحل مشكلة Render -----------------
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Texas Bank Bot is running perfectly on Render!", 200
-
-@app.route('/health')
-def health():
-    return "OK", 200
-
-# ----------------- 2. إعدادات البوت والبيانات العامة المعتمدة -----------------
+# ----------------- 1. إعدادات البوت والبيانات العامة المعتمدة -----------------
 BOT_TOKEN = "8624354425:AAHozeXZgVkYS2njISkMA6IMEuCbyMno7Lg"
 GROUP_ID = -1003983996094
 ADMIN_ID = 6693251012
@@ -24,7 +10,7 @@ ADMIN_ID = 6693251012
 bot = telebot.TeleBot(BOT_TOKEN)
 user_states = {}
 
-# ----------------- 3. قاعدة البيانات SQL -----------------
+# ----------------- 2. قاعدة البيانات SQL -----------------
 def init_db():
     conn = sqlite3.connect("texas_bank.db")
     cursor = conn.cursor()
@@ -53,7 +39,7 @@ def db_query(query, params=(), fetchone=False, fetchall=False, commit=False):
     conn.close()
     return res
 
-# ----------------- 4. القوائم والأزرار (Keyboards) -----------------
+# ----------------- 3. القوائم والأزرار (Keyboards) -----------------
 def get_main_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=1)
     btn_texas = types.InlineKeyboardButton("🐂 حساب Texas", callback_data="menu_texas")
@@ -78,7 +64,7 @@ def get_confirm_keyboard(callback_ok, callback_cancel):
     markup.add(btn_ok, btn_cancel)
     return markup
 
-# ----------------- 5. الأوامر والرسالة الترحيبية -----------------
+# ----------------- 4. الأوامر والرسالة الترحيبية -----------------
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     welcome_text = (
@@ -87,7 +73,7 @@ def send_welcome(message):
     )
     bot.send_message(message.chat.id, welcome_text, reply_markup=get_main_keyboard())
 
-# ----------------- 6. معالجة ضغطات الأزرار (Callback Query) -----------------
+# ----------------- 5. معالجة ضغطات الأزرار (Callback Query) -----------------
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call):
     user_id = call.from_user.id
@@ -176,7 +162,7 @@ def handle_callback_query(call):
             bot.send_message(chat_id, "يرجى ارسال المبلغ الى عنوان المحفظة التالي a18758d5324eb7595d4463ca355ad221", reply_markup=get_confirm_keyboard("confirm_dep_sent", "texas_deposit"))
 
     elif call.data == "confirm_dep_sent":
-        user_states[user_id]["state"] = "dep_proof"
+        user_states[user_id] = {"state": "dep_proof", "method": user_states[user_id]["method"], "amount": user_states[user_id]["amount"]}
         bot.send_message(chat_id, "يرجى إرسال صورة إيصال الدفع مع كتابة رقم العملية في نفس الرسالة:")
 
     elif call.data == "confirm_dep_final":
@@ -196,3 +182,10 @@ def handle_callback_query(call):
                 bot.send_photo(GROUP_ID, photo_id, caption=admin_msg, reply_markup=markup)
             else:
                 bot.send_message(GROUP_ID, admin_msg, reply_markup=markup)
+            user_states.pop(user_id, None)
+
+    elif call.data.startswith("adm_dep_ok_"):
+        raw_data = call.data.replace("adm_dep_ok_", "")
+        data_parts = raw_data.split("_")
+        if len(data_parts) >= 2:
+ 
