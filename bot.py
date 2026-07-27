@@ -30,9 +30,11 @@ def home():
 def health():
     return "OK", 200
 
-# ------- 3. قاعدة البيانات SQL -------
+# ------- 3. قاعدة البيانات SQL (تعديل المسار ليتوافق مع Render) -------
+DB_PATH = "/tmp/texas_bank.db"
+
 def init_db():
-    conn = sqlite3.connect("texas_bank.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS accounts (
@@ -49,7 +51,7 @@ def init_db():
 init_db()
 
 def db_query(query, params=(), fetchone=False, fetchall=False, commit=False):
-    conn = sqlite3.connect("texas_bank.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(query, params)
     res = None
@@ -111,7 +113,7 @@ def handle_callback_query(call):
         bot.edit_message_text(welcome_text, chat_id, msg_id, reply_markup=get_main_keyboard())
 
     elif call.data == "main_info":
-        bot.send_message(chat_id, "📝 جاري مراجعة طلبات شحن رصيد حسابك البرمجي، في حال توجيه البوت ميزة (Reply) يرجى معلومات حسابك السيادية ليتوفر الرد الفوري حل هذه الرسالة 📝")
+        bot.send_message(chat_id, "📝 جاري مراجعة طلبات شحن رصيد حسابك البرمجي، في حال توججه البوت ميزة (Reply) يرجى معلومات حسابك السيادية ليتوفر الرد الفوري حل هذه الرسالة 📝")
 
     elif call.data == "main_support":
         user_states[user_id] = {"state": "waiting_support_text"}
@@ -155,7 +157,6 @@ def handle_callback_query(call):
 
     elif call.data.startswith("adm_acc_reject_"):
         target_id = int(call.data.replace("adm_acc_reject_", ""))
-        # تم تصحيح الفاصلة هنا من (،) العربية إلى (,) الإنجليزية
         bot.edit_message_text(f"❌ تم رفض حساب ({target_id})", chat_id, msg_id)
         bot.send_message(target_id, "❌ عذراً، تم رفض الحساب مستخدم بالفعل، يرجى تغييرها وإعادة المحاولة ❌")
         user_states[target_id] = {"state": "create_username"}
@@ -206,3 +207,4 @@ def handle_callback_query(call):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+ 
