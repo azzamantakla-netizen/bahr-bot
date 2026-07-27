@@ -3,27 +3,25 @@ from telebot import types
 import sqlite3
 import threading
 import os
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from flask import Flask
 
-# ----------------- 1. خادم ويب مصلح بالكامل لمنصة Render -----------------
-class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/plain")
-        self.end_headers()
-        self.wfile.write(b"Texas Bank Bot is running perfectly on Render!")
+# ----------------- 1. خادم ويب مدمج باستخدام Flask لحل مشكلة Render -----------------
+app = Flask(__name__)
 
-    def do_HEAD(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/plain")
-        self.end_headers()
+@app.route('/')
+def home():
+    return "Texas Bank Bot is running perfectly on Render!", 200
+
+@app.route('/health')
+def health():
+    return "OK", 200
 
 def run_web_server():
     port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler)
-    server.serve_forever()
+    # تشغيل خادم الويب على المنفذ المطلوب بشكل متوافق تماماً مع Render
+    app.run(host='0.0.0.0', port=port)
 
-# تشغيل خادم الويب المطور في الخلفية
+# تشغيل خادم الويب في الخلفية بشكل منفصل لمنع خروج المنصة
 threading.Thread(target=run_web_server, daemon=True).start()
 
 # ----------------- 2. إعدادات البوت والبيانات العامة المعتمدة -----------------
@@ -198,3 +196,5 @@ def handle_callback_query(call):
             proof_text = user_states[user_id].get("proof_text", "لا يوجد نص")
             photo_id = user_states[user_id].get("photo_id")
             
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("✅ موافقة", callback_data=f"adm_dep_ok_{user_id}_{bonus_amount}"))
