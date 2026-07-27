@@ -5,7 +5,7 @@ import threading
 import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# ----------------- 1. خادم ويب مطور ومصلح بالكامل لمنصة Render -----------------
+# ----------------- 1. خادم ويب مصلح بالكامل لمنصة Render -----------------
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -32,8 +32,6 @@ GROUP_ID = -1003983996094
 ADMIN_ID = 6693251012
 
 bot = telebot.TeleBot(BOT_TOKEN)
-
-# قاموس مؤقت لتخزين خطوات المستخدمين الحالية (State Management)
 user_states = {}
 
 # ----------------- 3. قاعدة البيانات SQL -----------------
@@ -110,7 +108,7 @@ def handle_callback_query(call):
         bot.edit_message_text("مرحباً بك! 👋\n🔷 كيف يمكنني مساعدتك اليوم؟", chat_id, msg_id, reply_markup=get_texas_keyboard())
     
     elif call.data == "back_to_main":
-        welcome_text = "مرحبا بك ضمن عائلتنا صمم هذا البوت ليلبي جميع احتياجتك تمتع معنا بسرعة قصوى في السحب ومرونة عالية in الايداع"
+        welcome_text = "مرحبا بك ضمن عائلتنا صمم هذا البوت ليلبي جميع احتياجتك تمتع معنا بسرعة قصوى في السحب ومرونة عالية في الايداع"
         bot.edit_message_text(welcome_text, chat_id, msg_id, reply_markup=get_main_keyboard())
 
     elif call.data == "main_info":
@@ -121,6 +119,86 @@ def handle_callback_query(call):
         user_states[user_id] = {"state": "waiting_support_text"}
         bot.send_message(chat_id, "فريقنا في خدمتك على مدار الساعة فقط ارسل مشكلتك لنقوم بحلها", reply_markup=get_confirm_keyboard("confirm_support", "back_to_main"))
 
+    elif call.data == "confirm_support":
+        if user_id in user_states and "support_msg" in user_states[user_id]:
+            support_text = user_states[user_id]["support_msg"]
+            bot.send_message(chat_id, "⏳ جاري معالجة طلبك، يرجى الانتظار...")
+            bot.send_message(GROUP_ID, f"📩 **رسالة دعم جديدة من اللاعب:** `{user_id}`\n\n📝 المشكلة:\n{support_text}\n\n* للرد على اللاعب، قم بعمل (Reply) على هذه الرسالة مباشرة واكتب ردك.")
+            user_states.pop(user_id, None)
+        else:
+            bot.send_message(chat_id, "❌ لم تقم بكتابة أي رسالة دعم، يرجى المحاولة مجدداً.")
+
+    elif call.data == "texas_create":
+        user_states[user_id] = {"state": "create_username"}
+        bot.send_message(chat_id, "يرجى كتابة اسم المستخدم الذي تريده:")
+
+    elif call.data == "confirm_create":
+        if user_id in user_states and "reg_username" in user_states[user_id] and "reg_password" in user_states[user_id]:
+            username = user_states[user_id]["reg_username"]
+            password = user_states[user_id]["reg_password"]
+            
+            markup = types.InlineKeyboardMarkup()
+            markup.add(
+                types.InlineKeyboardButton("✅ قبول", callback_data=f"adm_acc_approve_{user_id}"),
+                types.InlineKeyboardButton("❌ رفض", callback_data=f"adm_acc_reject_{user_id}")
+            )
+            admin_msg = f"🆕 **طلب إنشاء حساب جديد**\n\n👤 معرف اللاعب: `{user_id}`\n📝 الاسم المقترح: {username}\n🔑 كلمة السر: {password}"
+            bot.send_message(GROUP_ID, admin_msg, reply_markup=markup)
+            
+            db_query("INSERT OR REPLACE INTO accounts (user_id, username, password, balance, status) VALUES (?, ?, ?, 0.0, 'pending')", (user_id, username, password), commit=True)
+            bot.send_message(chat_id, "⏳ جاري معالجة طلبك، يرجى الانتظار...")
+            user_states.pop(user_id, None)
+
+    elif call.data.startswith("adm_acc_approve_"):
+        target_id = int(call.data.replace("adm_acc_approve_", ""))
+        db_query("UPDATE accounts SET status='approved' WHERE user_id=?", (target_id,), commit=True)
+        bot.edit_message_text(f"✅ تم قبول حساب اللاعب {target_id}", chat_id, msg_id)
+        bot.send_message(target_id, "🎉 تم إنشاء حسابك بنجاح! يمكنك الآن استخدام حسابك.")
+
+    elif call.data.startswith("adm_acc_reject_"):
+        target_id = int(call.data.replace("adm_acc_reject_", ""))
+        bot.edit_message_text(f"❌ تم رفض حساب اللاعب {target_id}", chat_id, msg_id)
+        bot.send_message(target_id, "❌ عذراً، اسم المستخدم أو كلمة السر مستخدمة بالفعل. يرجى تغييرها وإعادة المحاولة.")
+        user_states[target_id] = {"state": "create_username"}
+        bot.send_message(target_id, "يرجى كتابة اسم المستخدم الجديد الذي تريده:")
+
+    elif call.data == "texas_deposit":
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            types.InlineKeyboardButton("📱 Syriatel Cash", callback_data="dep_syriatel"),
+            types.InlineKeyboardButton("💬 Sham Cash SYP", callback_data="dep_sham_syp"),
+            types.InlineKeyboardButton("💵 Sham Cash Dollar", callback_data="dep_sham_usd"),
+            types.InlineKeyboardButton("↩️ رجوع", callback_data="menu_texas")
+        )
+        bot.edit_message_text("💰 اختر طريقة الدفع المناسبة لشحن حسابك:", chat_id, msg_id, reply_markup=markup)
+
+    elif call.data in ["dep_syriatel", "dep_sham_syp", "dep_sham_usd"]:
+        method = "Syriatel Cash" if call.data == "dep_syriatel" else ("Sham Cash SYP" if call.data == "dep_sham_syp" else "Sham Cash Dollar")
+        user_states[user_id] = {"state": "dep_amount", "method": method}
+        bot.send_message(chat_id, "🎁 تهانينا! ستحصل على بونص مجاني 5% إضافي على عملية التعبئة هذه.")
+        bot.send_message(chat_id, "يرجى كتابة المبلغ المراد شحنه بالأرقام:")
+
+    elif call.data == "confirm_dep_amount":
+        method = user_states[user_id]["method"]
+        if method == "Syriatel Cash":
+            bot.send_message(chat_id, "يرجى إرسال الأموال الآن إلى الكود التالي: 48122120", reply_markup=get_confirm_keyboard("confirm_dep_sent", "texas_deposit"))
+        else:
+            bot.send_message(chat_id, "يرجى ارسال المبلغ الى عنوان المحفظة التالي a18758d5324eb7595d4463ca355ad221", reply_markup=get_confirm_keyboard("confirm_dep_sent", "texas_deposit"))
+
+    elif call.data == "confirm_dep_sent":
+        user_states[user_id]["state"] = "dep_proof"
+        bot.send_message(chat_id, "يرجى إرسال صورة إيصال الدفع مع كتابة رقم العملية في نفس الرسالة:")
+
+    elif call.data == "confirm_dep_final":
+        if user_id in user_states and "proof_done" in user_states[user_id]:
+            bot.send_message(chat_id, "⏳ جاري معالجة طلبك، يرجى الانتظار...")
+            amount = user_states[user_id]["amount"]
+            bonus_amount = amount * 1.05
+            method = user_states[user_id]["method"]
+            proof_text = user_states[user_id].get("proof_text", "لا يوجد نص")
+            photo_id = user_states[user_id].get("photo_id")
+            
+ 
     elif call.data == "confirm_support":
         if user_id in user_states and "support_msg" in user_states[user_id]:
             support_text = user_states[user_id]["support_msg"]
