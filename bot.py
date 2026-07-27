@@ -15,7 +15,6 @@ user_states = {}
 # ------- 2. إعداد خادم Flask والـ Webhook لمنصة Render -------
 app = Flask(__name__)
 
-# تعديل المسار ليكون الرئيسي ليسهل استقبال البيانات من تليجرام مباشرة
 @app.route('/', methods=['POST'])
 def getMessage():
     json_string = request.stream.read().decode('utf-8')
@@ -156,7 +155,8 @@ def handle_callback_query(call):
 
     elif call.data.startswith("adm_acc_reject_"):
         target_id = int(call.data.replace("adm_acc_reject_", ""))
-        bot.edit_message_text(f"❌ تم رفض حساب ({target_id})"، chat_id, msg_id)
+        # تم تصحيح الفاصلة هنا من (،) العربية إلى (,) الإنجليزية
+        bot.edit_message_text(f"❌ تم رفض حساب ({target_id})", chat_id, msg_id)
         bot.send_message(target_id, "❌ عذراً، تم رفض الحساب مستخدم بالفعل، يرجى تغييرها وإعادة المحاولة ❌")
         user_states[target_id] = {"state": "create_username"}
         bot.send_message(target_id, "👤 يرجى كتابة اسم المستخدم الجديد الذي تريد:")
@@ -198,10 +198,11 @@ def handle_callback_query(call):
             
             markup = types.InlineKeyboardMarkup()
             markup.add(types.InlineKeyboardButton("✅ شحن الرصيد", callback_data=f"adm_dep_ok_{user_id}_{bonus_amount}"))
-            # يمكن إضافة زر الرفض هنا مستقبلاً
             bot.send_message(GROUP_ID, f"💳 طلب شحن رصيد جديد عبر {method}\nالمبلغ المطلوب: {amount}\nالمبلغ مع البونص: {bonus_amount}\nنص المعاملة: {proof_text}")
             if photo_id:
                 bot.send_photo(GROUP_ID, photo_id)
 
-# ------- 7. تشغيل خادم الويب (هذا الجزء الذي كان ناقصاً ويتسبب بالإغلاق المباشر) -------
+# ------- 7. تشغيل خادم الويب -------
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
