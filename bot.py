@@ -5,19 +5,25 @@ import threading
 import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# ----------------- 1. خادم ويب مدمج لحل مشكلة منصة Render -----------------
+# ----------------- 1. خادم ويب مطور ومصلح بالكامل لمنصة Render -----------------
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
+        self.send_header("Content-type", "text/plain")
         self.end_headers()
         self.wfile.write(b"Texas Bank Bot is running perfectly on Render!")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
 
 def run_web_server():
     port = int(os.environ.get("PORT", 8080))
     server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler)
     server.serve_forever()
 
-# تشغيل خادم الويب في الخلفية بشكل منفصل لمنع خروج المنصة
+# تشغيل خادم الويب المطور في الخلفية
 threading.Thread(target=run_web_server, daemon=True).start()
 
 # ----------------- 2. إعدادات البوت والبيانات العامة المعتمدة -----------------
@@ -100,20 +106,17 @@ def handle_callback_query(call):
     chat_id = call.message.chat.id
     msg_id = call.message.message_id
     
-    # --- قائمة حساب تكساس الفرعية واختيار اللون الافتراضي مع شعار الثور ---
     if call.data == "menu_texas":
         bot.edit_message_text("مرحباً بك! 👋\n🔷 كيف يمكنني مساعدتك اليوم؟", chat_id, msg_id, reply_markup=get_texas_keyboard())
     
     elif call.data == "back_to_main":
-        welcome_text = "مرحبا بك ضمن عائلتنا صمم هذا البوت ليلبي جميع احتياجتك تمتع معنا بسرعة قصوى في السحب ومرونة عالية في الايداع"
+        welcome_text = "مرحبا بك ضمن عائلتنا صمم هذا البوت ليلبي جميع احتياجتك تمتع معنا بسرعة قصوى في السحب ومرونة عالية in الايداع"
         bot.edit_message_text(welcome_text, chat_id, msg_id, reply_markup=get_main_keyboard())
 
-    # --- سيناريو زر معلومات المتكامل ---
     elif call.data == "main_info":
         bot.send_message(chat_id, "⏳ جاري معالجة طلبك، يرجى الانتظار...")
         bot.send_message(GROUP_ID, f"⚠️ اللاعب `{user_id}` يطلب معلومات حسابه.\nيرجى الرد على هذه الرسالة (Reply) وكتابة المعلومات بالترتيب (اسم المستخدم، كلمة المرور، الرصيد) ليرسلها البوت منسقة.")
 
-    # --- سيناريو زر الدعم المتكامل ---
     elif call.data == "main_support":
         user_states[user_id] = {"state": "waiting_support_text"}
         bot.send_message(chat_id, "فريقنا في خدمتك على مدار الساعة فقط ارسل مشكلتك لنقوم بحلها", reply_markup=get_confirm_keyboard("confirm_support", "back_to_main"))
@@ -122,14 +125,11 @@ def handle_callback_query(call):
         if user_id in user_states and "support_msg" in user_states[user_id]:
             support_text = user_states[user_id]["support_msg"]
             bot.send_message(chat_id, "⏳ جاري معالجة طلبك، يرجى الانتظار...")
-            
-            # إرسال للمشرفين مع أيدي اللاعب
             bot.send_message(GROUP_ID, f"📩 **رسالة دعم جديدة من اللاعب:** `{user_id}`\n\n📝 المشكلة:\n{support_text}\n\n* للرد على اللاعب، قم بعمل (Reply) على هذه الرسالة مباشرة واكتب ردك.")
             user_states.pop(user_id, None)
         else:
             bot.send_message(chat_id, "❌ لم تقم بكتابة أي رسالة دعم، يرجى المحاولة مجدداً.")
 
-    # --- سيناريو إنشاء حساب تكساس المفصل ---
     elif call.data == "texas_create":
         user_states[user_id] = {"state": "create_username"}
         bot.send_message(chat_id, "يرجى كتابة اسم المستخدم الذي تريده:")
@@ -161,11 +161,9 @@ def handle_callback_query(call):
         target_id = int(call.data.split("_")[-1])
         bot.edit_message_text(f"❌ تم رفض حساب اللاعب {target_id}", chat_id, msg_id)
         bot.send_message(target_id, "❌ عذراً، اسم المستخدم أو كلمة السر مستخدمة بالفعل. يرجى تغييرها وإعادة المحاولة.")
-        # إعادة المحاولة التلقائية للاعب فوراً
         user_states[target_id] = {"state": "create_username"}
         bot.send_message(target_id, "يرجى كتابة اسم المستخدم الجديد الذي تريده:")
 
-    # --- سيناريو شحن الحساب وإضافة البونص 5% ---
     elif call.data == "texas_deposit":
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
@@ -196,6 +194,11 @@ def handle_callback_query(call):
     elif call.data == "confirm_dep_final":
         if user_id in user_states and "proof_done" in user_states[user_id]:
             bot.send_message(chat_id, "⏳ جاري معالجة طلبك، يرجى الانتظار...")
-            
             amount = user_states[user_id]["amount"]
+            bonus_amount = amount * 1.05
+            method = user_states[user_id]["method"]
+            proof_text = user_states[user_id].get("proof_text", "لا يوجد نص")
+            photo_id = user_states[user_id].get("photo_id")
+            
+            markup = types.InlineKeyboardMarkup()
  
