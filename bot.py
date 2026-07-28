@@ -21,7 +21,7 @@ OWNER_ID = 6693251012
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# 3. إعداد قاعدة البيانات ونظام طابور الأدوار والصلاحيات
+# 3. إعداد قاعدة البيانات ونظام طابور الأدوار والصالحيات
 def init_db():
     conn = sqlite3.connect("bot_database.db")
     cursor = conn.cursor()
