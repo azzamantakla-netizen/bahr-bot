@@ -3,9 +3,8 @@ import sys
 import logging
 import asyncio
 import sqlite3
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
-from magic_filter import F
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -181,7 +180,7 @@ async def cmd_start_handler(message: types.Message):
     
     welcome_msg = (
         "أهلاً بك في بوت شحن الرصيد الفوري آلياً\n"
-        "رصيدك في أمان يتيح لك هذا البوت سرعة قصوى في الإيداع ومرونة عالية في السحب\n"
+        "رصيدك في أمان يتيح لك this البوت سرعة قصوى في الإيداع ومرونة عالية في السحب\n"
         "اختر أحد الخيارات في الأسفل 👇"
     )
     await message.answer(welcome_msg, reply_markup=main_keyboard(user_id))
