@@ -13,7 +13,7 @@ from aiohttp import web
 # 1. إعداد سجل الأخطاء الاحترافي
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
-# 2. البيانات الخاصة بك المعتمدة والمثبتة (مع التوكن الأخير)
+# 2. البيانات الخاصة بك المعتمدة والمثبتة
 BOT_TOKEN = "8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8"
 GROUP_ID = -1003983996094
 OWNER_ID = 6693251012
@@ -58,31 +58,40 @@ def init_db():
 # دالات التحقق والمساعدات لقاعدة البيانات
 def is_admin(user_id: int) -> bool:
     if user_id == OWNER_ID: return True
-    conn = sqlite3.connect("bot_database.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM admins WHERE user_id = ?", (user_id,))
-    res = cursor.fetchone()
-    conn.close()
-    return res is not None
+    try:
+        conn = sqlite3.connect("bot_database.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id FROM admins WHERE user_id = ?", (user_id,))
+        res = cursor.fetchone()
+        conn.close()
+        return res is not None
+    except Exception:
+        return False
 
 def get_user_data(user_id: int):
-    conn = sqlite3.connect("bot_database.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT balance, site_username, site_password FROM users WHERE user_id = ?", (user_id,))
-    res = cursor.fetchone()
-    conn.close()
-    return res if res else (0.0, None, None)
+    try:
+        conn = sqlite3.connect("bot_database.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT balance, site_username, site_password FROM users WHERE user_id = ?", (user_id,))
+        res = cursor.fetchone()
+        conn.close()
+        return res if res else (0.0, None, None)
+    except Exception:
+        return (0.0, None, None)
 
 def get_queue_position(user_id: int) -> int:
-    conn = sqlite3.connect("bot_database.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT id FROM withdraw_queue WHERE status = 'PENDING' ORDER BY id ASC")
-    rows = cursor.fetchall()
-    conn.close()
-    for index, row in enumerate(rows):
-        if row == user_id:
-            return index + 1
-    return 1
+    try:
+        conn = sqlite3.connect("bot_database.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM withdraw_queue WHERE status = 'PENDING' ORDER BY id ASC")
+        rows = cursor.fetchall()
+        conn.close()
+        for index, row in enumerate(rows):
+            if row[0] == user_id:
+                return index + 1
+        return 1
+    except Exception:
+        return 1
 
 # 4. حالات الإدخال FSM لنظام البيانات والأرقام
 class Form(StatesGroup):
@@ -159,12 +168,15 @@ async def cmd_start_handler(message: types.Message):
     username = message.from_user.username or "لا يوجد"
     full_name = message.from_user.full_name
     
-    conn = sqlite3.connect("bot_database.db")
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR IGNORE INTO users (user_id, username, full_name) VALUES (?, ?, ?)",
-                   (user_id, username, full_name))
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect("bot_database.db")
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR IGNORE INTO users (user_id, username, full_name) VALUES (?, ?, ?)",
+                       (user_id, username, full_name))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logging.error(f"Database error in start: {e}")
     
     welcome_msg = (
         "أهلاً بك في بوت شحن الرصيد الفوري آلياً\n"
@@ -218,7 +230,7 @@ async def process_menu_texas_callback(callback: types.CallbackQuery):
 async def process_texas_account_callback(callback: types.CallbackQuery, state: FSMContext):
     bal, site_user, site_pass = get_user_data(callback.from_user.id)
     if site_user:
-        text = f"🔐 بيانات حسابك المرتبط:\n👤 المستخدم: `{site_user}`\n🔑 كلمة مور: `{site_pass}`\n💰 الرصيد المتاح: {bal:.2f} ليرة"
+        text = f"🔐 بيانات حسابك المرتبط:\n👤 المستخدم: `{site_user}`\n🔑 كلمة المرور: `{site_pass}`\n💰 الرصيد المتاح: {bal:.2f} ليرة"
         builder = InlineKeyboardBuilder()
         builder.button(text="🔙 رجوع", callback_data="menu_texas")
         await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
@@ -227,12 +239,3 @@ async def process_texas_account_callback(callback: types.CallbackQuery, state: F
         await callback.message.answer("⚙️ إنشاء حساب جديد | يرجى إرسال اسم المستخدم الذي ترغب به في الموقع:")
     await callback.answer()
 
-# خادم الويب الأساسي للمحاذاة والتشغيل المستمر في render بدون أخطاء
-async def web_handle(request):
-    return web.Response(text="Bot Web Server is Running Successfully!")
-
-# دالة التشغيل الرئيسية المحدثة لفتح المنفذ فورا لمنع الـ Timeout في Render
-async def main():
-    # 1. تهيئة قاعدة البيانات أولاً
-    init_db()
-    
