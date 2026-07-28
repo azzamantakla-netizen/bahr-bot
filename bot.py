@@ -1,210 +1,238 @@
-import telebot
-from telebot import types
-import sqlite3
 import os
-from flask import Flask, request
+import sys
+import logging
+import asyncio
+import sqlite3
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import CommandStart
+from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiohttp import web
 
-# ------- 1. إعدادات البوت والروابط -------
+# 1. إعداد سجل الأخطاء
+logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+
+# 2. البيانات الخاصة بك الممررة مسبقاً
 BOT_TOKEN = "8624354425:AAHozeXZgVkYS2njISkMA6IMEuCbyMno7Lg"
-GROUP_ID = -1002083906004
-ADMIN_ID = 6003251012
+GROUP_ID = -1003983996094
+OWNER_ID = 6693251012
 
-bot = telebot.TeleBot(BOT_TOKEN)
-user_states = {}
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
 
-# ------- 2. إعداد خادم Flask والـ Webhook لمنصة Render -------
-app = Flask(__name__)
-
-@app.route('/', methods=['POST'])
-def getMessage():
-    json_string = request.stream.read().decode('utf-8')
-    update = telebot.types.Update.de_json(json_string)
-    bot.process_new_updates([update])
-    return "!", 200
-
-@app.route('/')
-def home():
-    return "Texas Bank Bot Webhook Server is Stable and Active!", 200
-
-@app.route('/health')
-def health():
-    return "OK", 200
-
-# ------- 3. قاعدة البيانات SQL (تعديل المسار ليتوافق مع Render) -------
-DB_PATH = "/tmp/texas_bank.db"
-
+# 3. إعداد قاعدة بيانات المشرفين والمشتركين تلقائياً
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect("bot_database.db")
     cursor = conn.cursor()
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS accounts (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT,
-            password TEXT,
-            balance REAL DEFAULT 0.0,
-            status TEXT DEFAULT 'pending'
-        )
-    """)
+    CREATE TABLE IF NOT EXISTS users (
+        user_id INTEGER PRIMARY KEY,
+        username TEXT,
+        full_name TEXT
+    )""")
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS admins (
+        user_id INTEGER PRIMARY KEY,
+        role TEXT
+    )""")
+    cursor.execute("INSERT OR IGNORE INTO admins (user_id, role) VALUES (?, ?)", (OWNER_ID, "Owner"))
     conn.commit()
     conn.close()
 
 init_db()
 
-def db_query(query, params=(), fetchone=False, fetchall=False, commit=False):
-    conn = sqlite3.connect(DB_PATH)
+def is_admin(user_id: int) -> bool:
+    if user_id == OWNER_ID:
+        return True
+    conn = sqlite3.connect("bot_database.db")
     cursor = conn.cursor()
-    cursor.execute(query, params)
-    res = None
-    if fetchone: res = cursor.fetchone()
-    if fetchall: res = cursor.fetchall()
-    if commit: conn.commit()
+    cursor.execute("SELECT user_id FROM admins WHERE user_id = ?", (user_id,))
+    result = cursor.fetchone()
     conn.close()
-    return res
+    return result is not None
 
-# ------- 4. القوائم والأزرار (Keyboards) -------
-def get_main_keyboard():
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    btn_texas = types.InlineKeyboardButton("🏦 Texas", callback_data="menu_texas")
-    btn_info = types.InlineKeyboardButton("📝 معلومات", callback_data="main_info")
-    btn_support = types.InlineKeyboardButton("📞 الدعم", callback_data="main_support")
-    markup.add(btn_texas, btn_info, btn_support)
-    return markup
+def get_all_users():
+    conn = sqlite3.connect("bot_database.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM users")
+    users = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return users
 
-def get_texas_keyboard():
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    btn_create = types.InlineKeyboardButton("👤 إنشاء حساب Texas", callback_data="texas_create")
-    btn_deposit = types.InlineKeyboardButton("💳 شحن الحساب", callback_data="texas_deposit")
-    btn_withdraw = types.InlineKeyboardButton("💰 سحب الرصيد", callback_data="texas_withdraw")
-    btn_back = types.InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main")
-    markup.add(btn_create, btn_deposit, btn_withdraw, btn_back)
-    return markup
+# 4. حالات الإدخال (FSM) لمنع التداخل
+class Form(StatesGroup):
+    deposit_amount = State()
+    withdraw_amount = State()
+    support_msg = State()
+    broadcast_msg = State()
+    promote_admin = State()
 
-def get_confirm_keyboard(callback_ok, callback_cancel):
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_ok = types.InlineKeyboardButton("✅ موافق", callback_data=callback_ok)
-    btn_cancel = types.InlineKeyboardButton("❌ إلغاء", callback_data=callback_cancel)
-    markup.add(btn_ok, btn_cancel)
-    return markup
+# 5. كيبورد الأزرار الاحترافية
+def main_keyboard(user_id: int):
+    builder = ReplyKeyboardBuilder()
+    builder.button(text="💰 إيداع")
+    builder.button(text="💸 سحب")
+    builder.button(text="📞 الدعم الفني")
+    if is_admin(user_id):
+        builder.button(text="⚙️ لوحة التحكم")
+    builder.adjust(2, 1, 1)
+    return builder.as_markup(resize_keyboard=True)
 
-# ------- 5. الأوامر والرسائل الرئيسية -------
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    welcome_text = (
-        "مرحباً بك ضمن عائلتنا، مسجل هنا لنهتم بكل احتياجاتك\n"
-        "تجمع منصتنا طموح الفرد ومرونة عالية في النجاح"
+def admin_keyboard():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📢 إذاعة للمشتركين", callback_data="admin_broadcast")
+    builder.button(text="➕ تعيين أدمن جديد", callback_data="admin_promote")
+    builder.button(text="🔄 إعادة تشغيل البوت", callback_data="admin_restart")
+    builder.adjust(1)
+    return builder.as_markup()
+
+# 6. معالجة الرسائل والأوامر
+@dp.message(CommandStart())
+async def cmd_start(message: types.Message):
+    user_id = message.from_user.id
+    username = message.from_user.username or "لا يوجد"
+    full_name = message.from_user.full_name
+    
+    conn = sqlite3.connect("bot_database.db")
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO users (user_id, username, full_name) VALUES (?, ?, ?)", 
+                   (user_id, username, full_name))
+    conn.commit()
+    conn.close()
+    
+    await message.answer(
+        f"مرحباً بك {full_name} في البوت المالي الاحترافي! 🚀\n\nاختر الخدمة المطلوبة من الأزرار بالأسفل:",
+        reply_markup=main_keyboard(user_id)
     )
-    bot.send_message(message.chat.id, welcome_text, reply_markup=get_main_keyboard())
 
-# ------- 6. معالجة ضغطات الأزرار (CALLBACK QUERY) -------
-@bot.callback_query_handler(func=lambda call: True)
-def handle_callback_query(call):
-    user_id = call.from_user.id
-    chat_id = call.message.chat.id
-    msg_id = call.message.message_id
+# أزرار العمليات (إيداع وسحب ودعم)
+@dp.message(F.text == "💰 إيداع")
+async def process_deposit(message: types.Message, state: FSMContext):
+    await state.set_state(Form.deposit_amount)
+    await message.answer("من فضلك، أرسل قيمة المبلغ الذي ترغب في إيداعه:")
 
-    if call.data == "menu_texas":
-        bot.edit_message_text("🤔 كيف يمكنني مساعدتك اليوم؟", chat_id, msg_id, reply_markup=get_texas_keyboard())
+@dp.message(Form.deposit_amount)
+async def deposit_entered(message: types.Message, state: FSMContext):
+    amount = message.text
+    await state.clear()
+    await message.answer(f"✅ تم تسجيل طلب الإيداع بقيمة: {amount}\nانتظر موافقة الإدارة.")
+    await bot.send_message(
+        chat_id=GROUP_ID,
+        text=f"🔔 **طلب إيداع جديد**\n\n👤 المستخدم: {message.from_user.full_name}\n🆔 الأيدي: `{message.from_user.id}`\n💰 المبلغ: {amount}",
+        parse_mode="Markdown"
+    )
 
-    elif call.data == "back_to_main":
-        welcome_text = (
-            "مرحباً بك ضمن عائلتنا، مسجل هنا لنهتم بكل احتياجاتك\n"
-            "تجمع منصتنا طموح الفرد ومرونة عالية في النجاح"
-        )
-        bot.edit_message_text(welcome_text, chat_id, msg_id, reply_markup=get_main_keyboard())
+@dp.message(F.text == "💸 سحب")
+async def process_withdraw(message: types.Message, state: FSMContext):
+    await state.set_state(Form.withdraw_amount)
+    await message.answer("من فضلك، أرسل قيمة المبلغ الذي ترغب في سحبه:")
 
-    elif call.data == "main_info":
-        bot.send_message(chat_id, "📝 جاري مراجعة طلبات شحن رصيد حسابك البرمجي، في حال توججه البوت ميزة (Reply) يرجى معلومات حسابك السيادية ليتوفر الرد الفوري حل هذه الرسالة 📝")
+@dp.message(Form.withdraw_amount)
+async def withdraw_entered(message: types.Message, state: FSMContext):
+    amount = message.text
+    await state.clear()
+    await message.answer(f"✅ تم تسجيل طلب السحب بقيمة: {amount}\nسيتم مراجعته فوراً.")
+    await bot.send_message(
+        chat_id=GROUP_ID,
+        text=f"🔔 **طلب سحب جديد**\n\n👤 المستخدم: {message.from_user.full_name}\n🆔 الأيدي: `{message.from_user.id}`\n💸 المبلغ: {amount}",
+        parse_mode="Markdown"
+    )
 
-    elif call.data == "main_support":
-        user_states[user_id] = {"state": "waiting_support_text"}
-        bot.send_message(chat_id, "📞 فريقنا في خدمتك على مدار الساعة، فقط ارسل مشكلتك ليقوم فريقنا بحلها", reply_markup=get_confirm_keyboard("confirm_support", "back_to_main"))
+@dp.message(F.text == "📞 الدعم الفني")
+async def process_support(message: types.Message, state: FSMContext):
+    await state.set_state(Form.support_msg)
+    await message.answer("اكتب رسالتك أو استفسارك الآن وسيتم توجيهها للدعم الفني مباشرة:")
 
-    elif call.data == "confirm_support":
-        if user_id in user_states and "support_msg" in user_states[user_id]:
-            support_text = user_states[user_id]["support_msg"]
-            bot.send_message(chat_id, "⏳ جاري معالجة طلبك يرجى الانتظار...")
-            bot.send_message(GROUP_ID, f"📥 نداء دعم جديد من ({user_id}):\n\n{support_text}")
-            user_states.pop(user_id, None)
-        else:
-            bot.send_message(chat_id, "❌ لم تقم بكتابة أي رسالة دعم، يرجى المحاولة مجدداً.")
+@dp.message(Form.support_msg)
+async def support_entered(message: types.Message, state: FSMContext):
+    msg_text = message.text
+    await state.clear()
+    await message.answer("✅ تم إرسال رسالتك بنجاح للدعم الفني، سيتواصل معك أحد المشرفين قريباً.")
+    await bot.send_message(
+        chat_id=GROUP_ID,
+        text=f"📩 **رسالة دعم فني جديدة**\n\n👤 من: {message.from_user.full_name}\n🆔 الأيدي: `{message.from_user.id}`\n💬 الرسالة: {msg_text}",
+        parse_mode="Markdown"
+    )
 
-    elif call.data == "texas_create":
-        user_states[user_id] = {"state": "create_username"}
-        bot.send_message(chat_id, "👤 يرجى كتابة اسم المستخدم الذي تريد:")
+# لوحة تحكم الإدارة
+@dp.message(F.text == "⚙️ لوحة التحكم")
+async def admin_panel(message: types.Message):
+    if not is_admin(message.from_user.id): return
+    await message.answer("مرحباً بك في لوحة تحكم الإدارة. اختر الإجراء المطلوب:", reply_markup=admin_keyboard())
 
-    elif call.data == "confirm_create":
-        if user_id in user_states and "reg_username" in user_states[user_id] and "reg_password" in user_states[user_id]:
-            username = user_states[user_id]["reg_username"]
-            password = user_states[user_id]["reg_password"]
-            
-            markup = types.InlineKeyboardMarkup()
-            markup.add(
-                types.InlineKeyboardButton("✅ قبول", callback_data=f"adm_acc_approve_{user_id}"),
-                types.InlineKeyboardButton("❌ رفض", callback_data=f"adm_acc_reject_{user_id}")
-            )
-            admin_msg = f"🆕 طلب إنشاء حساب جديد من ({username}) المعرف الخاص به ({user_id}) معرف القاعدة 🗄️"
-            bot.send_message(GROUP_ID, admin_msg, reply_markup=markup)
-            
-            db_query("INSERT OR REPLACE INTO accounts (user_id, username, password, balance, status) VALUES (?, ?, ?, ?, ?)", (user_id, username, password, 0.0, 'pending'), commit=True)
-            bot.send_message(chat_id, "⏳ جاري معالجة طلبك يرجى الانتظار...")
-            user_states.pop(user_id, None)
+@dp.callback_query(F.data == "admin_broadcast")
+async def start_broadcast(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id): return
+    await state.set_state(Form.broadcast_msg)
+    await callback.message.answer("أرسل الآن الرسالة التي تريد إذاعتها لجميع المشتركين:")
+    await callback.answer()
 
-    elif call.data.startswith("adm_acc_approve_"):
-        target_id = int(call.data.replace("adm_acc_approve_", ""))
-        db_query("UPDATE accounts SET status='approved' WHERE user_id=?", (target_id,), commit=True)
-        bot.edit_message_text(f"✅ تم قبول طلب الحساب لـ ({target_id})", chat_id, msg_id)
-        bot.send_message(target_id, "🎉 تم إنشاء حسابك بنجاح! يمكنك الآن استخدام حسابك.")
+@dp.message(Form.broadcast_msg)
+async def dynamic_broadcast(message: types.Message, state: FSMContext):
+    await state.clear()
+    users = get_all_users()
+    success_count = 0
+    await message.answer(f"⏳ يتم الآن الإرسال إلى {len(users)} مشترك...")
+    for user_id in users:
+        try:
+            await bot.send_message(chat_id=user_id, text=message.text)
+            success_count += 1
+            await asyncio.sleep(0.05)
+        except Exception:
+            continue
+    await message.answer(f"✅ اكتملت الإذاعة بنجاح!\nتم الإرسال إلى {success_count} مستخدم.")
 
-    elif call.data.startswith("adm_acc_reject_"):
-        target_id = int(call.data.replace("adm_acc_reject_", ""))
-        bot.edit_message_text(f"❌ تم رفض حساب ({target_id})", chat_id, msg_id)
-        bot.send_message(target_id, "❌ عذراً، تم رفض الحساب مستخدم بالفعل، يرجى تغييرها وإعادة المحاولة ❌")
-        user_states[target_id] = {"state": "create_username"}
-        bot.send_message(target_id, "👤 يرجى كتابة اسم المستخدم الجديد الذي تريد:")
+@dp.callback_query(F.data == "admin_promote")
+async def start_promote(callback: types.CallbackQuery, state: FSMContext):
+    if callback.from_user.id != OWNER_ID:
+        await callback.answer("❌ هذا الإجراء متاح للمالك الأساسي فقط!", show_alert=True)
+        return
+    await state.set_state(Form.promote_admin)
+    await callback.message.answer("أرسل الآن (أيدي Telegram ID) الخاص بالشخص الذي تريد منحه صلاحيات أدمن:")
+    await callback.answer()
 
-    elif call.data == "texas_deposit":
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(
-            types.InlineKeyboardButton("📱 Syriatel Cash", callback_data="dep_syriatel"),
-            types.InlineKeyboardButton("📱 Sham Cash SYP", callback_data="dep_sham_syp"),
-            types.InlineKeyboardButton("📱 Sham Cash Dollar", callback_data="dep_sham_usd"),
-            types.InlineKeyboardButton("🔙 رجوع", callback_data="menu_texas")
-        )
-        bot.edit_message_text("💳 اختر طريقة الدفع المناسبة لشحن حسابك:", chat_id, msg_id, reply_markup=markup)
+@dp.message(Form.promote_admin)
+async def promote_entered(message: types.Message, state: FSMContext):
+    await state.clear()
+    try:
+        new_admin_id = int(message.text)
+        conn = sqlite3.connect("bot_database.db")
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR IGNORE INTO admins (user_id, role) VALUES (?, ?)", (new_admin_id, "Admin"))
+        conn.commit()
+        conn.close()
+        await message.answer(f"✅ تم منح صلاحيات الأدمن بنجاح للحساب: `{new_admin_id}`", parse_mode="Markdown")
+    except ValueError:
+        await message.answer("❌ خطأ: يرجى إرسال أيدي رقمي صحيح فقط.")
 
-    elif call.data in ["dep_syriatel", "dep_sham_syp", "dep_sham_usd"]:
-        method = "Syriatel Cash" if call.data == "dep_syriatel" else ("Sham Cash SYP" if call.data == "dep_sham_syp" else "Sham Cash Dollar")
-        user_states[user_id] = {"state": "dep_amount", "method": method}
-        bot.send_message(chat_id, f"💵 تفادياً ستحصل على بونص مجاني 5% إضافي على عملية الشحن هذه بـ ({method})\n\n💵 يرجى كتابة المبلغ المراد شحنه بالأرقام:")
+@dp.callback_query(F.data == "admin_restart")
+async def restart_bot(callback: types.CallbackQuery):
+    if not is_admin(callback.from_user.id): return
+    await callback.message.answer("🔄 جاري إعادة تشغيل البوت وتحديث الأنظمة الآن...")
+    await callback.answer()
+    sys.exit(0)
 
-    elif call.data == "confirm_dep_amount":
-        method = user_states[user_id]["method"]
-        if method == "Syriatel Cash":
-            bot.send_message(chat_id, "📌 يرجى إرسال الأموال الآن إلى الرقم التالي: '48122120'", reply_markup=get_confirm_keyboard("confirm_dep_sent", "back_to_main"))
-        else:
-            bot.send_message(chat_id, "📌 يرجى إرسال المبالغ إلى عنوان المحفظة التالي: 'a10750d533bfab7595dd9b3caa55a50221'", reply_markup=get_confirm_keyboard("confirm_dep_sent", "back_to_main"))
+# خادم ويب مصغر لمنع توقف البوت في Render ولتلبية متطلبات الـ Port
+async def handle_web(request):
+    return web.Response(text="Bot is Running Successfully!")
 
-    elif call.data == "confirm_dep_sent":
-        user_states[user_id] = {"state": "dep_proof", "method": user_states[user_id]["method"], "amount": user_states[user_id]["amount"]}
-        bot.send_message(chat_id, "📸 يرجى إرسال صورة إيصال الدفع مع كتابة رقم المعاملة في نفس الرسالة:")
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', handle_web)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    # جلب المنفذ التلقائي الذي يفرضه Render، الافتراضي 10000
+    port = int(os.getenv("PORT", 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"🌐 Web server started on port {port}")
 
-    elif call.data == "confirm_dep_final":
-        if user_id in user_states and "proof_done" in user_states[user_id]:
-            bot.send_message(chat_id, "⏳ جاري معالجة طلب شحن رصيدك يرجى الانتظار...")
-            amount = user_states[user_id]["amount"]
-            bonus_amount = amount * 1.05
-            method = user_states[user_id]["method"]
-            proof_text = user_states[user_id].get("proof_text", "لا يوجد نص")
-            photo_id = user_states[user_id].get("photo_id")
-            
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("✅ شحن الرصيد", callback_data=f"adm_dep_ok_{user_id}_{bonus_amount}"))
-            bot.send_message(GROUP_ID, f"💳 طلب شحن رصيد جديد عبر {method}\nالمبلغ المطلوب: {amount}\nالمبلغ مع البونص: {bonus_amount}\nنص المعاملة: {proof_text}")
-            if photo_id:
-                bot.send_photo(GROUP_ID, photo_id)
+async def main():
+    # تشغيل خادم الويب والبوت معاً في نفس الوقت
+    await start_web_server()
+    print("🚀 البوت الاحترافي يعمل الآن...")
+    await dp.start_polling(bot)
 
-# ------- 7. تشغيل خادم الويب -------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
- 
+    asyncio.run(main())
