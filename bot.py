@@ -13,7 +13,7 @@ from aiohttp import web
 # 1. إعداد سجل الأخطاء الاحترافي
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
-# 2. البيانات الخاصة بك المعتمدة والمثبتة 
+# 2. البيانات الخاصة بك المعتمدة والمثبتة
 BOT_TOKEN = "8624354425:AAHozeXZgVkYS2njISkMA6IMEuCbyMno7Lg"
 GROUP_ID = -1003983996094
 OWNER_ID = 6693251012
@@ -82,11 +82,11 @@ def get_queue_position(user_id: int) -> int:
     rows = cursor.fetchall()
     conn.close()
     for index, row in enumerate(rows):
-        if row[0] == user_id: # التحقق البرمجي من الترتيب
+        if row[0] == user_id:
             return index + 1
     return 1
 
-# 4. حالات الإدخال (FSM) لعدم تداخل البيانات والأزرار
+# 4. لعدم تداخل البيانات والأزرار (FSM حالات الإدخال)
 class Form(StatesGroup):
     register_username = State()
     register_password = State()
@@ -102,7 +102,6 @@ class Form(StatesGroup):
     promote_admin_id = State()
 
 # 5. لوحات التحكم وبناء الأزرار المدمجة (Inline Keyboards)
-
 def main_keyboard(user_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="🎮 حساب Texas", callback_data="menu_texas")
@@ -139,7 +138,7 @@ def deposit_methods_keyboard():
     builder.button(text="Syriatel Cash 💳", callback_data="dep_syriatel")
     builder.button(text="🔴 شام كاش ليرة سورية", callback_data="dep_sham_syp")
     builder.button(text="🔵 شام كاش دولار امريكي", callback_data="dep_sham_usd")
-    builder.button(text="⬅️ رجوع", callback_data="back_to_main")
+    builder.button(text="↩️ رجوع", callback_data="back_to_main")
     builder.adjust(1, 1, 1, 1)
     return builder.as_markup()
 
@@ -153,13 +152,13 @@ def withdraw_methods_keyboard():
 
 def admin_keyboard():
     builder = InlineKeyboardBuilder()
+    builder.button(text="📢 إذاعة للمشتركين", callback_data="admin_bc_action")
     builder.button(text="➕ تعيين أدمن جديد", callback_data="admin_promote")
     builder.button(text="🔄 إعادة تشغيل البوت", callback_data="admin_restart")
     builder.adjust(1)
     return builder.as_markup()
 
 # 6. معالجات الأوامر والرسائل التفاعلية
-
 @dp.message(CommandStart())
 @dp.message(Command("start"))
 async def cmd_start_handler(message: types.Message):
@@ -175,9 +174,9 @@ async def cmd_start_handler(message: types.Message):
     conn.close()
     
     welcome_msg = (
-        "أهلاً بك ضمن عائلتنا لقد صممنا هذا البوت خصيصاً لك "
-        "رصيدك في أمان يتيح لك هذا البوت سرعة قصوى في الإيداع ومرونة عالية في السحب ✨\n\n"
-        "اختر أحد الخيارات بالأسفل 👇"
+        "👋 أهلاً بك ضمن عائلتنا لقد صممنا هذا البوت خصيصاً لك\n\n"
+        "✨ رصيدك في أمان يتيح لك هذا البوت سرعة قصوى في الإيداع ومرونة عالية في السحب\n\n"
+        "👉 اختر أحد الخيارات بالأسفل"
     )
     await message.answer(welcome_msg, reply_markup=main_keyboard(user_id))
 
@@ -188,32 +187,32 @@ async def cmd_balance_handler(message: types.Message):
 
 @dp.message(Command("support"))
 async def cmd_support_handler(message: types.Message):
-    await message.answer("🚨 للدعم الفني والاستفسارات يرجى التواصل مع الإدارة مباشرة عبر المجموعة الخاصة بك.")
+    await message.answer("📞 للدعم الفني والاستفسارات يرجى التواصل مع الإدارة مباشرة عبر المجموعة الخاصة بك.")
 
-# معالجة الأزرار قيد التطوير
+# معالجة الأزرار قيد التطوير والعودة
 @dp.callback_query(F.data == "under_dev")
 async def process_under_development(callback: types.CallbackQuery):
-    await callback.answer("⚠️ هذا القسم قيد التطوير والصيانة حالياً، سيتم تفعيله قريباً!", show_alert=True)
+    await callback.answer("❌ هذا القسم قيد التطوير والصيانة حالياً، سيتم تفعيله قريباً!", show_alert=True)
 
-# معالجة العودة للمنيو الرئيسي
 @dp.callback_query(F.data == "back_to_main")
 async def back_to_main_handler(callback: types.CallbackQuery):
-    await callback.message.edit_text(
-        "أهلاً بك ضمن عائلتنا لقد صممنا هذا البوت خصيصاً لك رصيدك في أمان يتيح لك هذا البوت سرعة قصوى في الإيداع ومرونة عالية في السحب ✨",
-        reply_markup=main_keyboard(callback.from_user.id)
+    welcome_msg = (
+        "👋 أهلاً بك ضمن عائلتنا لقد صممنا هذا البوت خصيصاً لك\n\n"
+        "✨ رصيدك في أمان يتيح لك هذا البوت سرعة قصوى في الإيداع ومرونة عالية في السحب"
     )
+    await callback.message.edit_text(welcome_msg, reply_markup=main_keyboard(callback.from_user.id))
     await callback.answer()
 
 # زر معلوماتي وزر الدعم
 @dp.callback_query(F.data == "menu_my_info")
 async def process_my_info(callback: types.CallbackQuery):
     bal, site_user, _ = get_user_data(callback.from_user.id)
-    status = "مسجل ⚡" if site_user else "غير مسجل ❌"
+    status = "مسجل ومربوط" if site_user else "❌ غير مسجل"
     text = (
-        f"👤 **معلومات حسابك الحالية:**\n\n"
+        f"📊 **معلومات حسابك الحالية:**\n\n"
         f"🆔 معرف التليجرام: `{callback.from_user.id}`\n"
         f"💰 رصيد محفظتك: {bal:,.2f} ل.س\n"
-        f"🎮 حالة ربط اللعبة: {status}"
+        f"⚙️ حالة ربط اللعبة: {status}"
     )
     builder = InlineKeyboardBuilder()
     builder.button(text="↩️ رجوع", callback_data="back_to_main")
@@ -224,27 +223,26 @@ async def process_my_info(callback: types.CallbackQuery):
 async def process_support_info(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.button(text="↩️ رجوع", callback_data="back_to_main")
-    await callback.message.edit_text("🚨 للدعم الفني والاستفسارات يرجى التواصل مع الإدارة مباشرة عبر المجموعة الخاصة بك.", reply_markup=builder.as_markup())
+    await callback.message.edit_text("📞 للدعم الفني والاستفسارات يرجى التواصل مع الإدارة مباشرة عبر المجموعة الخاصة بك.", reply_markup=builder.as_markup())
     await callback.answer()
 
-# فتح قائمة حساب تكساس
+# فتح قائمة حساب تكساس والعمليات المرتبطة
 @dp.callback_query(F.data == "menu_texas")
 async def process_menu_texas(callback: types.CallbackQuery):
-    await callback.message.edit_text("🎮 **إدارة حساب Texas الخاص بك:**", reply_markup=texas_keyboard(callback.from_user.id), parse_mode="Markdown")
+    await callback.message.edit_text("⚙️ **إدارة حساب Texas الخاص بك:**", reply_markup=texas_keyboard(callback.from_user.id), parse_mode="Markdown")
     await callback.answer()
 
-# دالة إنشاء أو عرض الحساب التلقائي (الشرطي)
 @dp.callback_query(F.data == "texas_account_action")
 async def process_texas_account(callback: types.CallbackQuery, state: FSMContext):
     bal, site_user, site_pass = get_user_data(callback.from_user.id)
     
-    if site_user: # إذا كان مسجلاً تظهر لقطة معلومات الحساب
+    if site_user:
         text = (
             f"---------------------------\n"
             f"🆔 **المعرف:** `{callback.from_user.id}`\n"
             f"👤 **اسم المستخدم:** `{site_user}`\n"
             f"🔑 **كلمة المرور:** `{site_pass}`\n"
-            f"💰 **الرصيد الفعلي:** {bal:,.2f}\n"
+            f"💰 **الرصيد الفعلي:** {bal:,.2f} ل.س\n"
             f"---------------------------"
         )
         builder = InlineKeyboardBuilder()
