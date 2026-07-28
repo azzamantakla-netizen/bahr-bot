@@ -10,7 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiohttp import web
 
-# 1. إعداد سجل الأخطاء الاحترافي
+# 1. إعداد سجل الأخطاء
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 # 2. البيانات الخاصة بك المعتمدة والمثبتة (مع التوكن الأخير)
@@ -79,7 +79,7 @@ def get_queue_position(user_id: int) -> int:
     rows = cursor.fetchall()
     conn.close()
     for index, row in enumerate(rows):
-        if row[0] == user_id:
+        if row == user_id:
             return index + 1
     return 1
 
@@ -157,20 +157,16 @@ async def cmd_start_handler(message: types.Message):
     user_id = message.from_user.id
     username = message.from_user.username or "لا يوجد"
     full_name = message.from_user.full_name
-    
     conn = sqlite3.connect("bot_database.db")
     cursor = conn.cursor()
-    cursor.execute("INSERT OR IGNORE INTO users (user_id, username, full_name) VALUES (?, ?, ?)", 
-                   (user_id, username, full_name))
+    cursor.execute("INSERT OR IGNORE INTO users (user_id, username, full_name) VALUES (?, ?, ?)", (user_id, username, full_name))
     conn.commit()
     conn.close()
-    
     welcome_msg = (
         "👋 أهلاً بك ضمن عائلتنا لقد صممنا هذا البوت خصيصاً لك\n\n"
         "✨ رصيدك في أمان يتيح لك هذا البوت سرعة قصوى في الإيداع ومرونة عالية في السحب\n\n"
         "👉 اختر أحد الخيارات بالأسفل"
     )
-    
     force_remove = types.ReplyKeyboardRemove()
     await message.answer("🔄 جاري تحديث واجهة البوت وتجهيز الأزرار...", reply_markup=force_remove)
     await message.answer(welcome_msg, reply_markup=main_keyboard(user_id))
@@ -229,5 +225,7 @@ async def process_texas_account(callback: types.CallbackQuery, state: FSMContext
         await callback.message.answer("🆕 إنشاء حساب جديد | يرجى إرسال اسم المستخدم الذي ترغب به:")
     await callback.answer()
 
-# خادم الويب الأساسي لمنع إغلاق السيرفر واستقرار المنصة المجانية في Render
-async def web_handle(request):
+# إعادة صياغة دالة الويب بشكل آمن لمنع تعليق المسافات (Indentation Error)
+async def check_server_status(request):
+    return web.Response(text="Server Active")
+
