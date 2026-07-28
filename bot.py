@@ -54,7 +54,6 @@ def init_db():
 
 init_db()
 
-# دالات التحقق والمساعدات المبرمجة لقاعدة البيانات
 def is_admin(user_id: int) -> bool:
     if user_id == OWNER_ID: return True
     conn = sqlite3.connect("bot_database.db")
@@ -72,18 +71,6 @@ def get_user_data(user_id: int):
     conn.close()
     return res if res else (0.0, None, None)
 
-def get_queue_position(user_id: int) -> int:
-    conn = sqlite3.connect("bot_database.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT id FROM withdraw_queue WHERE status = 'PENDING' ORDER BY id ASC")
-    rows = cursor.fetchall()
-    conn.close()
-    for index, row in enumerate(rows):
-        if row[0] == user_id:
-            return index + 1
-    return 1
-
-# 4. لعدم تداخل البيانات والأزرار (FSM حاالت الإدخال)
 class Form(StatesGroup):
     register_username = State()
     register_password = State()
@@ -98,7 +85,6 @@ class Form(StatesGroup):
     admin_broadcast_msg = State()
     promote_admin_id = State()
 
-# 5. لوحات التحكم وبناء الأزرار المدمجة
 def main_keyboard(user_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="🎮 حساب Texas", callback_data="menu_texas")
@@ -108,22 +94,18 @@ def main_keyboard(user_id: int):
     builder.button(text="🔗 إحالات", callback_data="under_dev")
     builder.button(text="📄 السجل", callback_data="under_dev")
     builder.button(text="👤 معلوماتي", callback_data="menu_my_info")
-    builder.button(text="🚨 الدّم", callback_data="menu_support_info")
-    
+    builder.button(text="🚨 الدعم", callback_data="menu_support_info")
     if is_admin(user_id):
         builder.button(text="⚙️ لوحة التحكم للإدارة", callback_data="admin_panel")
-        
     builder.adjust(1, 2, 2, 2, 1, 1 if is_admin(user_id) else 0)
     return builder.as_markup()
 
 def texas_keyboard(user_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="🌐 رابط الموقع", url="https://texas4win200.com")
-    
     _, site_user, _ = get_user_data(user_id)
     account_text = "👤 حسابي" if site_user else "🆕 إنشاء حساب"
     builder.button(text=account_text, callback_data="texas_account_action")
-    
     builder.button(text="💰 شحن الحساب", callback_data="texas_charge_site")
     builder.button(text="💳 سحب رصيد من الـ...", callback_data="texas_withdraw_site")
     builder.button(text="↩️ رجوع", callback_data="back_to_main")
@@ -155,7 +137,12 @@ def admin_keyboard():
     builder.adjust(1)
     return builder.as_markup()
 
-# 6. معالجات الأوامر والرسائل التفاعلية
+# أمر الإجبار على حذف كيبورد الشاشة القديم والتحويل للـ Inline
+@dp.message(Command("clear_buttons"))
+async def clear_old_buttons_handler(message: types.Message):
+    remove_markup = types.ReplyKeyboardRemove()
+    await message.answer("🔄 جاري تنظيف الذاكرة المؤقتة للأزرار القديمة... أرسل الآن أمر /start مجدداً لتظهر الواجهة الجديدة المنسقة بالكامل.", reply_markup=remove_markup)
+
 @dp.message(CommandStart())
 @dp.message(Command("start"))
 async def cmd_start_handler(message: types.Message):
@@ -165,12 +152,16 @@ async def cmd_start_handler(message: types.Message):
     
     conn = sqlite3.connect("bot_database.db")
     cursor = conn.cursor()
-    cursor.execute("INSERT OR IGNORE INTO users (user_id, username, full_name) VALUES (?, ?, ?)", 
-                   (user_id, username, full_name))
+    cursor.execute("INSERT OR IGNORE INTO users (user_id, username, full_name) VALUES (?, ?, ?)", (user_id, username, full_name))
     conn.commit()
     conn.close()
     
-    welcome_msg = "👋 أهلاً بك ضمن عائلتنا لقد صممنا هذا البوت خصيصاً لك\n\n✨ رصيدك في أمان يتيح لك هذا البوت سرعة قصوى في الإيداع ومرونة عالية في السحب\n\n👉 اختر أحد الخيارات بالأسفل"
+    welcome_msg = (
+        "👋 أهلاً بك ضمن عائلتنا لقد صممنا هذا البوت خصيصاً لك\n\n"
+        "✨ رصيدك في أمان يتيح لك هذا البوت سرعة قصوى في الإيداع ومرونة عالية في السحب\n\n"
+        "👉 اختر أحد الخيارات بالأسفل"
+    )
+    # نمرر الكيبورد الجديد المدمج
     await message.answer(welcome_msg, reply_markup=main_keyboard(user_id))
 
 @dp.message(Command("balance"))
@@ -211,7 +202,7 @@ async def process_support_info(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data == "menu_texas")
 async def process_menu_texas(callback: types.CallbackQuery):
-    await callback.message.edit_text("⚙️ **إدارة حساب Texas الخاص بك:**", reply_markup=texas_keyboard(callback.from_user.id), parse_mode="Markdown")
+    await callback.message.edit_text("⚙️ **إعادة توجيه لإدارة حساب Texas الخاص بك:**", reply_markup=texas_keyboard(callback.from_user.id), parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data == "texas_account_action")
@@ -231,3 +222,5 @@ async def process_texas_account(callback: types.CallbackQuery, state: FSMContext
 async def process_reg_user(message: types.Message, state: FSMContext):
     await state.update_data(chosen_user=message.text)
     await state.set_state(Form.register_password)
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✔️ موافقة", callback_data=f"accept_reg_{message.from_user.id}")
