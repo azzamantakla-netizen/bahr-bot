@@ -23,37 +23,41 @@ dp = Dispatcher()
 
 # 3. إعداد قاعدة البيانات ونظام طابور الأدوار والصلاحيات
 def init_db():
-    conn = sqlite3.connect("bot_database.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT,
-            full_name TEXT,
-            balance REAL DEFAULT 0.0,
-            site_username TEXT DEFAULT NULL,
-            site_password TEXT DEFAULT NULL
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS admins (
-            user_id INTEGER PRIMARY KEY,
-            role TEXT
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS withdraw_queue (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            amount REAL,
-            method TEXT,
-            wallet_code TEXT DEFAULT NULL,
-            status TEXT DEFAULT 'PENDING'
-        )
-    """)
-    cursor.execute("INSERT OR IGNORE INTO admins (user_id, role) VALUES (?, ?)", (OWNER_ID, "Owner"))
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect("bot_database.db")
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                full_name TEXT,
+                balance REAL DEFAULT 0.0,
+                site_username TEXT DEFAULT NULL,
+                site_password TEXT DEFAULT NULL
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS admins (
+                user_id INTEGER PRIMARY KEY,
+                role TEXT
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS withdraw_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                amount REAL,
+                method TEXT,
+                wallet_code TEXT DEFAULT NULL,
+                status TEXT DEFAULT 'PENDING'
+            )
+        """)
+        cursor.execute("INSERT OR IGNORE INTO admins (user_id, role) VALUES (?, ?)", (OWNER_ID, "Owner"))
+        conn.commit()
+        conn.close()
+        logging.info("Database initialized successfully.")
+    except Exception as e:
+        logging.error(f"Failed to initialize database: {e}")
 
 # دالات التحقق والمساعدات لقاعدة البيانات
 def is_admin(user_id: int) -> bool:
@@ -180,7 +184,7 @@ async def cmd_start_handler(message: types.Message):
     
     welcome_msg = (
         "أهلاً بك في بوت شحن الرصيد الفوري آلياً\n"
-        "رصيدك في أمان يتيح لك this البوت سرعة قصوى في الإيداع ومرونة عالية في السحب\n"
+        "رصيدك في أمان يتيح لك هذا البوت سرعة قصوى في الإيداع ومرونة عالية في السحب\n"
         "اختر أحد الخيارات في الأسفل 👇"
     )
     await message.answer(welcome_msg, reply_markup=main_keyboard(user_id))
@@ -233,9 +237,3 @@ async def process_texas_account_callback(callback: types.CallbackQuery, state: F
         text = f"🔐 بيانات حسابك المرتبط:\n👤 المستخدم: `{site_user}`\n🔑 كلمة المرور: `{site_pass}`\n💰 الرصيد المتاح: {bal:.2f} ليرة"
         builder = InlineKeyboardBuilder()
         builder.button(text="🔙 رجوع", callback_data="menu_texas")
-        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-    else:
-        await state.set_state(Form.register_username)
-        await callback.message.answer("⚙️ إنشاء حساب جديد | يرجى إرسال اسم المستخدم الذي ترغب به في الموقع:")
-    await callback.answer()
-
