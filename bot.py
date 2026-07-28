@@ -13,7 +13,7 @@ from aiohttp import web
 # 1. إعداد سجل الأخطاء الاحترافي لـ Render
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
-# 2. البيانات الخاصة بك المعتمدة والمثبتة (مع التوكن الأخير)
+# 2. البيانات الخاصة بك المعتمدة والمثبتة (مع التوكن الأخير النظيف)
 BOT_TOKEN = "8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8"
 GROUP_ID = -1003983996094
 OWNER_ID = 6693251012
