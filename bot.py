@@ -56,7 +56,7 @@ def get_all_users():
     conn = sqlite3.connect("bot_database.db")
     cursor = conn.cursor()
     cursor.execute("SELECT user_id FROM users")
-    users = [row[0] for row in cursor.fetchall()]
+    users = [row for row in cursor.fetchall()]
     conn.close()
     return users
 
@@ -119,8 +119,7 @@ async def deposit_entered(message: types.Message, state: FSMContext):
     await message.answer(f"✅ تم تسجيل طلب الإيداع بقيمة: {amount}\nانتظر موافقة الإدارة.")
     await bot.send_message(
         chat_id=GROUP_ID,
-        text=f"🔔 **طلب إيداع جديد**\n\n👤 المستخدم: {message.from_user.full_name}\n🆔 الأيدي: `{message.from_user.id}`\n💰 المبلغ: {amount}",
-        parse_mode="Markdown"
+        text=f"🔔 **طلب إيداع جديد**\n\n👤 المستخدم: {message.from_user.full_name}\n🆔 الأيدي: `{message.from_user.id}`\n💰 المبلغ: {amount}"
     )
 
 @dp.message(F.text == "💸 سحب")
@@ -135,8 +134,7 @@ async def withdraw_entered(message: types.Message, state: FSMContext):
     await message.answer(f"✅ تم تسجيل طلب السحب بقيمة: {amount}\nسيتم مراجعته فوراً.")
     await bot.send_message(
         chat_id=GROUP_ID,
-        text=f"🔔 **طلب سحب جديد**\n\n👤 المستخدم: {message.from_user.full_name}\n🆔 الأيدي: `{message.from_user.id}`\n💸 المبلغ: {amount}",
-        parse_mode="Markdown"
+        text=f"🔔 **طلب سحب جديد**\n\n👤 المستخدم: {message.from_user.full_name}\n🆔 الأيدي: `{message.from_user.id}`\n💸 المبلغ: {amount}"
     )
 
 @dp.message(F.text == "📞 الدعم الفني")
@@ -151,8 +149,7 @@ async def support_entered(message: types.Message, state: FSMContext):
     await message.answer("✅ تم إرسال رسالتك بنجاح للدعم الفني، سيتواصل معك أحد المشرفين قريباً.")
     await bot.send_message(
         chat_id=GROUP_ID,
-        text=f"📩 **رسالة دعم فني جديدة**\n\n👤 من: {message.from_user.full_name}\n🆔 الأيدي: `{message.from_user.id}`\n💬 الرسالة: {msg_text}",
-        parse_mode="Markdown"
+        text=f"📩 **رسالة دعم فني جديدة**\n\n👤 من: {message.from_user.full_name}\n🆔 الأيدي: `{message.from_user.id}`\n💬 الرسالة: {msg_text}"
     )
 
 # لوحة تحكم الإدارة
@@ -176,7 +173,7 @@ async def dynamic_broadcast(message: types.Message, state: FSMContext):
     await message.answer(f"⏳ يتم الآن الإرسال إلى {len(users)} مشترك...")
     for user_id in users:
         try:
-            await bot.send_message(chat_id=user_id, text=message.text)
+            await bot.send_message(chat_id=user_id[0], text=message.text)
             success_count += 1
             await asyncio.sleep(0.05)
         except Exception:
@@ -213,7 +210,7 @@ async def restart_bot(callback: types.CallbackQuery):
     await callback.answer()
     sys.exit(0)
 
-# خادم ويب مصغر لمنع توقف البوت في Render ولتلبية متطلبات الـ Port
+# خادم ويب مصغر لمنع توقف البوت في Render
 async def handle_web(request):
     return web.Response(text="Bot is Running Successfully!")
 
@@ -222,7 +219,6 @@ async def start_web_server():
     app.router.add_get('/', handle_web)
     runner = web.AppRunner(app)
     await runner.setup()
-    # جلب المنفذ التلقائي الذي يفرضه Render، الافتراضي 10000
     port = int(os.getenv("PORT", 10000))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
@@ -231,6 +227,10 @@ async def start_web_server():
 async def main():
     # تشغيل خادم الويب والبوت معاً في نفس الوقت
     await start_web_server()
+    
+    # حذف الويب هوك القديم وإسقاط التحديثات المعلقة لحل مشكلة التداخل نهائياً
+    await bot.delete_webhook(drop_pending_updates=True)
+    
     print("🚀 البوت الاحترافي يعمل الآن...")
     await dp.start_polling(bot)
 
