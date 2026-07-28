@@ -55,8 +55,6 @@ def init_db():
     conn.commit()
     conn.close()
 
-init_db()
-
 # دالات التحقق والمساعدات لقاعدة البيانات
 def is_admin(user_id: int) -> bool:
     if user_id == OWNER_ID: return True
@@ -82,7 +80,7 @@ def get_queue_position(user_id: int) -> int:
     rows = cursor.fetchall()
     conn.close()
     for index, row in enumerate(rows):
-        if row[0] == user_id:
+        if row == user_id:
             return index + 1
     return 1
 
@@ -220,7 +218,7 @@ async def process_menu_texas_callback(callback: types.CallbackQuery):
 async def process_texas_account_callback(callback: types.CallbackQuery, state: FSMContext):
     bal, site_user, site_pass = get_user_data(callback.from_user.id)
     if site_user:
-        text = f"🔐 بيانات حسابك المرتبط:\n👤 المستخدم: `{site_user}`\n🔑 كلمة المرور: `{site_pass}`\n💰 الرصيد المتاح: {bal:.2f} ليرة"
+        text = f"🔐 بيانات حسابك المرتبط:\n👤 المستخدم: `{site_user}`\n🔑 كلمة مور: `{site_pass}`\n💰 الرصيد المتاح: {bal:.2f} ليرة"
         builder = InlineKeyboardBuilder()
         builder.button(text="🔙 رجوع", callback_data="menu_texas")
         await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
@@ -233,8 +231,8 @@ async def process_texas_account_callback(callback: types.CallbackQuery, state: F
 async def web_handle(request):
     return web.Response(text="Bot Web Server is Running Successfully!")
 
+# دالة التشغيل الرئيسية المحدثة لفتح المنفذ فورا لمنع الـ Timeout في Render
 async def main():
-    app = web.Application()
-    app.router.add_get('/', web_handle)
-    runner = web.AppRunner(app)
-    await runner.setup()
+    # 1. تهيئة قاعدة البيانات أولاً
+    init_db()
+    
