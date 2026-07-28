@@ -1,7 +1,6 @@
 import os
 import sys
 import logging
-import asyncio
 import sqlite3
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
@@ -17,6 +16,9 @@ logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 BOT_TOKEN = "8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8"
 GROUP_ID = -1003983996094
 OWNER_ID = 6693251012
+
+# تذكر وضع رابط تطبيق الويب الخاص بك على Render هنا (مثال: https://onrender.com)
+RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -83,20 +85,6 @@ def get_user_data(user_id: int):
     except Exception:
         return (0.0, None, None)
 
-def get_queue_position(user_id: int) -> int:
-    try:
-        conn = sqlite3.connect("bot_database.db")
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM withdraw_queue WHERE status = 'PENDING' ORDER BY id ASC")
-        rows = cursor.fetchall()
-        conn.close()
-        for index, row in enumerate(rows):
-            if row == user_id:
-                return index + 1
-        return 1
-    except Exception:
-        return 1
-
 # 4. حالات الإدخال FSM لنظام البيانات والأرقام
 class Form(StatesGroup):
     register_username = State()
@@ -105,27 +93,18 @@ class Form(StatesGroup):
     deposit_syriatel_code = State()
     deposit_sham_syp_code = State()
     deposit_sham_usd_code = State()
-    admin_deposit_approve_amount = State()
-    withdraw_site_amount = State()
-    withdraw_cash_amount = State()
-    withdraw_cash_wallet = State()
-    admin_broadcast_msg = State()
-    promote_admin_id = State()
 
 # 5. لوحات التحكم وأزرار البوت (Inline Keyboards)
 def main_keyboard(user_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="⚙️ حساب Texas", callback_data="menu_texas")
     builder.button(text="💵 شحن رصيد", callback_data="menu_deposit")
-    builder.button(text="💸 سحب رصيد", callback_data="menu_withdraw_main")
-    builder.button(text="📢 إذاعة (آدمن)", callback_data="menu_broadcast")
-    builder.button(text="📊 إحصائيات", callback_data="under_dev")
-    builder.button(text="🛠️ خدمات", callback_data="under_dev")
+    builder.button(text="💸 سحب رصيد", callback_data="under_dev")
     builder.button(text="👤 معلوماتي", callback_data="menu_my_info")
     builder.button(text="📞 الدعم الفني", callback_data="menu_support_info")
     if is_admin(user_id):
-        builder.button(text="👑 لوحة الإدارة", callback_data="admin_panel")
-    builder.adjust(1, 2, 2, 2, 1 if is_admin(user_id) else 0)
+        builder.button(text="👑 لوحة الإدارة", callback_data="under_dev")
+    builder.adjust(1, 2, 2, 1 if is_admin(user_id) else 0)
     return builder.as_markup()
 
 def texas_keyboard(user_id: int):
@@ -134,34 +113,8 @@ def texas_keyboard(user_id: int):
     _, site_user, _ = get_user_data(user_id)
     account_text = "🔄 تحديث بيانات حسابي" if site_user else "🔐 إنشاء حساب"
     builder.button(text=account_text, callback_data="texas_account_action")
-    builder.button(text="💵 شحن حساب تكساس", callback_data="under_dev")
-    builder.button(text="💰 سحب رصيد من الموقع", callback_data="under_dev")
     builder.button(text="🔙 رجوع", callback_data="back_to_main")
-    builder.adjust(1, 1, 2, 1)
-    return builder.as_markup()
-
-def deposit_methods_keyboard():
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔴 Syraitel Cash", callback_data="dep_syriatel")
-    builder.button(text="🔵 شام كاش ليرة سورية", callback_data="dep_sham_syp")
-    builder.button(text="🟢 شام كاش دولار أمريكي", callback_data="dep_sham_usd")
-    builder.button(text="🔙 رجوع", callback_data="back_to_main")
-    builder.adjust(1, 1, 1, 1)
-    return builder.as_markup()
-
-def withdraw_methods_keyboard():
-    builder = InlineKeyboardBuilder()
-    builder.button(text="Syriatel Cash", callback_data="wit_method_syriatel")
-    builder.button(text="ShamCash SYP", callback_data="wit_method_sham")
-    builder.button(text="🔙 رجوع", callback_data="back_to_main")
-    builder.adjust(1, 1, 1)
-    return builder.as_markup()
-
-def admin_keyboard():
-    builder = InlineKeyboardBuilder()
-    builder.button(text="➕ تعيين آدمن جديد", callback_data="admin_promote")
-    builder.button(text="🔄 إعادة تشغيل البوت", callback_data="admin_restart")
-    builder.adjust(1)
+    builder.adjust(1, 1)
     return builder.as_markup()
 
 # 6. معالجات الأوامر والرسائل التفاعلية
@@ -189,18 +142,9 @@ async def cmd_start_handler(message: types.Message):
     )
     await message.answer(welcome_msg, reply_markup=main_keyboard(user_id))
 
-@dp.message(Command("balance"))
-async def cmd_balance_handler(message: types.Message):
-    bal, _, _ = get_user_data(message.from_user.id)
-    await message.answer(f"رصيدك الحالي في محفظة البوت المساعدة: {bal:.2f} ليرة")
-
-@dp.message(Command("support"))
-async def cmd_support_handler(message: types.Message):
-    await message.answer("للقسم الفني والاستفسارات يرجى التواصل مع الإدارة مباشرة عبر المجموعة الخاصة بك")
-
 @dp.callback_query(F.data == "under_dev")
 async def process_under_development_callback(callback: types.CallbackQuery):
-    await callback.answer("هذا القسم قيد التطوير والصيانة حالياً، سيتم تفعيله قريباً 🛠️", show_alert=True)
+    await callback.answer("هذا القسم قيد التطوير والصيانة حالياً 🛠️", show_alert=True)
 
 @dp.callback_query(F.data == "back_to_main")
 async def back_to_main_handler(callback: types.CallbackQuery):
@@ -230,10 +174,40 @@ async def process_menu_texas_callback(callback: types.CallbackQuery):
     await callback.message.edit_text("⚙️ إدارة حسابك وتفاصيل منصة Texas:", reply_markup=texas_keyboard(callback.from_user.id))
     await callback.answer()
 
-@dp.callback_query(F.data == "texas_account_action")
-async def process_texas_account_callback(callback: types.CallbackQuery, state: FSMContext):
-    bal, site_user, site_pass = get_user_data(callback.from_user.id)
-    if site_user:
-        text = f"🔐 بيانات حسابك المرتبط:\n👤 المستخدم: `{site_user}`\n🔑 كلمة المرور: `{site_pass}`\n💰 الرصيد المتاح: {bal:.2f} ليرة"
-        builder = InlineKeyboardBuilder()
-        builder.button(text="🔙 رجوع", callback_data="menu_texas")
+# معالجة طلبات الويب الواردة من تليجرام (Webhook Handler)
+async def handle_webhook(request):
+    try:
+        json_data = await request.json()
+        update = types.Update.model_validate(json_data, context={"bot": bot})
+        await dp.feed_update(bot, update)
+    except Exception as e:
+        logging.error(f"Error handling webhook update: {e}")
+    return web.Response(text="OK")
+
+async def main_response(request):
+    return web.Response(text="Bot Web Server is Running via Webhook!")
+
+# دوال بدء وإغلاق السيرفر والويب هوك بالتتابع الآمن
+async def on_startup(app):
+    init_db()
+    if RENDER_EXTERNAL_URL:
+        webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
+        await bot.set_webhook(webhook_url)
+        logging.info(f"Webhook successfully set to: {webhook_url}")
+    else:
+        logging.warning("RENDER_EXTERNAL_URL environment variable is missing!")
+
+async def on_shutdown(app):
+    await bot.delete_webhook()
+    await bot.session.close()
+
+if __name__ == "__main__":
+    app = web.Application()
+    app.router.add_get('/', main_response)
+    app.router.add_post('/webhook', handle_webhook)
+    
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
+    
+    port = int(os.environ.get("PORT", 10000))
+    web.run_app(app, host="0.0.0.0", port=port)
