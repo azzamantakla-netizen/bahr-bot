@@ -4,7 +4,8 @@ import logging
 import asyncio
 import sqlite3
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import CommandStart, Command, F
+from aiogram.filters import CommandStart, Command
+from magic_filter import F
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -55,7 +56,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# dالات التحقق والمساعدات لقاعدة البيانات
+# دالات التحقق والمساعدات لقاعدة البيانات
 def is_admin(user_id: int) -> bool:
     if user_id == OWNER_ID: return True
     try:
