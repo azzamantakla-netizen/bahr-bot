@@ -10,7 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiohttp import web
 
-# 1. سجل الأخطاء
+# 1. إعداد سجل الأخطاء الاحترافي لـ Render
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 # 2. البيانات الخاصة بك المعتمدة والمثبتة (مع التوكن الأخير)
@@ -22,7 +22,7 @@ WEBSITE_URL = "https://texas4win200.com"
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# 3. قاعدة البيانات
+# 3. إعداد قاعدة البيانات ونظام طابور الأدوار والصالحيات
 def init_db():
     conn = sqlite3.connect("bot_database.db")
     cursor = conn.cursor()
@@ -55,6 +55,7 @@ def init_db():
 
 init_db()
 
+# دالات التحقق والمساعدات المبرمجة لقاعدة البيانات
 def is_admin(user_id: int) -> bool:
     if user_id == OWNER_ID: return True
     conn = sqlite3.connect("bot_database.db")
@@ -72,6 +73,7 @@ def get_user_data(user_id: int):
     conn.close()
     return res if res else (0.0, None, None)
 
+# 4. حالات الإدخال (FSM)
 class Form(StatesGroup):
     register_username = State()
     register_password = State()
@@ -86,6 +88,7 @@ class Form(StatesGroup):
     admin_broadcast_msg = State()
     promote_admin_id = State()
 
+# 5. بناء لوحات التحكم والأزرار المدمجة
 def main_keyboard(user_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="🎮 حساب Texas", callback_data="menu_texas")
@@ -137,6 +140,7 @@ def admin_keyboard():
     builder.adjust(1)
     return builder.as_markup()
 
+# 6. معالجات الأوامر والرسائل التفاعلية
 @dp.message(CommandStart())
 @dp.message(Command("start"))
 async def cmd_start_handler(message: types.Message):
@@ -154,7 +158,7 @@ async def cmd_start_handler(message: types.Message):
         "👉 اختر أحد الخيارات بالأسفل"
     )
     force_remove = types.ReplyKeyboardRemove()
-    await message.answer("🔄 جاري تحديث واجهة البوت...", reply_markup=force_remove)
+    await message.answer("🔄 جاري تحديث واجهة البوت وتجهيز الأزرار...", reply_markup=force_remove)
     await message.answer(welcome_msg, reply_markup=main_keyboard(user_id))
 
 @dp.message(Command("balance"))
@@ -186,13 +190,6 @@ async def process_my_info(callback: types.CallbackQuery):
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
     await callback.answer()
 
-@dp.callback_query(F.data == "menu_support_info")
-async def process_support_info(callback: types.CallbackQuery):
-    builder = InlineKeyboardBuilder()
-    builder.button(text="↩️ رجوع", callback_data="back_to_main")
-    await callback.message.edit_text("📞 للدعم الفني والاستفسارات يرجى التواصل مع الإدارة مباشرة عبر المجموعة الخاصة بك.", reply_markup=builder.as_markup())
-    await callback.answer()
-
 @dp.callback_query(F.data == "menu_texas")
 async def process_menu_texas(callback: types.CallbackQuery):
     await callback.message.edit_text("⚙️ **إدارة حساب Texas بك الخاص:**", reply_markup=texas_keyboard(callback.from_user.id), parse_mode="Markdown")
@@ -221,4 +218,8 @@ async def process_reg_user(message: types.Message, state: FSMContext):
     await bot.send_message(chat_id=GROUP_ID, text=f"🔔 **طلب إنشاء حساب جديد**\n\n👤 المستخدم: {message.from_user.full_name}\n🆔 الأيدي: `{message.from_user.id}`\n✍️ الاسم المطلوب: `{message.text}`", reply_markup=builder.as_markup())
     await message.answer("⏳ تم رفع طلب إنشاء الحساب للإدارة، يرجى انتظار تأكيد وموافقة النظام...")
 
-# خادم ويب مصغر مدمج
+# خادم ويب مخصص مصمم للعمل بالتوافق اللحظي مع متطلبات خوادم Render
+async def web_handler(request):
+    return web.Response(text="Bot Web Server Running")
+
+async def start_server():
