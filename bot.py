@@ -13,7 +13,7 @@ from aiohttp import web
 # 1. إعداد سجل الأخطاء الاحترافي
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
-# 2. البيانات الخاصة بك المعتمدة والمثبتة (مع التوكن الجديد)
+# 2. البيانات الخاصة بك المعتمدة والمثبتة (مع التوكن الأخير)
 BOT_TOKEN = "8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8"
 GROUP_ID = -1003983996094
 OWNER_ID = 6693251012
@@ -25,8 +25,6 @@ dp = Dispatcher()
 def init_db():
     conn = sqlite3.connect("bot_database.db")
     cursor = conn.cursor()
-    
-    # جدول المشتركين والبيانات المالية وحسابات الموقع
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
@@ -36,15 +34,11 @@ def init_db():
         site_username TEXT DEFAULT NULL,
         site_password TEXT DEFAULT NULL
     )""")
-    
-    # جدول المشرفين
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS admins (
         user_id INTEGER PRIMARY KEY,
         role TEXT
     )""")
-    
-    # جدول طابور طلبات السحب المعلقة
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS withdraw_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,7 +48,6 @@ def init_db():
         wallet_code TEXT DEFAULT NULL,
         status TEXT DEFAULT 'PENDING'
     )""")
-    
     cursor.execute("INSERT OR IGNORE INTO admins (user_id, role) VALUES (?, ?)", (OWNER_ID, "Owner"))
     conn.commit()
     conn.close()
@@ -116,23 +109,19 @@ def main_keyboard(user_id: int):
     builder.button(text="📄 السجل", callback_data="under_dev")
     builder.button(text="👤 معلوماتي", callback_data="menu_my_info")
     builder.button(text="🚨 الدعم", callback_data="menu_support_info")
-    
     if is_admin(user_id):
         builder.button(text="⚙️ لوحة التحكم للإدارة", callback_data="admin_panel")
-        
     builder.adjust(1, 2, 2, 2, 1, 1 if is_admin(user_id) else 0)
     return builder.as_markup()
 
 def texas_keyboard(user_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="🌐 رابط الموقع", url="https://texas4win200.com")
-    
     _, site_user, _ = get_user_data(user_id)
     account_text = "👤 حسابي" if site_user else "🆕 إنشاء حساب"
     builder.button(text=account_text, callback_data="texas_account_action")
-    
-    builder.button(text="💰 شحن الحساب", callback_data="texas_charge_site")
-    builder.button(text="💳 سحب رصيد من الـ...", callback_data="texas_withdraw_site")
+    builder.button(text="💰 شحن الحساب", callback_data="under_dev")
+    builder.button(text="💳 سحب رصيد من الـ...", callback_data="under_dev")
     builder.button(text="↩️ رجوع", callback_data="back_to_main")
     builder.adjust(1, 1, 2, 1)
     return builder.as_markup()
@@ -182,7 +171,6 @@ async def cmd_start_handler(message: types.Message):
         "👉 اختر أحد الخيارات بالأسفل"
     )
     
-    # مسح أزرار الشاشة القديمة إذا كانت عالقة في كاش الهاتف
     force_remove = types.ReplyKeyboardRemove()
     await message.answer("🔄 جاري تحديث واجهة البوت وتجهيز الأزرار...", reply_markup=force_remove)
     await message.answer(welcome_msg, reply_markup=main_keyboard(user_id))
@@ -212,14 +200,14 @@ async def process_my_info(callback: types.CallbackQuery):
     status = "مسجل ومربوط" if site_user else "❌ غير مسجل"
     text = f"📊 **معلومات حسابك الحالية:**\n\n🆔 معرف التليجرام: `{callback.from_user.id}`\n💰 رصيد محفظتك: {bal:,.2f} ل.س\n⚙️ حالة ربط اللعبة: {status}"
     builder = InlineKeyboardBuilder()
-    builder.button(text=" ↩️ رجوع", callback_data="back_to_main")
+    builder.button(text="↩️ رجوع", callback_data="back_to_main")
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
     await callback.answer()
 
 @dp.callback_query(F.data == "menu_support_info")
 async def process_support_info(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
-    builder.button(text=" ↩️ رجوع", callback_data="back_to_main")
+    builder.button(text="↩️ رجوع", callback_data="back_to_main")
     await callback.message.edit_text("📞 للدعم الفني والاستفسارات يرجى التواصل مع الإدارة مباشرة عبر المجموعة الخاصة بك.", reply_markup=builder.as_markup())
     await callback.answer()
 
@@ -234,7 +222,12 @@ async def process_texas_account(callback: types.CallbackQuery, state: FSMContext
     if site_user:
         text = f"---------------------------\n🆔 **المعرف:** `{callback.from_user.id}`\n👤 **اسم المستخدم:** `{site_user}`\n🔑 **كلمة المرور:** `{site_pass}`\n💰 **الرصيد الفعلي:** {bal:,.2f} ل.س\n---------------------------"
         builder = InlineKeyboardBuilder()
-        builder.button(text=" ↩️ رجوع", callback_data="menu_texas")
+        builder.button(text="↩️ رجوع", callback_data="menu_texas")
         await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
     else:
         await state.set_state(Form.register_username)
+        await callback.message.answer("🆕 إنشاء حساب جديد | يرجى إرسال اسم المستخدم الذي ترغب به:")
+    await callback.answer()
+
+# خادم الويب الأساسي لمنع إغلاق السيرفر واستقرار المنصة المجانية في Render
+async def web_handle(request):
