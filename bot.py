@@ -10,21 +10,23 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiohttp import web
 
-# 1. إعداد سجل الأخطاء
+# 1. إعداد سجل الأخطاء الاحترافي لـ Render
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
-# 2. البيانات الخاصة بك المعتمدة والمثبتة (مع التوكن الأخير)
+# 2. البيانات الحقيقية والمجربة الخاصة بمشروعك (مع التوكن الأخير النظيف)
 BOT_TOKEN = "8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8"
 GROUP_ID = -1003983996094
 OWNER_ID = 6693251012
+WEBSITE_URL = "https://texas4win200.com"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# 3. إعداد قاعدة البيانات ونظام طابور الأدوار والصالحيات
+# 3. إعداد قاعدة البيانات ونظام الموافقات المالي لحفظ البيانات حية
 def init_db():
     conn = sqlite3.connect("bot_database.db")
     cursor = conn.cursor()
+    # جدول حسابات وبيانات ورصيد المستخدمين الفعلي بالبوت
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
@@ -34,11 +36,13 @@ def init_db():
         site_username TEXT DEFAULT NULL,
         site_password TEXT DEFAULT NULL
     )""")
+    # جدول الإدارة والمشرفين الصلاحيات
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS admins (
         user_id INTEGER PRIMARY KEY,
         role TEXT
     )""")
+    # جدول طابور عمليات السحب الحالية
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS withdraw_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,6 +76,7 @@ def get_user_data(user_id: int):
     conn.close()
     return res if res else (0.0, None, None)
 
+# 4. منع تداخل البيانات والأزرار (FSM حالات الإدخال والتحقق المالي)
 class Form(StatesGroup):
     register_username = State()
     register_password = State()
@@ -86,6 +91,7 @@ class Form(StatesGroup):
     admin_broadcast_msg = State()
     promote_admin_id = State()
 
+# 5. لوحات التحكم وبناء الأزرار المدمجة (Inline Keyboards) مطابقة للصور
 def main_keyboard(user_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="🎮 حساب Texas", callback_data="menu_texas")
@@ -103,12 +109,12 @@ def main_keyboard(user_id: int):
 
 def texas_keyboard(user_id: int):
     builder = InlineKeyboardBuilder()
-    builder.button(text="🌐 رابط الموقع", url="https://texas4win200.com")
+    builder.button(text="🌐 رابط الموقع", url=WEBSITE_URL)
     _, site_user, _ = get_user_data(user_id)
     account_text = "👤 حسابي" if site_user else "🆕 إنشاء حساب"
     builder.button(text=account_text, callback_data="texas_account_action")
-    builder.button(text="💰 شحن الحساب", callback_data="under_dev")
-    builder.button(text="💳 سحب رصيد من الـ...", callback_data="under_dev")
+    builder.button(text="💰 شحن الحساب", callback_data="texas_charge_site")
+    builder.button(text="💳 سحب رصيد من الـ...", callback_data="texas_withdraw_site")
     builder.button(text="↩️ رجوع", callback_data="back_to_main")
     builder.adjust(1, 1, 2, 1)
     return builder.as_markup()
@@ -137,6 +143,7 @@ def admin_keyboard():
     builder.adjust(1)
     return builder.as_markup()
 
+# 6. معالجات الأوامر والرسائل التفاعلية
 @dp.message(CommandStart())
 @dp.message(Command("start"))
 async def cmd_start_handler(message: types.Message):
@@ -148,13 +155,15 @@ async def cmd_start_handler(message: types.Message):
     cursor.execute("INSERT OR IGNORE INTO users (user_id, username, full_name) VALUES (?, ?, ?)", (user_id, username, full_name))
     conn.commit()
     conn.close()
+    
     welcome_msg = (
         "👋 أهلاً بك ضمن عائلتنا لقد صممنا هذا البوت خصيصاً لك\n\n"
         "✨ رصيدك في أمان يتيح لك هذا البوت سرعة قصوى في الإيداع ومرونة عالية في السحب\n\n"
         "👉 اختر أحد الخيارات بالأسفل"
     )
+    # تنظيف وتطهير الشاشة تلقائياً من الأزرار القديمة والكبيرة لتركيب واجهتك الـ Inline
     force_remove = types.ReplyKeyboardRemove()
-    await message.answer("🔄 جاري تحديث واجهة البوت وتجهيز الأزرار...", reply_markup=force_remove)
+    await message.answer("🔄 جاري تحديث واجهة البوت وتجهيز الأزرار التفاعلية...", reply_markup=force_remove)
     await message.answer(welcome_msg, reply_markup=main_keyboard(user_id))
 
 @dp.message(Command("balance"))
@@ -186,40 +195,31 @@ async def process_my_info(callback: types.CallbackQuery):
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
     await callback.answer()
 
+@dp.callback_query(F.data == "menu_support_info")
+async def process_support_info(callback: types.CallbackQuery):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="↩️ رجوع", callback_data="back_to_main")
+    await callback.message.edit_text("📞 للدعم الفني والاستفسارات يرجى التواصل مع الإدارة مباشرة عبر المجموعة الخاصة بك.", reply_markup=builder.as_markup())
+    await callback.answer()
+
 @dp.callback_query(F.data == "menu_texas")
 async def process_menu_texas(callback: types.CallbackQuery):
     await callback.message.edit_text("⚙️ **إدارة حساب Texas بك الخاص:**", reply_markup=texas_keyboard(callback.from_user.id), parse_mode="Markdown")
     await callback.answer()
 
-# خادم الويب الأساسي
-async def check_server_status(request):
-    return web.Response(text="Server Active")
+# --- مسار إنشاء الحساب الديناميكي ونظام الموافقات المزدوجة للمجموعة ---
+@dp.callback_query(F.data == "texas_account_action")
+async def process_texas_account(callback: types.CallbackQuery, state: FSMContext):
+    bal, site_user, site_pass = get_user_data(callback.from_user.id)
+    if site_user:
+        text = f"---------------------------\n🆔 **المعرف:** `{callback.from_user.id}`\n👤 **اسم المستخدم:** `{site_user}`\n🔑 **كلمة المرور:** `{site_pass}`\n💰 **الرصيد الفعلي:** {bal:,.2f} ل.س\n---------------------------"
+        builder = InlineKeyboardBuilder()
+        builder.button(text="↩️ رجوع", callback_data="menu_texas")
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    else:
+        await state.set_state(Form.register_username)
+        await callback.message.answer("🆕 إنشاء حساب جديد | يرجى إرسال اسم المستخدم الذي ترغب به للتسجيل بالموقع:")
+    await callback.answer()
 
-# تشغيل خادم الويب مع تهيئة المنفذ فوراً دون تعليق
-async def run_web_server():
-    app = web.Application()
-    app.router.add_get('/', check_server_status)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    port = int(os.getenv("PORT", 10000))
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    print(f"🌐 Web Server Port Bound to {port}")
-    # ابقاء الخادم مستيقظاً بشكل دائم في الخلفية
-    while True:
-        await asyncio.sleep(3600)
-
-async def run_bot():
-    await bot.delete_webhook(drop_pending_updates=True)
-    print("🚀 Bot Polling Started...")
-    await dp.start_polling(bot)
-
-# دالة التشغيل الذكية التي تجمع المهمتين بالتوازي لحل خطأ الـ Port قطعيًا
-async def main():
-    await asyncio.gather(
-        run_web_server(),
-        run_bot()
-    )
-
-if __name__ == "__main__":
-    asyncio.run(main())
+@dp.message(Form.register_username)
+async def process_reg_user(message: types.Message, state: FSMContext):
