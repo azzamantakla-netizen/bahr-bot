@@ -72,18 +72,6 @@ def get_user_data(user_id: int):
     conn.close()
     return res if res else (0.0, None, None)
 
-def get_queue_position(user_id: int) -> int:
-    conn = sqlite3.connect("bot_database.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT id FROM withdraw_queue WHERE status = 'PENDING' ORDER BY id ASC")
-    rows = cursor.fetchall()
-    conn.close()
-    for index, row in enumerate(rows):
-        if row == user_id:
-            return index + 1
-    return 1
-
-# 4. لعدم تداخل البيانات والأزرار (FSM حالات الإدخال)
 class Form(StatesGroup):
     register_username = State()
     register_password = State()
@@ -98,7 +86,6 @@ class Form(StatesGroup):
     admin_broadcast_msg = State()
     promote_admin_id = State()
 
-# 5. لوحات التحكم وبناء الأزرار المدمجة (Inline Keyboards)
 def main_keyboard(user_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="🎮 حساب Texas", callback_data="menu_texas")
@@ -150,7 +137,6 @@ def admin_keyboard():
     builder.adjust(1)
     return builder.as_markup()
 
-# 6. معالجات الأوامر والرسائل التفاعلية
 @dp.message(CommandStart())
 @dp.message(Command("start"))
 async def cmd_start_handler(message: types.Message):
@@ -200,32 +186,40 @@ async def process_my_info(callback: types.CallbackQuery):
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
     await callback.answer()
 
-@dp.callback_query(F.data == "menu_support_info")
-async def process_support_info(callback: types.CallbackQuery):
-    builder = InlineKeyboardBuilder()
-    builder.button(text="↩️ رجوع", callback_data="back_to_main")
-    await callback.message.edit_text("📞 للدعم الفني والاستفسارات يرجى التواصل مع الإدارة مباشرة عبر المجموعة الخاصة بك.", reply_markup=builder.as_markup())
-    await callback.answer()
-
 @dp.callback_query(F.data == "menu_texas")
 async def process_menu_texas(callback: types.CallbackQuery):
     await callback.message.edit_text("⚙️ **إدارة حساب Texas بك الخاص:**", reply_markup=texas_keyboard(callback.from_user.id), parse_mode="Markdown")
     await callback.answer()
 
-@dp.callback_query(F.data == "texas_account_action")
-async def process_texas_account(callback: types.CallbackQuery, state: FSMContext):
-    bal, site_user, site_pass = get_user_data(callback.from_user.id)
-    if site_user:
-        text = f"---------------------------\n🆔 **المعرف:** `{callback.from_user.id}`\n👤 **اسم المستخدم:** `{site_user}`\n🔑 **كلمة المرور:** `{site_pass}`\n💰 **الرصيد الفعلي:** {bal:,.2f} ل.س\n---------------------------"
-        builder = InlineKeyboardBuilder()
-        builder.button(text="↩️ رجوع", callback_data="menu_texas")
-        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-    else:
-        await state.set_state(Form.register_username)
-        await callback.message.answer("🆕 إنشاء حساب جديد | يرجى إرسال اسم المستخدم الذي ترغب به:")
-    await callback.answer()
-
-# إعادة صياغة دالة الويب بشكل آمن لمنع تعليق المسافات (Indentation Error)
+# خادم الويب الأساسي
 async def check_server_status(request):
     return web.Response(text="Server Active")
 
+# تشغيل خادم الويب مع تهيئة المنفذ فوراً دون تعليق
+async def run_web_server():
+    app = web.Application()
+    app.router.add_get('/', check_server_status)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv("PORT", 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"🌐 Web Server Port Bound to {port}")
+    # ابقاء الخادم مستيقظاً بشكل دائم في الخلفية
+    while True:
+        await asyncio.sleep(3600)
+
+async def run_bot():
+    await bot.delete_webhook(drop_pending_updates=True)
+    print("🚀 Bot Polling Started...")
+    await dp.start_polling(bot)
+
+# دالة التشغيل الذكية التي تجمع المهمتين بالتوازي لحل خطأ الـ Port قطعيًا
+async def main():
+    await asyncio.gather(
+        run_web_server(),
+        run_bot()
+    )
+
+if __name__ == "__main__":
+    asyncio.run(main())
