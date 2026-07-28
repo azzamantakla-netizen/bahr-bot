@@ -10,10 +10,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiohttp import web
 
-# 1. إعداد سجل الأخطاء الاحترافي لـ Render
+# 1. سجل الأخطاء
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
-# 2. البيانات الخاصة بك المعتمدة والمثبتة (مع التوكن الأخير النظيف)
+# 2. البيانات الخاصة بك المعتمدة والمثبتة (مع التوكن الأخير)
 BOT_TOKEN = "8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8"
 GROUP_ID = -1003983996094
 OWNER_ID = 6693251012
@@ -22,7 +22,7 @@ WEBSITE_URL = "https://texas4win200.com"
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# 3. إعداد قاعدة البيانات ونظام طابور الأدوار والصلاحيات
+# 3. قاعدة البيانات
 def init_db():
     conn = sqlite3.connect("bot_database.db")
     cursor = conn.cursor()
@@ -55,7 +55,6 @@ def init_db():
 
 init_db()
 
-# دالات التحقق والمساعدات المبرمجة لقاعدة البيانات
 def is_admin(user_id: int) -> bool:
     if user_id == OWNER_ID: return True
     conn = sqlite3.connect("bot_database.db")
@@ -73,7 +72,6 @@ def get_user_data(user_id: int):
     conn.close()
     return res if res else (0.0, None, None)
 
-# 4. لعدم تداخل البيانات والأزرار (FSM حالات الإدخال)
 class Form(StatesGroup):
     register_username = State()
     register_password = State()
@@ -88,7 +86,6 @@ class Form(StatesGroup):
     admin_broadcast_msg = State()
     promote_admin_id = State()
 
-# 5. لوحات التحكم وبناء الأزرار المدمجة (Inline Keyboards)
 def main_keyboard(user_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="🎮 حساب Texas", callback_data="menu_texas")
@@ -140,7 +137,6 @@ def admin_keyboard():
     builder.adjust(1)
     return builder.as_markup()
 
-# 6. معالجات الأوامر والرسائل التفاعلية
 @dp.message(CommandStart())
 @dp.message(Command("start"))
 async def cmd_start_handler(message: types.Message):
@@ -158,7 +154,7 @@ async def cmd_start_handler(message: types.Message):
         "👉 اختر أحد الخيارات بالأسفل"
     )
     force_remove = types.ReplyKeyboardRemove()
-    await message.answer("🔄 جاري تحديث واجهة البوت وتجهيز الأزرار...", reply_markup=force_remove)
+    await message.answer("🔄 جاري تحديث واجهة البوت...", reply_markup=force_remove)
     await message.answer(welcome_msg, reply_markup=main_keyboard(user_id))
 
 @dp.message(Command("balance"))
@@ -222,3 +218,7 @@ async def process_reg_user(message: types.Message, state: FSMContext):
     builder = InlineKeyboardBuilder()
     builder.button(text="✔️ موافقة", callback_data=f"accept_reg_{message.from_user.id}")
     builder.button(text="❌ رفض", callback_data=f"refuse_reg_{message.from_user.id}")
+    await bot.send_message(chat_id=GROUP_ID, text=f"🔔 **طلب إنشاء حساب جديد**\n\n👤 المستخدم: {message.from_user.full_name}\n🆔 الأيدي: `{message.from_user.id}`\n✍️ الاسم المطلوب: `{message.text}`", reply_markup=builder.as_markup())
+    await message.answer("⏳ تم رفع طلب إنشاء الحساب للإدارة، يرجى انتظار تأكيد وموافقة النظام...")
+
+# خادم ويب مصغر مدمج
