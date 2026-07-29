@@ -194,7 +194,7 @@ bot.hears('🏦 طلب سحب', (ctx) => {
 });
 
 bot.action(/withdraw_(.+)/, (ctx) => {
-    const method = ctx.match === 'syriatel' ? 'Syriatel Cash' : 'Sham Cash SYP';
+    const method = ctx.match[1] === 'syriatel' ? 'Syriatel Cash' : 'Sham Cash SYP';
     ctx.answerCbQuery();
     userStates[ctx.from.id] = { step: 'awaiting_withdraw_amount', method: method };
     ctx.reply('✏️ يرجى كتابة المبلغ الذي ترغب بسحبه بالليرة السورية (أرقام فقط):');
