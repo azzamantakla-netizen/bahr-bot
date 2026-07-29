@@ -2,7 +2,7 @@ const { Telegraf, Markup } = require('telegraf');
 const fs = require('fs'); 
 const http = require('http'); 
 
-// مصفوفة النصوص مدمجة داخلياً لتجنب خطأ MODULE_NOT_FOUND نهائياً
+// مصفوفة النصوص مدمجة داخلياً لتناسب نظام التسجيل الجديد
 const msgs = {
     welcome_msg: `مرحبا بك في عائلتنا صمم هذا البوت باحترافية عالية ليقدم لك تجربة من نوع آخر نقدم لك سرعة عالية في الايداع ومرونة عالية في السحب تفضل بالاختيار من القائمة بحسب الزر الذي يلبي طلبك`,
     technical_support: `❤️ لا تقلق نحن معك وفريقنا جاهز لخدمتك على مدار الساعة، فقط اكتب المشكلة أو الاستفسار بالتفصيل وأرسله الآن وسنقوم بالرد عليك فوراً:`,
@@ -15,7 +15,6 @@ const msgs = {
     player_reject: `❌ *تنبيه من إدارة فريق بحر:*\n\nعذراً، تمت مراجعة إيصالك وتبيّن أن البيانات مدخلة بشكل *خاطئ* أو غير واصلة. تم *رفض* الطلب. يرجى التأكد وإعادة المحاولة.`
 };
 
-// 1. إعداد الثوابت الأساسية لبوت فريق بحر
 const BOT_TOKEN = '8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8'; 
 const bot = new Telegraf(BOT_TOKEN); 
 const OWNER_ID = 6693251012; 
@@ -51,6 +50,16 @@ function getPlayerAccount(userId) {
     return JSON.parse(fs.readFileSync(ACCOUNTS_FILE))[userId] || null; 
 } 
 
+// دالة حفظ الحساب الجديد بالهيكل الجديد مئة بالمئة
+function savePlayerAccount(userId, username, password, balance = 0) { 
+    let accounts = {}; 
+    if (fs.existsSync(ACCOUNTS_FILE)) { 
+        accounts = JSON.parse(fs.readFileSync(ACCOUNTS_FILE)); 
+    } 
+    accounts[userId] = { username: username, password: password, balance: balance }; 
+    fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accounts, null, 4)); 
+} 
+
 function getMainMenu(userId) { 
     let keyboard = [['💰 شحن الرصيد', '🏦 طلب سحب'], ['👤 حسابي الفردي', '📞 الدعم الفني']]; 
     if (isOwner(userId)) keyboard.push(['⚙️ لوحة تحكم الإدارة']); 
@@ -83,17 +92,18 @@ bot.hears('📞 الدعم الفني', (ctx) => {
 bot.hears('👤 حسابي الفردي', (ctx) => { 
     const account = getPlayerAccount(ctx.from.id); 
     if (!account) { 
-        return ctx.reply('❌ حسابك غير مسجل.\n\nاضغط لإنشاء حساب وربطه باللعبة:', 
+        return ctx.reply('❌ حسابك غير مسجل في نظام البوت حتى الآن.\n\nيرجى الضغط على الزر أدناه لإنشاء حسابك وتعيين بيانات الدخول الخاصة بك:', 
             Markup.inlineKeyboard([[Markup.button.callback('🆕 إنشاء حساب جديد', 'register_account')]]) 
         ); 
     } 
-    ctx.replyWithMarkdown(`👤 *تفاصيل حسابك الفردي:*\n• الاسم: *${ctx.from.first_name}*\n• ID اللعبة: \`${account.gameId}\`\n• الرصيد: *${account.balance.toLocaleString()}* ل.س`); 
+    ctx.replyWithMarkdown(`👤 *تفاصيل حسابك الفردي الموثق:*\n\n• الاسم: *${ctx.from.first_name}*\n• اسم المستخدم: \`${account.username}\`\n• رصيدك الحالي: *${account.balance.toLocaleString()}* ل.س\n\n📌 يتم تحديث الرصيد تلقائياً عند موافقة الإدارة على إيصالات الشحن الخاصة بك.`); 
 }); 
 
 bot.action('register_account', (ctx) => { 
     ctx.answerCbQuery(); 
-    userStates[ctx.from.id] = { step: 'awaiting_game_id' }; 
-    ctx.reply('✏️ يرجى إرسال معرف اللعبة (ID) الخاص بك الآن:'); 
+    // الخطوة الأولى: طلب اسم المستخدم
+    userStates[ctx.from.id] = { step: 'awaiting_username' }; 
+    ctx.reply('✏️ يرجى كتابة اسم المستخدم (Username) الذي تريده للحساب الآن:'); 
 }); 
 
 bot.hears('⚙️ لوحة تحكم الإدارة', (ctx) => { 
@@ -127,7 +137,7 @@ bot.hears('🏦 طلب سحب', (ctx) => {
 
 bot.action(/withdraw_(.+)/, (ctx) => { 
     ctx.answerCbQuery(); 
-    userStates[ctx.from.id] = { step: 'awaiting_withdraw_amount', method: ctx.match }; 
+    userStates[ctx.from.id] = { step: 'awaiting_withdraw_amount', method: ctx.match[1] }; 
     ctx.reply('✏️ يرجى كتابة المبلغ المطلوب سحبه (أرقام فقط):'); 
 }); 
 
@@ -147,15 +157,40 @@ bot.action(/dep_(accept|reject)_(\d+)/, async (ctx) => {
     } 
 }); 
 
-// معالجة رسائل الدعم الفني من القروب
+// 5. قسم استقبال المدخلات النصية ومعالجة تدفق الحساب والردود
 bot.on('message', async (ctx) => { 
+    const userId = ctx.from.id; 
+    const text = ctx.message.text;
+    const currentState = userStates[userId]?.step; 
+
+    // معالجة خطوات إنشاء الحساب المتتالي (اسم مستخدم -> كلمة سر)
+    if (currentState === 'awaiting_username' && text) {
+        // حفظ اسم المستخدم مؤقتاً والانتقال لطلب كلمة السر
+        userStates[userId] = { step: 'awaiting_password', username: text };
+        return ctx.reply('🔒 ممتاز، الآن يرجى كتابة كلمة السر (Password) المطلوبة لحسابك لإتمام التسجيل:');
+    }
+
+    if (currentState === 'awaiting_password' && text) {
+        const username = userStates[userId].username;
+        const password = text;
+        
+        // حفظ البيانات نهائياً برصيد 0
+        savePlayerAccount(userId, username, password, 0);
+        
+        // مسح الحالة المؤقتة للمستخدم
+        delete userStates[userId];
+        
+        return ctx.replyWithMarkdown(`🎉 *تهانينا! تم إنشاء حسابك بنجاح مئة بالمئة.*\n\n• اسم المستخدم: \`${username}\`\n• كلمة المرور: \`${password}\`\n\nيمكنك الآن تفقد رصيدك وبياناتك عبر زر *👤 حسابي الفردي*.`);
+    }
+
+    // معالجة رسائل الدعم الفني من القروب (عند عمل ريبلاي)
     if (ctx.chat.id === ADMIN_GROUP_ID && ctx.message.reply_to_message) { 
         const replyText = ctx.message.reply_to_message.text || ctx.message.reply_to_message.caption; 
         if (replyText && replyText.includes('ID:')) { 
             const matches = replyText.match(/ID:\s*(\d+)/); 
             if (matches && matches[1]) { 
                 try { 
-                    await bot.telegram.sendMessage(matches[1], `📬 *رد من الإدارة:*\n\n💬 ${ctx.message.text || ''}`, { parse_mode: 'Markdown' }); 
+                    await bot.telegram.sendMessage(matches[1], `📬 *رد من الإدارة:*\n\n💬 ${text || ''}`, { parse_mode: 'Markdown' }); 
                 } catch (e) {} 
             } 
         } 
@@ -168,4 +203,4 @@ http.createServer((req, res) => {
     res.end('Bot Server Operational\n'); 
 }).listen(process.env.PORT || 10000); 
 
-bot.launch().then(() => { console.log('Deployed Successfully without any missing modules!'); });
+bot.launch().then(() => { console.log('Deployed Successfully with Multi-step Registration!'); });
