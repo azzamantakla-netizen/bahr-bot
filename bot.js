@@ -66,7 +66,7 @@ function saveUser(userId) {
     } 
 } 
 
-// 3. قوائم التحكم بالأزرار 
+// 3. قوائم التحكم بالأزران 
 function getMainMenu(userId) { 
     let keyboard = [ 
         ['💰 شحن الرصيد', '🏦 طلب سحب'], 
