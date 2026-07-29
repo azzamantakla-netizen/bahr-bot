@@ -1,4 +1,4 @@
-// كود بوت تليجرام متكامل - فريق بحر (النسخة المستقرة والمفحوصة مئة بالمئة)
+// كود بوت تليجرام متكامل - فريق بحر (نسخة نظام الدعم الفني المطور)
 const { Telegraf, Markup } = require('telegraf');
 const fs = require('fs');
 
@@ -68,8 +68,10 @@ bot.hears('🔙 العودة للقائمة الرئيسية', (ctx) => {
     ctx.reply('تم العودة للقائمة الرئيسية بنجاح.', getMainMenu(ctx.from.id));
 });
 
+// 📞 تعديل زر الدعم الفني ليدخل اللاعب في وضع كتابة المشكلة
 bot.hears('📞 الدعم الفني', (ctx) => {
-    ctx.reply('📞 للتواصل مع الدعم الفني والاستفسارات، يرجى مراسلة الحساب المعتمد التالي:\n\n➡️ @Bahr_Team_Support');
+    userStates[ctx.from.id] = { step: 'awaiting_support_msg' };
+    ctx.reply('❤️ لا تقلق نحن معك وفريقنا جاهز لخدمتك على مدار الساعة، فقط اكتب المشكلة أو الاستفسار بالتفصيل وأرسله الآن وسنقوم بالرد عليك فوراً:');
 });
 
 bot.hears('👤 حسابي الفردي', (ctx) => {
@@ -136,7 +138,7 @@ bot.hears('🏦 طلب سحب', (ctx) => {
 });
 
 bot.action(/withdraw_(.+)/, (ctx) => {
-    const method = ctx.match[1] === 'syriatel' ? 'Syriatel Cash' : 'Sham Cash SYP';
+    const method = ctx.match === 'syriatel' ? 'Syriatel Cash' : 'Sham Cash SYP';
     ctx.answerCbQuery();
     userStates[ctx.from.id] = { step: 'awaiting_withdraw_amount', method: method };
     ctx.reply('✏️ يرجى كتابة المبلغ الذي ترغب بسحبه بالليرة السورية (أرقام فقط):');
@@ -146,9 +148,28 @@ bot.on('message', async (ctx) => {
     const userId = ctx.from.id;
     const currentState = userStates[userId]?.step;
     
+    // 🛠️ معالجة ردود الإدارة على تذاكر دعم اللاعبين داخل المجموعة
+    if (ctx.chat.id === ADMIN_GROUP_ID && ctx.message.reply_to_message) {
+        const replyText = ctx.message.reply_to_message.text || ctx.message.reply_to_message.caption;
+        if (replyText && replyText.includes('ID:')) {
+            // استخراج الأرقام الخاصة بـ ID اللاعب من الرسالة الأصلية تلقائياً
+            const matches = replyText.match(/ID:\s*(\d+)/);
+            if (matches && matches[1]) {
+                const targetPlayerId = matches[1];
+                try {
+                    await bot.telegram.sendMessage(targetPlayerId, `📬 *رد من إدارة فريق بحر على استفسارك:*\n\n💬 ${ctx.message.text}`, { parse_mode: 'Markdown' });
+                    return ctx.reply('✅ تم إرسال ردك إلى اللاعب بنجاح.');
+                } catch (err) {
+                    return ctx.reply('❌ فشل إرسال الرد، قد يكون اللاعب قد حظر البوت.');
+                }
+            }
+        }
+    }
+
     if (currentState) {
         const s = loadSettings();
         
+        // تحويل رسالة استفسار اللاعب إلى المجموعة الإدارية
         if (currentState === 'edit_syriatel') {
             s.syriatel_code = ctx.message.text;
             saveSettings(s);
@@ -180,6 +201,20 @@ bot.on('message', async (ctx) => {
             }
             return ctx.reply('❌ لا يوجد لاعبون مسجلون للاستقبال.');
         }
+        
+        // تحويل رسالة تذكرة الدعم إلى المشرفين
+        if (currentState === 'awaiting_support_msg') {
+            delete userStates[userId];
+            await bot.telegram.sendMessage(ADMIN_GROUP_ID, 
+                `📞 *رسالة دعم فني جديدة (فريق بحر):*\n` +
+                `• من اللاعب: [${ctx.from.first_name}](tg://user?id=${userId})\n` +
+                `• حساب اللاعب ID: \`${userId}\`\n\n` +
+                `💬 *الرسالة:* "${ctx.message.text}"\n\n` +
+                `💡 _للرد على اللاعب، قم بعمل Reply (رد) مباشرة على هذه الرسالة واكتب جوابك._`
+            );
+            return ctx.reply('✅ تم إرسال رسالتك إلى قسم المشرفين بنجاح، يرجى الانتظار لحين المراجعة والرد عليك هنا.');
+        }
+
         if (currentState === 'awaiting_withdraw_amount') {
             const amount = parseInt(ctx.message.text);
             if (isNaN(amount) || amount <= 0) return ctx.reply('❌ يرجى إدخال مبلغ صحيح بالأرقام فقط.');
@@ -189,26 +224,3 @@ bot.on('message', async (ctx) => {
             const finalAmount = amount - fee;
             
             await bot.telegram.sendMessage(ADMIN_GROUP_ID, 
-                `🏦 *طلب سحب جديد (فريق بحر):*\n• اللاعب: [${ctx.from.first_name}](tg://user?id=${userId})\n• الطريقة: ${userStates[userId].method}\n• المبلغ: ${amount.toLocaleString()} ل.س\n• الصافي: *${finalAmount.toLocaleString()}* ل.س`, 
-                { parse_mode: 'Markdown' }
-            );
-            ctx.reply('✅ تم رفع طلب السحب الخاص بك لـ فريق الإدارة بنجاح.');
-            delete userStates[userId];
-            return;
-        }
-    }
-    
-    if (ctx.message.photo) {
-        const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
-        await bot.telegram.sendPhoto(ADMIN_GROUP_ID, photoId, {
-            caption: `💰 *إيصال تعبئة معلق (فريق بحر):*\n• من اللاعب: [${ctx.from.first_name}](tg://user?id=${userId})\n• النص: "${ctx.message.caption || ''}"`,
-            parse_mode: 'Markdown'
-        });
-        return ctx.reply('✅ تم استلام الإيصال وجاري مراجعته لدى مشرفي فريق بحر.');
-    }
-});
-
-const http = require('http');
-http.createServer((req, res) => { res.write("Bahr Bot Active!"); res.end(); }).listen(process.env.PORT || 10000);
-
-bot.launch().then(() => console.log('✅ البوت المطور يعمل الآن...'));
