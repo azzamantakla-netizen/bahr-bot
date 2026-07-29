@@ -1,1 +1,13 @@
-
+{
+  "name": "bahr-bot",
+  "version": "1.0.0",
+  "description": "Telegram Bot for Bahr Team",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "telegraf": "^4.16.3",
+    "https-proxy-agent": "^7.0.5"
+  }
+}
