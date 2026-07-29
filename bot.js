@@ -61,6 +61,7 @@ function saveUser(userId) {
     }
 }
 
+// تعديل دالة لوحة المفاتيح الرئيسية لتمرير رقم المستخدم وفحص هويته بدقة
 function getMainMenu(userId) {
     let keyboard = [['💰 شحن الرصيد', '🏦 طلب سحب'], ['👤 حسابي الفردي', '📞 الدعم الفني']];
     if (isOwner(userId)) { keyboard.push(['⚙️ لوحة تحكم الإدارة']); }
@@ -194,7 +195,7 @@ bot.hears('🏦 طلب سحب', (ctx) => {
 });
 
 bot.action(/withdraw_(.+)/, (ctx) => {
-    const method = ctx.match[1] === 'syriatel' ? 'Syriatel Cash' : 'Sham Cash SYP';
+    const method = ctx.match === 'syriatel' ? 'Syriatel Cash' : 'Sham Cash SYP';
     ctx.answerCbQuery();
     userStates[ctx.from.id] = { step: 'awaiting_withdraw_amount', method: method };
     ctx.reply('✏️ يرجى كتابة المبلغ الذي ترغب بسحبه بالليرة السورية (أرقام فقط):');
@@ -235,4 +236,3 @@ bot.on('message', async (ctx) => {
             s.cham_wallet = ctx.message.text; saveSettings(s); delete userStates[userId];
             return ctx.reply(`✅ تم تحديث محفظة شام كاش بنجاح إلى: ${ctx.message.text}`, getAdminMenu());
         }
-        if (currentState === 'edit_welcome') {
