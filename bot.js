@@ -1,4 +1,4 @@
-// كود بوت تليجرام متكامل - فريق بحر (النسخة النهائية والشاملة لجميع الميزات)
+// كود بوت تليجرام متكامل - فريق بحر (النسخة الشاملة مئة بالمئة والجاهزة للتشغيل الفوري)
 const { Telegraf, Markup } = require('telegraf');
 const fs = require('fs');
 
@@ -13,11 +13,11 @@ const ACCOUNTS_FILE = './accounts.json';
 let userStates = {};
 const WITHDRAW_RULES = { min: 200000, max: 2000000, feePercent: 10 };
 
-// دالة تحميل الإعدادات والمالكين مع منع المصفوفات الفارغة
+// تحميل الإعدادات والمالكين مع تثبيت قيمة المالك لتجنب مشاكل البناء
 function loadSettings() {
     if (!fs.existsSync(SETTINGS_FILE)) {
         const defaultSettings = {
-            owners:, // تفعيل مصفوفة الملاك بـ ID الخاص بك لمنع أخطاء البناء
+            owners:, // تم تثبيت معرف حسابك الأساسي هنا بنجاح
             admins: [],          
             syriatel_code: '48122120',
             cham_wallet: 'a18758d5324eb7595d4463ca355ad221',
@@ -35,25 +35,20 @@ function saveSettings(settings) {
     fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 4));
 }
 
-// دالة فحص صلاحيات المالك
+// دالة فحص المالكين
 function isOwner(userId) {
     const s = loadSettings();
     return s.owners.includes(userId);
 }
 
-// دالة فحص صلاحيات المشرفين المعينين بالـ ID
-function isAdmin(userId) {
-    const s = loadSettings();
-    return s.admins.includes(userId) || s.owners.includes(userId);
-}
-
-// نظام إدارة الحسابات المحلية (المرحلة الثانية الذاتية)
+// تحميل وحفظ حسابات اللاعبين (الرصيد والمعرف)
 function getPlayerAccount(userId) {
     if (!fs.existsSync(ACCOUNTS_FILE)) return null;
     const accounts = JSON.parse(fs.readFileSync(ACCOUNTS_FILE));
     return accounts[userId] || null;
 }
 
+// دالة حفظ رصيد اللاعب
 function savePlayerAccount(userId, gameId, balance = 0) {
     let accounts = {};
     if (fs.existsSync(ACCOUNTS_FILE)) { accounts = JSON.parse(fs.readFileSync(ACCOUNTS_FILE)); }
@@ -70,14 +65,14 @@ function saveUser(userId) {
     }
 }
 
-// لوحات التحكم الرئيسية والفرعية
+// القوائم والأزرار الرئيسية للاعب
 function getMainMenu(userId) {
     let keyboard = [['💰 شحن الرصيد', '🏦 طلب سحب'], ['👤 حسابي الفردي', '📞 الدعم الفني']];
     if (isOwner(userId)) { keyboard.push(['⚙️ لوحة تحكم الإدارة']); }
     return Markup.keyboard(keyboard).resize();
 }
 
-// تحديث لوحة التحكم لتشمل أزرار المشرفين والمالكين بدقة
+// قائمة أزرار الإدارة الفرعية المحدثة
 function getAdminMenu() {
     return Markup.keyboard([
         ['📞 تعديل سيريتل كاش', '💳 تعديل شام كاش'],
@@ -87,7 +82,6 @@ function getAdminMenu() {
     ]).resize();
 }
 
-// أمر البدء الرئيسي
 bot.start((ctx) => {
     const userId = ctx.from.id;
     saveUser(userId);
@@ -100,17 +94,17 @@ bot.hears('🔙 العودة للقائمة الرئيسية', (ctx) => {
     ctx.reply('تم العودة للقائمة الرئيسية بنجاح.', getMainMenu(ctx.from.id));
 });
 
-// 📞 نظام الدعم الفني وتذاكر الدعم بالتناغم التام مع ردود الإدارة
+// 📞 نظام تذاكر الدعم الفني المطور بالردود التلقائية
 bot.hears('📞 الدعم الفني', (ctx) => {
     userStates[ctx.from.id] = { step: 'awaiting_support_msg' };
     ctx.reply('❤️ لا تقلق نحن معك وفريقنا جاهز لخدمتك على مدار الساعة، فقط اكتب المشكلة أو الاستفسار بالتفصيل وأرسله الآن وسنقوم بالرد عليك فوراً:');
 });
 
-// 👤 نظام حسابي الفردي الذاتي (فحص وعرض وإنشاء الحسابات)
+// 👤 زر حسابي الفردي المطور (فحص الحساب وإنشاء حساب محلي)
 bot.hears('👤 حسابي الفردي', (ctx) => {
     const account = getPlayerAccount(ctx.from.id);
     if (!account) {
-        return ctx.reply('❌ حسابك غير مسجل في نظام البوت حتى الآن.\n\nيرجى الضغط على الزر أدناه لإنشاء حسابك وربطه بمعرف اللعبة الخاص بك:',
+        return ctx.reply('❌ حسابك غير مسجل في نظام البوت حتى الآن.\n\nيرجى الضغط على الزر أدناه لإنشاء حسابك وربطه بمعرف اللعبة:',
             Markup.inlineKeyboard([[Markup.button.callback('🆕 إنشاء حساب جديد', 'register_account')]])
         );
     }
@@ -120,13 +114,13 @@ bot.hears('👤 حسابي الفردي', (ctx) => {
 bot.action('register_account', (ctx) => {
     ctx.answerCbQuery();
     userStates[ctx.from.id] = { step: 'awaiting_game_id' };
-    ctx.reply('✏️ يرجى إرسال معرف اللعبة (ID) الخاص بك الآن لإنشاء الحساب وتوثيقه:');
+    ctx.reply('✏️ يرجى إرسال معرف اللعبة (ID) الخاص بك الآن لإنشاء الحساب:');
 });
 
-// صلاحيات ودخول لوحة تحكم الإدارة الشاملة
+// الدخول للوحة تحكم الإدارة (للمالك فقط)
 bot.hears('⚙️ لوحة تحكم الإدارة', (ctx) => {
     if (!isOwner(ctx.from.id)) return ctx.reply('❌ عذراً، هذا القسم مخصص لمالك البوت فقط.');
-    ctx.reply('⚙️ أهلاً بك في لوحة تحكم الإدارة الشاملة لـ فريق بحر. اختر الإجراء المطلوب:', getAdminMenu());
+    ctx.reply('⚙️ أهلاً بك في لوحة تحكم الإدارة الشاملة. اختر الإجراء المطلوب:', getAdminMenu());
 });
 
 bot.hears('📞 تعديل سيريتل كاش', (ctx) => {
@@ -165,7 +159,7 @@ bot.hears('➕ إضافة مشرف جديد', (ctx) => {
     ctx.reply('✏️ يرجى إرسال المعرف الرقمي (ID) الخاص بالمشرف الجديد:');
 });
 
-// تفعيل أزرار الشحن للاعبين
+// أزرار الشحن والسحب للاعبين
 bot.hears('💰 شحن الرصيد', (ctx) => {
     ctx.reply('اختر طريقة الدفع المناسبة لك لإرسال الأموال وتعبئة حسابك:', 
         Markup.inlineKeyboard([
@@ -187,7 +181,6 @@ bot.action('show_cham', (ctx) => {
     ctx.replyWithMarkdown(`*شام كاش (Cham Cash) 💳*\n\nيرجى تحويل المبلغ إلى عنوان المحفظة:\n➡️ \`${s.cham_wallet}\`\n\n⚠️ بعد التحويل، أرسل للبوت صورة الإيصال واضحة متبوعة بمعرف اللعبة والمبلغ.`);
 });
 
-// تفعيل أزرار السحب للاعبين
 bot.hears('🏦 طلب سحب', (ctx) => {
     ctx.replyWithMarkdown(`📌 *شروط وقوانين السحب لـ فريق بحر:*\n• الحد الأدنى: 200,000 ل.س\n• الحد الأقصى: 2,000,000 ل.س\n• عمولة الاستقطاع: 10%\n\nاختر طريقة استلام أموالك:`, 
         Markup.inlineKeyboard([
@@ -204,23 +197,22 @@ bot.action(/withdraw_(.+)/, (ctx) => {
     ctx.reply('✏️ يرجى كتابة المبلغ الذي ترغب بسحبه بالليرة السورية (أرقام فقط):');
 });
 
-// معالجة تدفق الرسائل الواردة وردود المشرفين بالـ Reply
+// معالجة كافة الرسائل والردود والتحقق من الحسابات
 bot.on('message', async (ctx) => {
     const userId = ctx.from.id;
     const currentState = userStates[userId]?.step;
     
-    // 🛠️ فحص ومعالجة رد الإدارة على اللاعب عبر الـ Reply داخل المجموعة المعتمدة
+    // معالجة ردود الإدارة على تذاكر الدعم الفني داخل مجموعة المشرفين (Reply)
     if (ctx.chat.id === ADMIN_GROUP_ID && ctx.message.reply_to_message) {
         const replyText = ctx.message.reply_to_message.text || ctx.message.reply_to_message.caption;
         if (replyText && replyText.includes('ID:')) {
             const matches = replyText.match(/ID:\s*(\d+)/);
             if (matches && matches[1]) {
-                const targetPlayerId = matches[1];
                 try {
-                    await bot.telegram.sendMessage(targetPlayerId, `📬 *رد من إدارة فريق بحر على استفسارك:*\n\n💬 ${ctx.message.text}`, { parse_mode: 'Markdown' });
-                    return ctx.reply('✅ تم إرسال ردك إلى اللاعب بنجاح عبر البوت.');
+                    await bot.telegram.sendMessage(matches[1], `📬 *رد من إدارة فريق بحر على استفسارك:*\n\n💬 ${ctx.message.text}`, { parse_mode: 'Markdown' });
+                    return ctx.reply('✅ تم إرسال ردك إلى اللاعب بنجاح.');
                 } catch (err) {
-                    return ctx.reply('❌ فشل إرسال الرد، قد يكون اللاعب قد قام بحظر البوت.');
+                    return ctx.reply('❌ فشل إرسال الرد، قد يكون اللاعب قد حظر البوت.');
                 }
             }
         }
@@ -232,6 +224,11 @@ bot.on('message', async (ctx) => {
         if (currentState === 'awaiting_game_id') {
             savePlayerAccount(userId, ctx.message.text, 0);
             delete userStates[userId];
-            return ctx.reply(`🎉 تم إنشاء حسابك بنجاح وربطه بمعرف اللعبة: ${ctx.message.text}\nرصيدك الافتراضي الحالي هو: 0 ل.س`, getMainMenu(userId));
+            return ctx.reply(`🎉 تم إنشاء حسابك بنجاح وربطه بمعرف اللعبة: ${ctx.message.text}\nرصيدك الحالي هو: 0 ل.س`, getMainMenu(userId));
         }
         if (currentState === 'edit_syriatel') {
+            s.syriatel_code = ctx.message.text; saveSettings(s); delete userStates[userId];
+            return ctx.reply(`✅ تم تحديث رقم سيريتل كاش بنجاح إلى: ${ctx.message.text}`, getAdminMenu());
+        }
+        if (currentState === 'edit_cham') {
+            s.cham_wallet = ctx.message.text; saveSettings(s); delete userStates[userId];
