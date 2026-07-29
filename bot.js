@@ -194,7 +194,7 @@ bot.hears('🏦 طلب سحب', (ctx) => {
 });
 
 bot.action(/withdraw_(.+)/, (ctx) => {
-    const method = ctx.match[1] === 'syriatel' ? 'Syriatel Cash' : 'Sham Cash SYP';
+    const method = ctx.match === 'syriatel' ? 'Syriatel Cash' : 'Sham Cash SYP';
     ctx.answerCbQuery();
     userStates[ctx.from.id] = { step: 'awaiting_withdraw_amount', method: method };
     ctx.reply('✏️ يرجى كتابة المبلغ الذي ترغب بسحبه بالليرة السورية (أرقام فقط):');
@@ -208,7 +208,7 @@ bot.on('message', async (ctx) => {
         const replyText = ctx.message.reply_to_message.text || ctx.message.reply_to_message.caption;
         if (replyText && replyText.includes('ID:')) {
             const matches = replyText.match(/ID:\s*(\d+)/);
-            if (matches && matches[1]) {
+            if (matches && matches) {
                 try {
                     await bot.telegram.sendMessage(matches[1], `📬 *رد من إدارة فريق بحر على استفسارك:*\n\n💬 ${ctx.message.text}`, { parse_mode: 'Markdown' });
                     return ctx.reply('✅ تم إرسال ردك إلى اللاعب بنجاح.');
