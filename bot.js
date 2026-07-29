@@ -1,8 +1,21 @@
 const { Telegraf, Markup } = require('telegraf'); 
 const fs = require('fs'); 
 const http = require('http'); 
-const msgs = require('./messages'); // استدعاء ملف النصوص الخارجي لحل المشكلة جذرياً
 
+// مصفوفة النصوص مدمجة داخلياً لتجنب خطأ MODULE_NOT_FOUND نهائياً
+const msgs = {
+    welcome_msg: `مرحبا بك في عائلتنا صمم هذا البوت باحترافية عالية ليقدم لك تجربة من نوع آخر نقدم لك سرعة عالية في الايداع ومرونة عالية في السحب تفضل بالاختيار من القائمة بحسب الزر الذي يلبي طلبك`,
+    technical_support: `❤️ لا تقلق نحن معك وفريقنا جاهز لخدمتك على مدار الساعة، فقط اكتب المشكلة أو الاستفسار بالتفصيل وأرسله الآن وسنقوم بالرد عليك فوراً:`,
+    withdraw_rules: `📌 *شروط وقوانين السحب لـ فريق بحر:*\n• الحد الأدنى: 200,000 ل.س\n• الحد الأقصى: 2,000,000 ل.س\n• عمولة الاستقطاع: 10%\n\nاختر طريقة استلام أموالك:`,
+    syriatel_charge: `*Syriatel Cash 🇸🇾*\n\nيرجى تحويل المبلغ إلى الرقم التابع لنا:\n➡️ \`{code}\`\n\n⚠️ بعد التحويل، أرسل للبوت صورة الإيصال واضحة متبوعة بمعرف اللعبة والمبلغ.`,
+    cham_charge: `*شام كاش (Cham Cash) 💳*\n\nيرجى تحويل المبلغ إلى عنوان المحفظة:\n➡️ \`{wallet}\`\n\n⚠️ بعد التحويل، أرسل للبوت صورة الإيصال واضحة متبوعة بمعرف اللعبة والمبلغ.`,
+    accept_caption: `💰 *إيصال تعبئة فريق بحر:*\n\n✅ تم *قبول* هذا الإيصال واعتماد المعاملة بواسطة: [{name}](tg://user?id={id})`,
+    reject_caption: `💰 *إيصال تعبئة فريق بحر:*\n\n❌ تم *رفض* هذا الإيصال وإلغاء المعاملة بواسطة: [{name}](tg://user?id={id})`,
+    player_accept: `🎉 *خبر سار من فريق بحر:*\n\nتمت مراجعة إيصال التحويل الخاص بك و*القبول* بنجاح! جاري شحن رصيد حسابك الآن.`,
+    player_reject: `❌ *تنبيه من إدارة فريق بحر:*\n\nعذراً، تمت مراجعة إيصالك وتبيّن أن البيانات مدخلة بشكل *خاطئ* أو غير واصلة. تم *رفض* الطلب. يرجى التأكد وإعادة المحاولة.`
+};
+
+// 1. إعداد الثوابت الأساسية لبوت فريق بحر
 const BOT_TOKEN = '8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8'; 
 const bot = new Telegraf(BOT_TOKEN); 
 const OWNER_ID = 6693251012; 
@@ -114,7 +127,7 @@ bot.hears('🏦 طلب سحب', (ctx) => {
 
 bot.action(/withdraw_(.+)/, (ctx) => { 
     ctx.answerCbQuery(); 
-    userStates[ctx.from.id] = { step: 'awaiting_withdraw_amount', method: ctx.match[1] }; 
+    userStates[ctx.from.id] = { step: 'awaiting_withdraw_amount', method: ctx.match }; 
     ctx.reply('✏️ يرجى كتابة المبلغ المطلوب سحبه (أرقام فقط):'); 
 }); 
 
@@ -155,4 +168,4 @@ http.createServer((req, res) => {
     res.end('Bot Server Operational\n'); 
 }).listen(process.env.PORT || 10000); 
 
-bot.launch().then(() => { console.log('Deployed Successfully!'); });
+bot.launch().then(() => { console.log('Deployed Successfully without any missing modules!'); });
