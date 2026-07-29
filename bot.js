@@ -66,7 +66,7 @@ function saveUser(userId) {
     } 
 } 
 
-// 3. قوائم التحكم بالأزران 
+// 3. قوائم التحكم بالأزرار 
 function getMainMenu(userId) { 
     let keyboard = [ 
         ['💰 شحن الرصيد', '🏦 طلب سحب'], 
@@ -126,54 +126,6 @@ bot.hears('⚙️ لوحة تحكم الإدارة', (ctx) => {
     ctx.reply('⚙️ أهلاً بك في لوحة تحكم الإدارة الشاملة. اختر الإجراء المطلوب:', getAdminMenu()); 
 }); 
 
-bot.hears('📞 تعديل سيريتل كاش', (ctx) => { 
-    if (!isOwner(ctx.from.id)) return; 
-    userStates[ctx.from.id] = { step: 'edit_syriatel' }; 
-    ctx.reply('✏️ يرجى إرسال رقم السيريتل كاش الجديد الآن:'); 
-}); 
-
-bot.hears('💳 تعديل شام كاش', (ctx) => { 
-    if (!isOwner(ctx.from.id)) return; 
-    userStates[ctx.from.id] = { step: 'edit_cham' }; 
-    ctx.reply('✏️ يرجى إرسال عنوان محفظة شام كاش الجديدة الآن:'); 
-}); 
-
-bot.hears('📝 تعديل رسالة الترحيب', (ctx) => { 
-    if (!isOwner(ctx.from.id)) return; 
-    userStates[ctx.from.id] = { step: 'edit_welcome' }; 
-    ctx.reply('✏️ أرسل رسالة الترحيب الجديدة الآن ليتم اعتمادها فوراً في البوت:'); 
-}); 
-
-bot.hears('📢 إرسال إذاعة', (ctx) => { 
-    if (!isOwner(ctx.from.id)) return; 
-    userStates[ctx.from.id] = { step: 'broadcast_msg' }; 
-    ctx.reply('📢 يرجى كتابة وإرسال نص الرسالة المراد إذاعتها لجميع المشتركين:'); 
-}); 
-
-bot.hears('➕ إضافة مالك جديد', (ctx) => { 
-    if (!isOwner(ctx.from.id)) return; 
-    userStates[ctx.from.id] = { step: 'add_owner' }; 
-    ctx.reply('✏️ يرجى إرسال المعرف الرقمي (ID) الخاص بالمالك الجديد:'); 
-}); 
-
-bot.hears('➕ إضافة مشرف جديد', (ctx) => { 
-    if (!isOwner(ctx.from.id)) return; 
-    userStates[ctx.from.id] = { step: 'add_admin' }; 
-    ctx.reply('✏️ يرجى إرسال المعرف الرقمي (ID) الخاص بالمشرف الجديد:'); 
-}); 
-
-bot.hears('📧 تعديل إيميل الكاشير', (ctx) => { 
-    if (!isOwner(ctx.from.id)) return; 
-    userStates[ctx.from.id] = { step: 'edit_cashier_user' }; 
-    ctx.reply('✏️ يرجى إرسال البريد الإلكتروني (Email) الجديد الخاص بالكاشير الآن:'); 
-}); 
-
-bot.hears('🔑 تعديل باسورد الكاشير', (ctx) => { 
-    if (!isOwner(ctx.from.id)) return; 
-    userStates[ctx.from.id] = { step: 'edit_cashier_pass' }; 
-    ctx.reply('✏️ يرجى إرسال كلمة المرور (Password) الجديدة الخاصة بالكاشير الآن:'); 
-}); 
-
 bot.hears('💰 شحن الرصيد', (ctx) => { 
     ctx.reply('اختر طريقة الدفع المناسبة لك لإرسال الأموال وتعبئة حسابك:', Markup.inlineKeyboard([ 
         [Markup.button.callback('Syriatel Cash 🇸🇾', 'show_syriatel')], 
@@ -184,12 +136,14 @@ bot.hears('💰 شحن الرصيد', (ctx) => {
 bot.action('show_syriatel', (ctx) => { 
     ctx.answerCbQuery(); 
     const s = loadSettings(); 
+    userStates[ctx.from.id] = { step: 'awaiting_receipt' }; 
     ctx.replyWithMarkdown(`*Syriatel Cash 🇸🇾*\n\nيرجى تحويل المبلغ إلى الرقم التابع لنا:\n➡️ \`${s.syriatel_code}\`\n\n⚠️ بعد التحويل، أرسل للبوت صورة الإيصال واضحة متبوعة بمعرف اللعبة والمبلغ.`); 
 }); 
 
 bot.action('show_cham', (ctx) => { 
     ctx.answerCbQuery(); 
     const s = loadSettings(); 
+    userStates[ctx.from.id] = { step: 'awaiting_receipt' }; 
     ctx.replyWithMarkdown(`*شام كاش (Cham Cash) 💳*\n\nيرجى تحويل المبلغ إلى عنوان المحفظة:\n➡️ \`${s.cham_wallet}\`\n\n⚠️ بعد التحويل، أرسل للبوت صورة الإيصال واضحة متبوعة بمعرف اللعبة والمبلغ.`); 
 });
 
@@ -209,17 +163,16 @@ bot.action(/withdraw_(.+)/, (ctx) => {
     ctx.reply('✏️ يرجى كتابة المبلغ الذي ترغب بسحبه بالليرة السورية (أرقام فقط):'); 
 }); 
 
-// معالجة الضغط على أزرار القبول والرفض الفورية للإيصالات داخل مجموعة المشرفين 
+// معالجة الضغط على أزرار القبول والرفض داخل مجموعة المشرفين
 bot.action(/dep_(accept|reject)_(\d+)/, async (ctx) => { 
     ctx.answerCbQuery(); 
     const action = ctx.match[1]; 
     const playerTelegramId = ctx.match[2]; 
     
     if (action === 'accept') { 
-        await ctx.editMessageCaption(`💰 *إيصال تعبئة فريق بحر:*\n\n✅ تم *قبول* هذا الإيصال واعتماد المعاملة بواسطة: [${ctx.from.first_name}](tg://user?id=${ctx.from.id})`, { parse_mode: 'Markdown' }); 
-        try { 
-            await bot.telegram.sendMessage(playerTelegramId, `🎉 *خبر سار من فريق بحر:*\n\nتمت مراجعة إيصال التحويل الخاص بك و*القبول* بنجاح! جاري شحن رصيد حسابك الآن.`, { parse_mode: 'Markdown' }); 
-        } catch (e) {} 
+        // نقل حالة المشرف ليقوم بإدخال قيمة الشحن يدوياً لهذا اللاعب
+        userStates[ctx.from.id] = { step: 'admin_entering_amount', targetPlayer: playerTelegramId, messageId: ctx.callbackQuery.message.message_id };
+        await ctx.reply(`✏️ [${ctx.from.first_name}] يرجى كتابة المبلغ الدقيق المراد شحنه الآن لهذا اللاعب بالخاص (أرقام فقط دون فواصل):`);
     } else { 
         await ctx.editMessageCaption(`💰 *إيصال تعبئة فريق بحر:*\n\n❌ تم *رفض* هذا الإيصال وإلغاء المعاملة بواسطة: [${ctx.from.first_name}](tg://user?id=${ctx.from.id})`, { parse_mode: 'Markdown' }); 
         try { 
@@ -228,11 +181,47 @@ bot.action(/dep_(accept|reject)_(\d+)/, async (ctx) => {
     } 
 }); 
 
-// 5. استقبال وإعادة توجيه الرسائل والصور 
+// 5. استقبال وإعادة توجيه الرسائل والصور والحالات التفاعلية
 bot.on('message', async (ctx) => { 
     const userId = ctx.from.id; 
-    const currentState = userStates[userId]?.step; 
-    
-    if (ctx.chat.id === ADMIN_GROUP_ID && ctx.message.reply_to_message) { 
-        const replyText = ctx.message.reply_to_message.text || ctx.message.reply_to_message.caption; 
-        if (replyText && replyText.includes('ID:')) { 
+    const state = userStates[userId];
+
+    // أ) استقبال إيصالات الصور من اللاعبين وإرسالها للإدارة
+    if (ctx.message.photo && state?.step === 'awaiting_receipt') {
+        userStates[userId] = null; // إنهاء الحالة
+        await bot.telegram.sendPhoto(ADMIN_GROUP_ID, ctx.message.photo[ctx.message.photo.length - 1].file_id, {
+            caption: `💰 *إيصال شحن جديد واصل:*\n\n• من اللاعب: [${ctx.from.first_name}](tg://user?id=${userId})\n• معرف التلغرام (ID): \`ID: ${userId}\`\n\n💬 النص المرفق من اللاعب:\n${ctx.message.caption || 'لا يوجد'}`,
+            parse_mode: 'Markdown',
+            ...Markup.inlineKeyboard([
+                [Markup.button.callback('✅ قبول وإدخال رصيد', `dep_accept_${userId}`)],
+                [Markup.button.callback('❌ رفض الطلب', `dep_reject_${userId}`)]
+            ])
+        });
+        return ctx.reply('✅ تم إرسال إيصالك بنجاح إلى قسم التدقيق والمالية، يرجى الانتظار لحين مراجعته من قبل المشرفين.');
+    }
+
+    // ب) معالجة قيام المشرف بكتابة مبلغ الشحن بالرقم الدقيق
+    if (state?.step === 'admin_entering_amount' && ctx.message.text) {
+        const amount = parseInt(ctx.message.text.replace(/[^0-8]/g, ''));
+        if (isNaN(amount) || amount <= 0) {
+            return ctx.reply('❌ يرجى إدخال مبلغ صحيح (أرقام فقط):');
+        }
+
+        const targetPlayer = state.targetPlayer;
+        let accounts = {};
+        if (fs.existsSync(ACCOUNTS_FILE)) {
+            accounts = JSON.parse(fs.readFileSync(ACCOUNTS_FILE));
+        }
+
+        if (!accounts[targetPlayer]) {
+            // إذا لم يمتلك حساب نقوم بإنشاء حساب افتراضي له
+            accounts[targetPlayer] = { gameId: "غير محدد", balance: 0 };
+        }
+
+        // إضافة الرصيد وحفظ الملف
+        accounts[targetPlayer].balance += amount;
+        fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accounts, null, 4));
+        userStates[userId] = null; // تصفير حالة الإدارة
+
+        // تحديث رسالة الإيصال داخل القروب
+        try {
