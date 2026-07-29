@@ -1,18 +1,10 @@
-// كود بوت تليجرام متكامل - فريق بحر (نسخة تخطي الحظر بدون VPN)
+// كود بوت تليجرام متكامل - فريق بحر (نسخة الاستضافة السحابية المستقرة)
 const { Telegraf, Markup } = require('telegraf');
 const fs = require('fs');
-const { HttpsProxyAgent } = require('https-proxy-agent'); // مكتبة البروكسي لتخطي الحجب
 
 // ⚠️ تأكد من وضع التوكن الخاص بك هنا ليعمل البوت بشكل صحيح
 const BOT_TOKEN = '8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8'; 
-
-// سيرفر بروكسي خارجي لتمرير بيانات تليجرام وتخطي الحجب الجغرافي في سوريا
-const proxyAgent = new HttpsProxyAgent('http://185.117.153.2:8080'); 
-
-// تشغيل البوت مع دمج إعدادات البروكسي
-const bot = new Telegraf(BOT_TOKEN, {
-    telegram: { agent: proxyAgent }
-});
+const bot = new Telegraf(BOT_TOKEN);
 
 const OWNER_ID = 6693251012;
 const ADMIN_GROUP_ID = -1003983996094;
@@ -100,7 +92,7 @@ bot.hears('🏦 طلب سحب', (ctx) => {
 
 // معالجة اختيار طريقة السحب
 bot.action(/withdraw_(.+)/, (ctx) => {
-    const method = ctx.match[1] === 'syriatel' ? 'Syriatel Cash' : 'Sham Cash SYP';
+    const method = ctx.match === 'syriatel' ? 'Syriatel Cash' : 'Sham Cash SYP';
     ctx.answerCbQuery();
     
     userStates[ctx.from.id] = { 
@@ -159,8 +151,15 @@ bot.on('message', async (ctx) => {
     }
 });
 
-// تشغيل البوت
-bot.launch().then(() => console.log('✅ البوت يعمل الآن عبر البروكسي ومربوط بمجموعتكم...'));
+// تشغيل البوت الأساسي
+bot.launch().then(() => console.log('✅ البوت يعمل الآن ومربوط بمجموعتكم...'));
+
+// 🌐 كود الخادم الوهمي المضاف لمنع خوادم Render من إغلاق البوت تلقائياً
+const http = require('http');
+http.createServer((req, res) => {
+    res.write("Bahr Bot is Running Successfully!");
+    res.end();
+}).listen(process.env.PORT || 10000);
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
