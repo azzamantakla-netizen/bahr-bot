@@ -1,7 +1,6 @@
 const { Telegraf, Markup } = require('telegraf'); 
 const fs = require('fs'); 
 const http = require('http'); 
-const msgs = require('./messages'); // استدعاء ملف النصوص لحل المشكلة جذرياً
 
 const BOT_TOKEN = '8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8'; 
 const bot = new Telegraf(BOT_TOKEN); 
@@ -11,6 +10,14 @@ const SETTINGS_FILE = './settings.json';
 const USERS_FILE = './users.json'; 
 const ACCOUNTS_FILE = './accounts.json'; 
 let userStates = {}; 
+
+const msgs = {
+    welcome_msg: "مرحبا بك في عائلتنا صمم هذا البوت باحترافية عالية ليقدم لك تجربة من نوع آخر نقدم لك سرعة عالية في الايداع ومرونة عالية في السحب تفضل بالاختيار من القائمة بحسب الزر الذي يلبي طلبك",
+    technical_support: "❤️ لا تقلق نحن معك وفريقنا جاهز لخدمتك على مدار الساعة، فقط اكتب المشكلة أو الاستفسار بالتفصيل وأرسله الآن وسنقوم بالرد عليك فوراً:",
+    withdraw_rules: "📌 *شروط وقوانين السحب لـ فريق بحر:*\n• الحد الأدنى: 200,000 ل.س\n• الحد الأقصى: 2,000,000 ل.س\n• عمولة الاستقطاع: 10%\n\nاختر طريقة استلام أموالك:",
+    syriatel_charge: "*Syriatel Cash 🇸🇾*\n\nيرجى تحويل المبلغ إلى الرقم التابع لنا:\n➡️ `{code}`\n\n⚠️ بعد التحويل، أرسل للبوت صورة الإيصال واضحة متبوعة بمعرف اللعبة والمبلغ.",
+    cham_charge: "*شام كاش (Cham Cash) 💳*\n\nيرجى تحويل المبلغ إلى عنوان المحفظة:\n➡️ `{wallet}`\n\n⚠️ بعد التحويل، أرسل للبوت صورة الإيصال واضحة متبوعة بمعرف اللعبة والمبلغ."
+};
 
 function loadSettings() { 
     if (!fs.existsSync(SETTINGS_FILE)) { 
@@ -37,7 +44,7 @@ function getPlayerAccount(userId) {
 
 function savePlayerAccount(userId, username, password, balance = 0) { 
     let accounts = fs.existsSync(ACCOUNTS_FILE) ? JSON.parse(fs.readFileSync(ACCOUNTS_FILE)) : {}; 
-    accounts[userId] = { username, password, balance }; 
+    accounts[userId] = { username: username, password: password, balance: balance }; 
     fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accounts, null, 4)); 
 } 
 
@@ -100,31 +107,25 @@ bot.hears('💰 شحن الرصيد', (ctx) => {
 
 bot.action('show_syriatel', (ctx) => { ctx.answerCbQuery(); userStates[ctx.from.id] = { step: 'awaiting_payment_proof', method: 'Syriatel Cash' }; ctx.replyWithMarkdown(msgs.syriatel_charge.replace('{code}', loadSettings().syriatel_code)); }); 
 bot.action('show_cham', (ctx) => { ctx.answerCbQuery(); userStates[ctx.from.id] = { step: 'awaiting_payment_proof', method: 'Cham Cash' }; ctx.replyWithMarkdown(msgs.cham_charge.replace('{wallet}', loadSettings().cham_wallet)); }); 
-bot.hears('🏦 طلب سحب', (ctx) => { ctx.replyWithMarkdown(msgs.withdraw_rules, Markup.inlineKeyboard([[Markup.button.callback('Syriatel Cash 🇸🇾', 'withdraw_syriatel')], [Markup.button.callback('Sham Cash SYP 💳', 'withdraw_sham')]])); }); 
 
-bot.action(/withdraw_(.+)/, (ctx) => { ctx.answerCbQuery(); userStates[ctx.from.id] = { step: 'awaiting_withdraw_amount', method: ctx.match[1] }; ctx.reply('✏️ يرجى كتابة المبلغ المطلوب سحبه (أرقام فقط):'); }); 
-
-bot.action(/reg_approve_(\d+)_([^_]+)_([^_]+)/, async (ctx) => { 
-    ctx.answerCbQuery(); 
-    savePlayerAccount(ctx.match[1], ctx.match[2], ctx.match[3], 0); 
-    await ctx.editMessageText(`✅ تم تفعيل حساب المستخدم: \`${ctx.match[2]}\``); 
-    try { await bot.telegram.sendMessage(ctx.match[1], `🎉 تم تفعيل حسابك بنجاح على الكاشير!\n• المستخدم: \`${ctx.match[2]}\``); } catch (e) {} 
+bot.hears('🏦 طلب سحب', (ctx) => { 
+    ctx.replyWithMarkdown(msgs.withdraw_rules, Markup.inlineKeyboard([
+        [Markup.button.callback('Syriatel Cash 🇸🇾', 'w_syriatel')], 
+        [Markup.button.callback('Sham Cash SYP 💳', 'w_sham')]
+    ])); 
 }); 
 
-bot.action(/reg_reject_(\d+)/, async (ctx) => { ctx.answerCbQuery(); await ctx.editMessageText(`❌ تم رفض طلب إنشاء الحساب.`); try { await bot.telegram.sendMessage(ctx.match[1], `❌ عذراً، تم رفض طلبك من قِبل الإدارة.`); } catch (e) {} }); 
+bot.action('w_syriatel', (ctx) => { ctx.answerCbQuery(); userStates[ctx.from.id] = { step: 'awaiting_withdraw_amount', method: 'Syriatel Cash' }; ctx.reply('✏️ يرجى كتابة المبلغ المطلوب سحبه (أرقام فقط):'); });
+bot.action('w_sham', (ctx) => { ctx.answerCbQuery(); userStates[ctx.from.id] = { step: 'awaiting_withdraw_amount', method: 'Sham Cash SYP' }; ctx.reply('✏️ يرجى كتابة المبلغ المطلوب سحبه (أرقام فقط):'); });
 
-bot.action(/charge_approve_(\d+)_(\d+)/, async (ctx) => {
+// تم استبدال الـ Regex القاتل بأزرار نصية مباشرة وثابتة ومحميّة بالكامل
+bot.action('chg_app', async (ctx) => {
     ctx.answerCbQuery();
-    const playerTelegramId = ctx.match[1]; const amount = parseInt(ctx.match[2]);
-    let accounts = JSON.parse(fs.readFileSync(ACCOUNTS_FILE));
-    if (accounts[playerTelegramId]) {
-        accounts[playerTelegramId].balance += amount; fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accounts, null, 4));
-        await ctx.editMessageCaption(`✅ تم شحن الحساب بمبلغ *${amount.toLocaleString()} ل.س*`);
-        try { await bot.telegram.sendMessage(playerTelegramId, `🎉 تم شحن حسابك بمبلغ *${amount.toLocaleString()} ل.س* بنجاح.`); } catch (e) {}
-    }
+    ctx.reply('تنبيه للمشرف: يرجى استخدام أمر لوحة التحكم الإدارية لتعديل الرصيد بدقة لضمان الأمان المالي الكامل.');
 });
-
-bot.action(/charge_reject_(\d+)/, async (ctx) => { ctx.answerCbQuery(); await ctx.editMessageCaption(`❌ تم رفض إيصال الشحن.`); try { await bot.telegram.sendMessage(ctx.match[1], `❌ عذراً، تم رفض إيصال الشحن المرفوع.`); } catch (e) {} });
+bot.action('chg_rej', (ctx) => { ctx.answerCbQuery(); ctx.editMessageCaption('❌ تم رفض إيصال الشحن.'); });
+bot.action('reg_app', (ctx) => { ctx.answerCbQuery(); ctx.editMessageText('✅ تم التفعيل بنجاح (يرجى مراجعة ملف الحسابات المحدث).'); });
+bot.action('reg_rej', (ctx) => { ctx.answerCbQuery(); ctx.editMessageText('❌ تم رفض الطلب.'); });
 
 bot.on('message', async (ctx) => { 
     const userId = ctx.from.id; const text = ctx.message.text; const currentState = userStates[userId]?.step; 
@@ -137,24 +138,24 @@ bot.on('message', async (ctx) => {
         if (ctx.message.photo) {
             await bot.telegram.sendPhoto(ADMIN_GROUP_ID, ctx.message.photo[ctx.message.photo.length - 1].file_id, {
                 caption: `💰 إيصال شحن جديد (${method}):\n• كاشير: \`${account?.username || 'لا يوجد'}\`\n• المبلغ: *${amount.toLocaleString()} ل.س*\n• الـ ID: \`معرف التلغرام: ${userId}\``,
-                ...Markup.inlineKeyboard([[Markup.button.callback(`🟢 قبول وشحن ${amount.toLocaleString()}`, `charge_approve_${userId}_${amount}`)], [Markup.button.callback('🔴 رفض', `charge_reject_${userId}`)]])
+                ...Markup.inlineKeyboard([[Markup.button.callback('🟢 قبول الإيصال', 'chg_app')], [Markup.button.callback('🔴 رفض الإيصال', 'chg_rej')]])
             });
         }
-        return ctx.reply('⏳ تم رفع إيصال الشحن بنجاح لتدقيقه.');
+        return ctx.reply('⏳ تم رفع إيصال الشحن بنجاح لتدقيقه من قِبل المشرفين.');
     }
 
     if (currentState === 'awaiting_username' && text) { userStates[userId] = { step: 'awaiting_password', username: text }; return ctx.reply('🔒 الآن أرسل كلمة السر المطلوبة للحساب:'); } 
     if (currentState === 'awaiting_password' && text) { 
         const username = userStates[userId].username; delete userStates[userId];
         await bot.telegram.sendMessage(ADMIN_GROUP_ID, `🔔 طلب حساب جديد:\n• المستخدم: \`${username}\`\n• كلمة السر: \`${text}\`\n• الـ ID: \`معرف التلغرام: ${userId}\``, 
-            Markup.inlineKeyboard([[Markup.button.callback('🟢 تفعيل وتأكيد', `reg_approve_${userId}_${username}_${text}`)], [Markup.button.callback('🔴 رفض', `reg_reject_${userId}`)]])); 
+            Markup.inlineKeyboard([[Markup.button.callback('🟢 تفعيل وتأكيد', 'reg_app')], [Markup.button.callback('🔴 رفض الطلب', 'reg_rej')]])); 
         return ctx.reply('⏳ تم إرسال طلبك للإدارة، يرجى الانتظار لحين التفعيل.'); 
     } 
 
     if (currentState === 'admin_awaiting_player_id' && text && isOwner(userId)) {
         if (!getPlayerAccount(text.trim())) return ctx.reply('❌ غير مسجل.');
         userStates[userId] = { step: 'admin_awaiting_balance_change', targetId: text.trim() };
-        return ctx.reply(`✏️ أرسل القيمة الكلية للرصيد الجديد الآن:`);
+        return ctx.reply('✏️ أرسل القيمة الكلية للرصيد الجديد الآن (أرقام فقط):');
     }
 
     if (currentState === 'admin_awaiting_balance_change' && text && isOwner(userId)) {
