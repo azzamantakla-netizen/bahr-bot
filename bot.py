@@ -1,225 +1,166 @@
-import os
-import sys
-import logging
-import asyncio
-import sqlite3
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import CommandStart, Command
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiohttp import web
+// كود بوت تليجرام متكامل - فريق بحر (نسخة تخطي الحظر بدون VPN)
+const { Telegraf, Markup } = require('telegraf');
+const fs = require('fs');
+const { HttpsProxyAgent } = require('https-proxy-agent'); // مكتبة البروكسي لتخطي الحجب
 
-# 1. إعداد سجل الأخطاء الاحترافي لـ Render
-logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+// ⚠️ تأكد من وضع التوكن الخاص بك هنا ليعمل البوت بشكل صحيح
+const BOT_TOKEN = '8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8'; 
 
-# 2. البيانات الخاصة بك المعتمدة والمثبتة (مع التوكن الأخير)
-BOT_TOKEN = "8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8"
-GROUP_ID = -1003983996094
-OWNER_ID = 6693251012
-WEBSITE_URL = "https://texas4win200.com"
+// سيرفر بروكسي خارجي لتمرير بيانات تليجرام وتخطي الحجب الجغرافي في سوريا
+const proxyAgent = new HttpsProxyAgent('http://185.117.153.2:8080'); 
 
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+// تشغيل البوت مع دمج إعدادات البروكسي
+const bot = new Telegraf(BOT_TOKEN, {
+    telegram: { agent: proxyAgent }
+});
 
-# 3. إعداد قاعدة البيانات ونظام طابور الأدوار والصالحيات
-def init_db():
-    conn = sqlite3.connect("bot_database.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
-        username TEXT,
-        full_name TEXT,
-        balance REAL DEFAULT 0.0,
-        site_username TEXT DEFAULT NULL,
-        site_password TEXT DEFAULT NULL
-    )""")
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS admins (
-        user_id INTEGER PRIMARY KEY,
-        role TEXT
-    )""")
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS withdraw_queue (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        amount REAL,
-        method TEXT,
-        wallet_code TEXT DEFAULT NULL,
-        status TEXT DEFAULT 'PENDING'
-    )""")
-    cursor.execute("INSERT OR IGNORE INTO admins (user_id, role) VALUES (?, ?)", (OWNER_ID, "Owner"))
-    conn.commit()
-    conn.close()
+const OWNER_ID = 6693251012;
+const ADMIN_GROUP_ID = -1003983996094;
+const SETTINGS_FILE = './settings.json';
 
-init_db()
+let userStates = {};
 
-# دالات التحقق والمساعدات المبرمجة لقاعدة البيانات
-def is_admin(user_id: int) -> bool:
-    if user_id == OWNER_ID: return True
-    conn = sqlite3.connect("bot_database.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM admins WHERE user_id = ?", (user_id,))
-    res = cursor.fetchone()
-    conn.close()
-    return res is not None
+const WITHDRAW_RULES = {
+    min: 200000,
+    max: 2000000,
+    feePercent: 10
+};
 
-def get_user_data(user_id: int):
-    conn = sqlite3.connect("bot_database.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT balance, site_username, site_password FROM users WHERE user_id = ?", (user_id,))
-    res = cursor.fetchone()
-    conn.close()
-    return res if res else (0.0, None, None)
+// دالة تحميل الإعدادات أو إنشائها تلقائياً
+function loadSettings() {
+    if (!fs.existsSync(SETTINGS_FILE)) {
+        const defaultSettings = {
+            syriatel_code: '48122120',
+            cham_wallet: 'a18758d5324eb7595d4463ca355ad221',
+            cashier_user: 'Bero@yahoo.com',
+            cashier_pass: 'Aazzam@318' 
+        };
+        fs.writeFileSync(SETTINGS_FILE, JSON.stringify(defaultSettings, null, 4));
+        return defaultSettings;
+    }
+    return JSON.parse(fs.readFileSync(SETTINGS_FILE));
+}
 
-# 4. حالات الإدخال (FSM)
-class Form(StatesGroup):
-    register_username = State()
-    register_password = State()
-    charge_site_amount = State()
-    deposit_scash_code = State()
-    deposit_sham_syp_code = State()
-    deposit_sham_usd_code = State()
-    admin_deposit_approve_amount = State()
-    withdraw_site_amount = State()
-    withdraw_cash_amount = State()
-    withdraw_cash_wallet = State()
-    admin_broadcast_msg = State()
-    promote_admin_id = State()
+// أمر البداية /start
+bot.start((ctx) => {
+    const userId = ctx.from.id;
+    const firstName = ctx.from.first_name || 'اللاعب';
+    
+    let keyboard = [
+        ['💰 شحن الرصيد', '🏦 طلب سحب'],
+        ['👤 حسابي الفردي', '📞 الدعم الفني']
+    ];
+    
+    if (userId === OWNER_ID) {
+        keyboard.push(['⚙️ لوحة تحكم الإدارة']);
+    }
+    
+    const welcomeMessage = `🎰 *أهلاً بك يا ${firstName} في بوت الشحن والسحب لـ فريق بحر!*\n\n` +
+                           `• 💰 *طرق التعبئة:* Syriatel Cash / Sham Cash\n` +
+                           `• 🏦 *حدود السحب:* من 200,000 ل.س إلى 2,000,000 ل.س\n` +
+                           `• ✂️ *عمولة السحب:* يتم حسم 10% تلقائياً عند تنفيذ الطلب.\n\n` +
+                           `يرجى اختيار الخدمة المطلوبة من القائمة أدناه:`;
+                           
+    ctx.replyWithMarkdown(welcomeMessage, Markup.keyboard(keyboard).resize());
+});
 
-# 5. بناء لوحات التحكم والأزرار المدمجة
-def main_keyboard(user_id: int):
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🎮 حساب Texas", callback_data="menu_texas")
-    builder.button(text="⬆️ شحن رصيد", callback_data="menu_deposit")
-    builder.button(text="⬇️ سحب رصيد", callback_data="menu_withdraw_main")
-    builder.button(text="🎁 إهداء (إذاعة)", callback_data="menu_broadcast")
-    builder.button(text="🔗 إحالات", callback_data="under_dev")
-    builder.button(text="📄 السجل", callback_data="under_dev")
-    builder.button(text="👤 معلوماتي", callback_data="menu_my_info")
-    builder.button(text="🚨 الدعم", callback_data="menu_support_info")
-    if is_admin(user_id):
-        builder.button(text="⚙️ لوحة التحكم للإدارة", callback_data="admin_panel")
-    builder.adjust(1, 2, 2, 2, 1, 1 if is_admin(user_id) else 0)
-    return builder.as_markup()
+// عند الضغط على زر شحن الرصيد
+bot.hears('💰 شحن الرصيد', (ctx) => {
+    ctx.reply('اختر طريقة الدفع المناسبة لك لإرسال الأموال وتعبئة حسابك:', 
+        Markup.inlineKeyboard([
+            [Markup.button.callback('Syriatel Cash 🇸🇾', 'show_syriatel')],
+            [Markup.button.callback('شام كاش (Cham Cash) 💳', 'show_cham')]
+        ])
+    );
+});
 
-def texas_keyboard(user_id: int):
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🌐 رابط الموقع", url=WEBSITE_URL)
-    _, site_user, _ = get_user_data(user_id)
-    account_text = "👤 حسابي" if site_user else "🆕 إنشاء حساب"
-    builder.button(text=account_text, callback_data="texas_account_action")
-    builder.button(text="💰 شحن الحساب", callback_data="under_dev")
-    builder.button(text="💳 سحب رصيد من الـ...", callback_data="under_dev")
-    builder.button(text="↩️ رجوع", callback_data="back_to_main")
-    builder.adjust(1, 1, 2, 1)
-    return builder.as_markup()
+// عرض معلومات السيريتل كاش
+bot.action('show_syriatel', (ctx) => {
+    ctx.answerCbQuery();
+    const s = loadSettings();
+    ctx.replyWithMarkdown(`*Syriatel Cash 🇸🇾*\n\nيرجى تحويل المبلغ إلى الرقم التابع لنا:\n➡️ \`${s.syriatel_code}\`\n\n⚠️ بعد التحويل، أرسل للبوت صورة الإيصال واضحة متبوعة بمعرف اللعبة والمبلغ.`);
+});
 
-def deposit_methods_keyboard():
-    builder = InlineKeyboardBuilder()
-    builder.button(text="Syriatel Cash 💳", callback_data="dep_syriatel")
-    builder.button(text="🔴 شام كاش ليرة سورية", callback_data="dep_sham_syp")
-    builder.button(text="🔵 شام كاش دولار امريكي", callback_data="dep_sham_usd")
-    builder.button(text="↩️ رجوع", callback_data="back_to_main")
-    builder.adjust(1, 1, 1, 1)
-    return builder.as_markup()
+// عرض معلومات الشام كاش
+bot.action('show_cham', (ctx) => {
+    ctx.answerCbQuery();
+    const s = loadSettings();
+    ctx.replyWithMarkdown(`*شام كاش (Cham Cash) 💳*\n\nيرجى تحويل المبلغ إلى عنوان المحفظة:\n➡️ \`${s.cham_wallet}\`\n\n⚠️ بعد التحويل، أرسل للبوت صورة الإيصال واضحة متبوعة بمعرف اللعبة والمبلغ.`);
+});
 
-def withdraw_methods_keyboard():
-    builder = InlineKeyboardBuilder()
-    builder.button(text="Syriatel Cash 💳", callback_data="wit_method_scash")
-    builder.button(text="ShamCash SYP", callback_data="wit_method_sham")
-    builder.button(text="↩️ رجوع", callback_data="back_to_main")
-    builder.adjust(1, 1, 1)
-    return builder.as_markup()
+// عند الضغط على زر طلب سحب
+bot.hears('🏦 طلب سحب', (ctx) => {
+    ctx.replyWithMarkdown(`📌 *شروط وقوانين السحب لـ فريق بحر:*\n• الحد الأدنى: 200,000 ل.س\n• الحد الأقصى: 2,000,000 ل.س\n• عمولة الاستقطاع: 10%\n\nاختر طريقة استلام أموالك:`, 
+        Markup.inlineKeyboard([
+            [Markup.button.callback('Syriatel Cash 🇸🇾', 'withdraw_syriatel')],
+            [Markup.button.callback('Sham Cash SYP 💳', 'withdraw_sham')]
+        ])
+    );
+});
 
-def admin_keyboard():
-    builder = InlineKeyboardBuilder()
-    builder.button(text="➕ تعيين أدمن جديد", callback_data="admin_promote")
-    builder.button(text="🔄 إعادة تشغيل البوت", callback_data="admin_restart")
-    builder.adjust(1)
-    return builder.as_markup()
+// معالجة اختيار طريقة السحب
+bot.action(/withdraw_(.+)/, (ctx) => {
+    const method = ctx.match[1] === 'syriatel' ? 'Syriatel Cash' : 'Sham Cash SYP';
+    ctx.answerCbQuery();
+    
+    userStates[ctx.from.id] = { 
+        step: 'awaiting_withdraw_amount', 
+        method: method 
+    };
+    
+    ctx.reply('✏️ يرجى كتابة المبلغ الذي ترغب بسحبه بالليرة السورية (أرقام فقط):');
+});
 
-# 6. معالجات الأوامر والرسائل التفاعلية
-@dp.message(CommandStart())
-@dp.message(Command("start"))
-async def cmd_start_handler(message: types.Message):
-    user_id = message.from_user.id
-    username = message.from_user.username or "لا يوجد"
-    full_name = message.from_user.full_name
-    conn = sqlite3.connect("bot_database.db")
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR IGNORE INTO users (user_id, username, full_name) VALUES (?, ?, ?)", (user_id, username, full_name))
-    conn.commit()
-    conn.close()
-    welcome_msg = (
-        "👋 أهلاً بك ضمن عائلتنا لقد صممنا هذا البوت خصيصاً لك\n\n"
-        "✨ رصيدك في أمان يتيح لك هذا البوت سرعة قصوى في الإيداع ومرونة عالية في السحب\n\n"
-        "👉 اختر أحد الخيارات بالأسفل"
-    )
-    force_remove = types.ReplyKeyboardRemove()
-    await message.answer("🔄 جاري تحديث واجهة البوت وتجهيز الأزرار...", reply_markup=force_remove)
-    await message.answer(welcome_msg, reply_markup=main_keyboard(user_id))
+// استقبال الرسائل والصور وإرسال الإشعارات للإدارة
+bot.on('message', async (ctx) => {
+    const userId = ctx.from.id;
+    
+    // 1. معالجة إدخال مبلغ السحب
+    if (userStates[userId] && userStates[userId].step === 'awaiting_withdraw_amount') {
+        const amount = parseInt(ctx.message.text);
+        
+        if (isNaN(amount) || amount <= 0) {
+            return ctx.reply('❌ يرجى إدخال مبلغ صحيح بالأرقام فقط.');
+        }
+        
+        if (amount < WITHDRAW_RULES.min || amount > WITHDRAW_RULES.max) {
+            return ctx.reply('❌ الطلب يخرق حدود السحب المسموحة (بين 200,000 و 2,000,000 ل.س).');
+        }
+        
+        const fee = amount * (WITHDRAW_RULES.feePercent / 100);
+        const finalAmount = amount - fee;
+        
+        await bot.telegram.sendMessage(ADMIN_GROUP_ID, 
+            `🏦 *طلب سحب جديد (فريق بحر):*\n` +
+            `• اللاعب: [${ctx.from.first_name}](tg://user?id=${userId})\n` +
+            `• الطريقة: ${userStates[userId].method}\n` +
+            `• المبلغ: ${amount.toLocaleString()} ل.س\n` +
+            `• الصافي بعد خصم الـ 10%: *${finalAmount.toLocaleString()}* ل.س`, 
+            { parse_mode: 'Markdown' }
+        );
+        
+        ctx.reply('✅ تم رفع طلب السحب الخاص بك لـ فريق الإدارة ومجموعة المشرفين بنجاح.');
+        delete userStates[userId];
+        return;
+    }
+    
+    // 2. معالجة استقبال إيصالات التعبئة (الصور)
+    if (ctx.message.photo) {
+        const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+        
+        await bot.telegram.sendPhoto(ADMIN_GROUP_ID, photoId, {
+            caption: `💰 *إيصال تعبئة معلق (فريق بحر):*\n` +
+                     `• من اللاعب: [${ctx.from.first_name}](tg://user?id=${userId})\n` +
+                     `• النص المرفق: "${ctx.message.caption || 'لا يوجد نص مرفق'}"`,
+            parse_mode: 'Markdown'
+        });
+        
+        return ctx.reply('✅ تم استلام الإيصال وجاري مراجعته لدى مشرفي فريق بحر.');
+    }
+});
 
-@dp.message(Command("balance"))
-async def cmd_balance_handler(message: types.Message):
-    bal, _, _ = get_user_data(message.from_user.id)
-    await message.answer(f"💰 رصيدك الحالي في محفظة البوت المتاحة: {bal:,.2f} ل.س")
+// تشغيل البوت
+bot.launch().then(() => console.log('✅ البوت يعمل الآن عبر البروكسي ومربوط بمجموعتكم...'));
 
-@dp.message(Command("support"))
-async def cmd_support_handler(message: types.Message):
-    await message.answer("📞 للدعم الفني والاستفسارات يرجى التواصل مع الإدارة مباشرة عبر المجموعة الخاصة بك.")
-
-@dp.callback_query(F.data == "under_dev")
-async def process_under_development(callback: types.CallbackQuery):
-    await callback.answer("❌ هذا القسم قيد التطوير والصيانة حالياً، سيتم تفعيله قريباً!", show_alert=True)
-
-@dp.callback_query(F.data == "back_to_main")
-async def back_to_main_handler(callback: types.CallbackQuery):
-    welcome_msg = "👋 أهلاً بك ضمن عائلتنا لقد صممنا هذا البوت خصيصاً لك\n\n✨ رصيدك في أمان يتيح لك هذا البوت سرعة قصوى في الإيداع ومرونة عالية في السحب"
-    await callback.message.edit_text(welcome_msg, reply_markup=main_keyboard(callback.from_user.id))
-    await callback.answer()
-
-@dp.callback_query(F.data == "menu_my_info")
-async def process_my_info(callback: types.CallbackQuery):
-    bal, site_user, _ = get_user_data(callback.from_user.id)
-    status = "مسجل ومربوط" if site_user else "❌ غير مسجل"
-    text = f"📊 **معلومات حسابك الحالية:**\n\n🆔 معرف التليجرام: `{callback.from_user.id}`\n💰 رصيد محفظتك: {bal:,.2f} ل.س\n⚙️ حالة ربط اللعبة: {status}"
-    builder = InlineKeyboardBuilder()
-    builder.button(text="↩️ رجوع", callback_data="back_to_main")
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-    await callback.answer()
-
-@dp.callback_query(F.data == "menu_texas")
-async def process_menu_texas(callback: types.CallbackQuery):
-    await callback.message.edit_text("⚙️ **إدارة حساب Texas بك الخاص:**", reply_markup=texas_keyboard(callback.from_user.id), parse_mode="Markdown")
-    await callback.answer()
-
-@dp.callback_query(F.data == "texas_account_action")
-async def process_texas_account(callback: types.CallbackQuery, state: FSMContext):
-    bal, site_user, site_pass = get_user_data(callback.from_user.id)
-    if site_user:
-        text = f"---------------------------\n🆔 **المعرف:** `{callback.from_user.id}`\n👤 **اسم المستخدم:** `{site_user}`\n🔑 **كلمة المرور:** `{site_pass}`\n💰 **الرصيد الفعلي:** {bal:,.2f} ل.س\n---------------------------"
-        builder = InlineKeyboardBuilder()
-        builder.button(text="↩️ رجوع", callback_data="menu_texas")
-        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-    else:
-        await state.set_state(Form.register_username)
-        await callback.message.answer("🆕 إنشاء حساب جديد | يرجى إرسال اسم المستخدم الذي ترغب به:")
-    await callback.answer()
-
-@dp.message(Form.register_username)
-async def process_reg_user(message: types.Message, state: FSMContext):
-    await state.update_data(chosen_user=message.text)
-    await state.set_state(Form.register_password)
-    builder = InlineKeyboardBuilder()
-    builder.button(text="✔️ موافقة", callback_data=f"accept_reg_{message.from_user.id}")
-    builder.button(text="❌ رفض", callback_data=f"refuse_reg_{message.from_user.id}")
-    await bot.send_message(chat_id=GROUP_ID, text=f"🔔 **طلب إنشاء حساب جديد**\n\n👤 المستخدم: {message.from_user.full_name}\n🆔 الأيدي: `{message.from_user.id}`\n✍️ الاسم المطلوب: `{message.text}`", reply_markup=builder.as_markup())
-    await message.answer("⏳ تم رفع طلب إنشاء الحساب للإدارة، يرجى انتظار تأكيد وموافقة النظام...")
-
-# خادم ويب مخصص مصمم للعمل بالتوافق اللحظي مع متطلبات خوادم Render
-async def web_handler(request):
-    return web.Response(text="Bot Web Server Running")
-
-async def start_server():
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
