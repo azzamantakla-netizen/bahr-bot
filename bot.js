@@ -97,7 +97,7 @@ bot.hears('📞 الدعم الفني', (ctx) => {
 
 // زر حسابي الفردي
 bot.hears('👤 حسابي الفردي', (ctx) => {
-    ctx.replyWithMarkdown(`👤 *تفاصيل حسابك الفردي:*\n\n• الاسم: *${ctx.from.first_name}*\n• المعرف الرقمي: \`${ctx.from.id}\`\n\n📌 رصيد حسابك يتم تحديثه ومراجعته بواسطة نظام الكاشير يدويًا بعد مراجعة إيصالات التعبئة.`);
+    ctx.replyWithMarkdown(`👤 *تفاصيل حسابك الفردي:*\n\n• الاسم: *${ctx.from.first_name}*\n• المعرف الرقمي: \`${ctx.from.id}\`\n\n📌 رصيد حسابك يتم تحديثه ومراجعته بواسطة نظام الكاشير يدويًا بعد مراجعة إ إيصالات التعبئة.`);
 });
 
 // الدخول للوحة تحكم الإدارة (للمالك فقط)
@@ -170,7 +170,7 @@ bot.action(/withdraw_(.+)/, (ctx) => {
     ctx.reply('✏️ يرجى كتابة المبلغ الذي ترغب بسحبه بالليرة السورية (أرقام فقط):');
 });
 
-// معالجة كافة الرسائل المدخلة (سحب، تعديل إعدادات، إذاعة، صور)
+// معالجة كافة الرسائل المدخلة
 bot.on('message', async (ctx) => {
     const userId = ctx.from.id;
     const currentState = userStates[userId]?.step;
@@ -178,7 +178,6 @@ bot.on('message', async (ctx) => {
     if (currentState) {
         const s = loadSettings();
         
-        // 1. تعديل رقم سيريتل
         if (currentState === 'edit_syriatel') {
             s.syriatel_code = ctx.message.text;
             saveSettings(s);
@@ -186,7 +185,6 @@ bot.on('message', async (ctx) => {
             return ctx.reply(`✅ تم تحديث رقم سيريتل كاش بنجاح إلى: ${ctx.message.text}`, getAdminMenu());
         }
         
-        // 2. تعديل محفظة شام كاش
         if (currentState === 'edit_cham') {
             s.cham_wallet = ctx.message.text;
             saveSettings(s);
@@ -194,7 +192,6 @@ bot.on('message', async (ctx) => {
             return ctx.reply(`✅ تم تحديث محفظة شام كاش بنجاح إلى: ${ctx.message.text}`, getAdminMenu());
         }
         
-        // 3. تعديل رسالة الترحيب
         if (currentState === 'edit_welcome') {
             s.welcome_msg = ctx.message.text;
             saveSettings(s);
@@ -202,7 +199,6 @@ bot.on('message', async (ctx) => {
             return ctx.reply('✅ تم تحديث رسالة الترحيب الديناميكية بنجاح!', getAdminMenu());
         }
         
-        // 4. معالجة نظام الإذاعة ونشر الرسالة للجميع
         if (currentState === 'broadcast_msg') {
             delete userStates[userId];
             ctx.reply('⏳ جاري بدء الإذاعة ونشر الرسالة لجميع اللاعبين...');
@@ -225,7 +221,6 @@ bot.on('message', async (ctx) => {
             }
         }
         
-        // 5. استقبال مبالغ سحب اللاعبين
         if (currentState === 'awaiting_withdraw_amount') {
             const amount = parseInt(ctx.message.text);
             if (isNaN(amount) || amount <= 0) return ctx.reply('❌ يرجى إدخال مبلغ صحيح بالأرقام فقط.');
@@ -245,7 +240,9 @@ bot.on('message', async (ctx) => {
         }
     }
     
-    // معالجة صور إيصالات شحن الرصيد
     if (ctx.message.photo) {
         const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
         await bot.telegram.sendPhoto(ADMIN_GROUP_ID, photoId, {
+            caption: `💰 *إيصال تعبئة معلق (فريق بحر):*\n• من اللاعب: [${ctx.from.first_name}](tg://user?id=${userId})\n• النص: "${ctx.message.caption || ''}"`,
+            parse_mode: 'Markdown'
+        });
