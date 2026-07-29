@@ -175,13 +175,13 @@ bot.hears('💰 شحن الرصيد', (ctx) => {
 bot.action('show_syriatel', (ctx) => {
     ctx.answerCbQuery();
     const s = loadSettings();
-    ctx.replyWithMarkdown(`*Syriatel Cash 🇸🇾*\n\nيرجى تحويل المبلغ إلى الرقم التابع لنا:\n➡️ \`${s.syriatel_code}\`\n\n⚠️ بعد التحويل، أرسل للبوت صورة الإيصال واضحة متبوعة بمعرف اللعبة والمبلغ.`);
+    ctx.replyWithMarkdown(`*Syriatel Cash 🇸🇾*\n\nيرجى تحويل المبلغ إلى الرقم التابع لنا:\n➡️ \`${s.syriatel_code}\`\n\n⚠️ بعد التحويل, أرسل للبوت صورة الإيصال واضحة متبوعة بمعرف اللعبة والمبلغ.`);
 });
 
 bot.action('show_cham', (ctx) => {
     ctx.answerCbQuery();
     const s = loadSettings();
-    ctx.replyWithMarkdown(`*شام كاش (Cham Cash) 💳*\n\nيرجى تحويل المبلغ إلى عنوان المحفظة:\n➡️ \`${s.cham_wallet}\`\n\n⚠️ بعد التحويل، أرسل للبوت صورة الإيصال واضحة متبوعة بمعرف اللعبة والمبلغ.`);
+    ctx.replyWithMarkdown(`*شام كاش (Cham Cash) 💳*\n\nيرجى تحويل المبلغ إلى عنوان المحفظة:\n➡️ \`${s.cham_wallet}\`\n\n⚠️ بعد التحويل, أرسل للبوت صورة الإيصال واضحة متبوعة بمعرف اللعبة والمبلغ.`);
 });
 
 bot.hears('🏦 طلب سحب', (ctx) => {
@@ -194,7 +194,7 @@ bot.hears('🏦 طلب سحب', (ctx) => {
 });
 
 bot.action(/withdraw_(.+)/, (ctx) => {
-    const method = ctx.match === 'syriatel' ? 'Syriatel Cash' : 'Sham Cash SYP';
+    const method = ctx.match[1] === 'syriatel' ? 'Syriatel Cash' : 'Sham Cash SYP';
     ctx.answerCbQuery();
     userStates[ctx.from.id] = { step: 'awaiting_withdraw_amount', method: method };
     ctx.reply('✏️ يرجى كتابة المبلغ الذي ترغب بسحبه بالليرة السورية (أرقام فقط):');
@@ -208,9 +208,9 @@ bot.on('message', async (ctx) => {
         const replyText = ctx.message.reply_to_message.text || ctx.message.reply_to_message.caption;
         if (replyText && replyText.includes('ID:')) {
             const matches = replyText.match(/ID:\s*(\d+)/);
-            if (matches && matches) {
+            if (matches && matches[1]) {
                 try {
-                    await bot.telegram.sendMessage(matches, `📬 *رد من إدارة فريق بحر على استفسارك:*\n\n💬 ${ctx.message.text}`, { parse_mode: 'Markdown' });
+                    await bot.telegram.sendMessage(matches[1], `📬 *رد من إدارة فريق بحر على استفسارك:*\n\n💬 ${ctx.message.text}`, { parse_mode: 'Markdown' });
                     return ctx.reply('✅ تم إرسال ردك إلى اللاعب بنجاح.');
                 } catch (err) {
                     return ctx.reply('❌ فشل إرسال الرد، قد يكون اللاعب قد حظر البوت.');
@@ -236,4 +236,3 @@ bot.on('message', async (ctx) => {
             return ctx.reply(`✅ تم تحديث محفظة شام كاش بنجاح إلى: ${ctx.message.text}`, getAdminMenu());
         }
         if (currentState === 'edit_welcome') {
-            s.welcome_msg = ctx.message.text; saveSettings(s); delete userStates[userId];
