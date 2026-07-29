@@ -1,11 +1,13 @@
 const { Telegraf, Markup } = require('telegraf');
 const fs = require('fs');
+const http = require('http');
 
-const BOT_TOKEN = '8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8'; 
+const BOT_TOKEN = '8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8';
 const bot = new Telegraf(BOT_TOKEN);
 
 const OWNER_ID = 6693251012;
 const ADMIN_GROUP_ID = -1003983996094;
+
 const SETTINGS_FILE = './settings.json';
 const USERS_FILE = './users.json';
 const ACCOUNTS_FILE = './accounts.json';
@@ -16,13 +18,13 @@ const WITHDRAW_RULES = { min: 200000, max: 2000000, feePercent: 10 };
 function loadSettings() {
     if (!fs.existsSync(SETTINGS_FILE)) {
         const defaultSettings = {
-            owners:, 
-            admins: [],          
+            owners: [OWNER_ID],
+            admins: [],
             syriatel_code: '48122120',
             cham_wallet: 'a18758d5324eb7595d4463ca355ad221',
             cashier_user: 'Bero@yahoo.com',
             cashier_pass: 'Aazzam@318',
-            welcome_msg: "🎰 *أهلاً بك يا {name} في بوت الشحن والسحب لـ فريق بحر!*\n\n• 💰 *طرق التعبئة:* Syriatel Cash / Sham Cash\n• 🏦 *حدود السحب:* من 200,000 ل.س إلى 2,000,000 ل.س\n• ✂️ *عمولة السحب:* يتم حسم 10% تلقائياً عند تنفيذ الطلب.\n\nيرجى اختيار الخدمة المطلوبة من القائمة أدناه:"
+            welcome_msg: "مرحبا بك في عائلتنا صمم هذا البوت باحترافية عالية ليقدم لك تجربة من نوع آخر نقدم لك سرعة عالية في الايداع ومرونة عالية في السحب تفضل بالاختيار من القائمة بحسب الزر الذي يلبي طلبك"
         };
         fs.writeFileSync(SETTINGS_FILE, JSON.stringify(defaultSettings, null, 4));
         return defaultSettings;
@@ -62,7 +64,10 @@ function saveUser(userId) {
 }
 
 function getMainMenu(userId) {
-    let keyboard = [['💰 شحن الرصيد', '🏦 طلب سحب'], ['👤 حسابي الفردي', '📞 الدعم الفني']];
+    let keyboard = [
+        ['💰 شحن الرصيد', '🏦 طلب سحب'],
+        ['👤 حسابي الفردي', '📞 الدعم الفني']
+    ];
     if (isOwner(userId)) { keyboard.push(['⚙️ لوحة تحكم الإدارة']); }
     return Markup.keyboard(keyboard).resize();
 }
@@ -81,8 +86,7 @@ bot.start((ctx) => {
     const userId = ctx.from.id;
     saveUser(userId);
     const s = loadSettings();
-    const customizedWelcome = s.welcome_msg.replace('{name}', ctx.from.first_name || 'اللاعب');
-    ctx.replyWithMarkdown(customizedWelcome, getMainMenu(userId));
+    ctx.reply(s.welcome_msg, getMainMenu(userId));
 });
 
 bot.hears('🔙 العودة للقائمة الرئيسية', (ctx) => {
@@ -130,7 +134,7 @@ bot.hears('💳 تعديل شام كاش', (ctx) => {
 bot.hears('📝 تعديل رسالة الترحيب', (ctx) => {
     if (!isOwner(ctx.from.id)) return;
     userStates[ctx.from.id] = { step: 'edit_welcome' };
-    ctx.replyWithMarkdown('✏️ أرسل رسالة الترحيب الجديدة الآن، ضع كلمة `{name}` مكان اسم اللاعب.');
+    ctx.reply('✏️ أرسل رسالة الترحيب الجديدة الآن ليتم اعتمادها فوراً في البوت:');
 });
 
 bot.hears('📢 إرسال إذاعة', (ctx) => {
@@ -175,13 +179,13 @@ bot.hears('💰 شحن الرصيد', (ctx) => {
 bot.action('show_syriatel', (ctx) => {
     ctx.answerCbQuery();
     const s = loadSettings();
-    ctx.replyWithMarkdown(`*Syriatel Cash 🇸🇾*\n\nيرجى تحويل المبلغ إلى الرقم التابع لنا:\n➡️ \`${s.syriatel_code}\`\n\n⚠️ بعد التحويل, أرسل للبوت صورة الإيصال واضحة متبوعة بمعرف اللعبة والمبلغ.`);
+    ctx.replyWithMarkdown(`*Syriatel Cash 🇸🇾*\n\nيرجى تحويل المبلغ إلى الرقم التابع لنا:\n➡️ \`${s.syriatel_code}\`\n\n⚠️ بعد التحويل، أرسل للبوت صورة الإيصال واضحة متبوعة بمعرف اللعبة والمبلغ.`);
 });
 
 bot.action('show_cham', (ctx) => {
     ctx.answerCbQuery();
     const s = loadSettings();
-    ctx.replyWithMarkdown(`*شام كاش (Cham Cash) 💳*\n\nيرجى تحويل المبلغ إلى عنوان المحفظة:\n➡️ \`${s.cham_wallet}\`\n\n⚠️ بعد التحويل, أرسل للبوت صورة الإيصال واضحة متبوعة بمعرف اللعبة والمبلغ.`);
+    ctx.replyWithMarkdown(`*شام كاش (Cham Cash) 💳*\n\nيرجى تحويل المبلغ إلى عنوان المحفظة:\n➡️ \`${s.cham_wallet}\`\n\n⚠️ بعد التحويل، أرسل للبوت صورة الإيصال واضحة متبوعة بمعرف اللعبة والمبلغ.`);
 });
 
 bot.hears('🏦 طلب سحب', (ctx) => {
@@ -200,6 +204,26 @@ bot.action(/withdraw_(.+)/, (ctx) => {
     ctx.reply('✏️ يرجى كتابة المبلغ الذي ترغب بسحبه بالليرة السورية (أرقام فقط):');
 });
 
+// 🛠️ معالجة الضغط على أزرار القبول والرفض للإيصالات داخل مجموعة الإدارة
+bot.action(/dep_(accept|reject)_(\d+)/, async (ctx) => {
+    ctx.answerCbQuery();
+    const action = ctx.match[1];
+    const playerTelegramId = ctx.match[2];
+    
+    // تعديل مظهر الرسالة في المجموعة لمنع التكرار وحفظ النظام
+    if (action === 'accept') {
+        await ctx.editMessageCaption(`💰 *إيصال تعبئة فريق بحر:*\n\n✅ تم *قبول* هذا الإيصال واعتماد المعاملة بواسطة: [${ctx.from.first_name}](tg://user?id=${ctx.from.id})`, { parse_mode: 'Markdown' });
+        try {
+            await bot.telegram.sendMessage(playerTelegramId, `🎉 *خبر سار من فريق بحر:*\n\nتمت مراجعة إيصال التحويل الخاص بك و*القبول* بنجاح! جاري شحن رصيد حسابك الآن.`);
+        } catch (e) {}
+    } else {
+        await ctx.editMessageCaption(`💰 *إيصال تعبئة فريق بحر:*\n\n❌ تم *رفض* هذا الإيصال وإلغاء المعاملة بواسطة: [${ctx.from.first_name}](tg://user?id=${ctx.from.id})`, { parse_mode: 'Markdown' });
+        try {
+            await bot.telegram.sendMessage(playerTelegramId, `❌ *تنبيه من إدارة فريق بحر:*\n\nعذراً، تمت مراجعة إيصالك وتبيّن أن البيانات مدخلة بشكل *خاطئ* أو غير واصلة. تم *رفض* الطلب. يرجى التأكد وإعادة المحاولة.`);
+        } catch (e) {}
+    }
+});
+
 bot.on('message', async (ctx) => {
     const userId = ctx.from.id;
     const currentState = userStates[userId]?.step;
@@ -213,26 +237,3 @@ bot.on('message', async (ctx) => {
                     await bot.telegram.sendMessage(matches[1], `📬 *رد من إدارة فريق بحر على استفسارك:*\n\n💬 ${ctx.message.text}`, { parse_mode: 'Markdown' });
                     return ctx.reply('✅ تم إرسال ردك إلى اللاعب بنجاح.');
                 } catch (err) {
-                    return ctx.reply('❌ فشل إرسال الرد، قد يكون اللاعب قد حظر البوت.');
-                }
-            }
-        }
-    }
-
-    if (currentState) {
-        const s = loadSettings();
-        
-        if (currentState === 'awaiting_game_id') {
-            savePlayerAccount(userId, ctx.message.text, 0);
-            delete userStates[userId];
-            return ctx.reply(`🎉 تم إنشاء حسابك بنجاح وربطه بمعرف اللعبة: ${ctx.message.text}\nرصيدك الحالي هو: 0 ل.س`, getMainMenu(userId));
-        }
-        if (currentState === 'edit_syriatel') {
-            s.syriatel_code = ctx.message.text; saveSettings(s); delete userStates[userId];
-            return ctx.reply(`✅ تم تحديث رقم سيريتل كاش بنجاح إلى: ${ctx.message.text}`, getAdminMenu());
-        }
-        if (currentState === 'edit_cham') {
-            s.cham_wallet = ctx.message.text; saveSettings(s); delete userStates[userId];
-            return ctx.reply(`✅ تم تحديث محفظة شام كاش بنجاح إلى: ${ctx.message.text}`, getAdminMenu());
-        }
-        if (currentState === 'edit_welcome') {
