@@ -208,7 +208,7 @@ bot.on('message', async (ctx) => {
         const replyText = ctx.message.reply_to_message.text || ctx.message.reply_to_message.caption;
         if (replyText && replyText.includes('ID:')) {
             const matches = replyText.match(/ID:\s*(\d+)/);
-            if (matches && matches) {
+            if (matches && matches[1]) {
                 try {
                     await bot.telegram.sendMessage(matches[1], `📬 *رد من إدارة فريق بحر على استفسارك:*\n\n💬 ${ctx.message.text}`, { parse_mode: 'Markdown' });
                     return ctx.reply('✅ تم إرسال ردك إلى اللاعب بنجاح.');
@@ -236,3 +236,4 @@ bot.on('message', async (ctx) => {
             return ctx.reply(`✅ تم تحديث محفظة شام كاش بنجاح إلى: ${ctx.message.text}`, getAdminMenu());
         }
         if (currentState === 'edit_welcome') {
+            s.welcome_msg = ctx.message.text; saveSettings(s); delete userStates[userId];
