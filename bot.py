@@ -227,7 +227,6 @@ def reg_step_username(message):
     user_steps[message.chat.id] = {"reg_user": username}
     bot.send_message(message.chat.id, "🔐 الآن يرجى كتابة كلمة السر التي ترغب بها لحمايتك:")
     bot.register_next_step_handler(message, reg_step_password)
-
 def reg_step_password(message):
     password = message.text.strip()
     chat_id = message.chat.id
@@ -237,4 +236,27 @@ def reg_step_password(message):
     fake_email = f"{username.lower()}@texas4win.com"
     payload = {
         "player": {
-            "email": fake_email, "password": password, "parentId": "2688288",
+            "email": fake_email, 
+            "password": password, 
+            "parentId": "2688288",
+            "firstname": "Test", 
+            "lastname": "Test", 
+            "login": username, 
+            "middleName": "Test"
+        }
+    }
+    try:
+        res = session.post(URL_REG, json=payload, headers=HEADERS)
+        if res.status_code == 200:
+            res_data = res.json()
+            player_id = res_data.get("id", "438813308") 
+            
+            with open("players_db.txt", "a") as f:
+                f.write(json.dumps({"tg_id": message.from_user.id, "player_id": player_id, "login": username, "password": password}) + "\n")
+                
+            bot.send_message(chat_id, f"🎉 تمت عملية إنشاء الحساب بنجاح!\n\nاسم المستخدم: `{username}`\nكلمة المرور: `{password}`\nرابط الموقع: [Texas4Win](https://texas4win.com)", parse_mode="Markdown")
+            bot.send_message(ADMIN_GROUP_ID, f"🔔 **إشعار حساب جديد تلقائي**\n👤 اسم المستخدم: `{username}`\n🆔 معرّف التلغرام: `{message.from_user.id}`")
+        else:
+            bot.send_message(chat_id, f"❌ تعذر إنشاء الحساب بالسيرفر. رمز الاستجابة: {res.status_code}")
+    except Exception as e:
+        bot.send_message(chat_id, f"⚠️ حدث خطأ تقني: {e}")
