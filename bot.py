@@ -42,7 +42,7 @@ def load_config():
             "agent_pass": "Aazzam@318",
             "syriatel_code": "48122120",
             "sham_wallet": "a18758d5324eb7595d4463ca355ad221",
-            "welcome_msg": "👋 مرحباً بك في عائلتنا!\n\n⚙️ صُمم هذا البوت باحترافية عالية ليمنحك تجربة فريدة من نوعها، حيث يضمن لك:\n⚡️ سرعة قصوى في عمليات الإيداع.\n🔄 مرونة وأمان فائق في السحب.\n\n🎛️ تفضل بالاختيار من القائمة أدناه بحسب الزر الذي يلبي طلبك:",
+           "welcome_msg": "👋 مرحباً بك في عائلتنا!\n\n⚙️ صُمم هذا البوت باحترافية عالية ليمنحك تجربة فريدة من نوعها، حيث يضمن لك:\n⚡️ سرعة قصوى في عمليات الإيداع.\n🔄 مرونة وأمان فائق في السحب.\n\n🎛️ تفضل بالاختيار من القائمة أدناه بحسب الزر الذي يلبي طلبك:",
             "is_active": True,
             "subscribers": [],
             "moderators": []
@@ -69,7 +69,6 @@ p_4 = ".c" + "om"
 p_5 = "/gl" + "oba" + "l/a" + "pi"
 
 CORE_URL = p_1 + p_2 + p_3 + p_4 + p_5
-
 URL_IN = CORE_URL + "/Us" + "er/s" + "ignIn"
 URL_REG = CORE_URL + "/Pla" + "yer/r" + "egist" + "erPla" + "yer"
 URL_DEP = CORE_URL + "/Pla" + "yer/d" + "eposi" + "tToPl" + "ayer"
@@ -89,13 +88,11 @@ def refresh_session():
     payload = {"username": config["agent_user"], "password": config["agent_pass"]}
     try:
         res = session.post(URL_IN, json=payload, headers=HEADERS)
-        return res.status_code == 200
+    return res.status_code == 200
     except Exception:
         return False
-
 refresh_session()
 user_steps = {}
-
 # ==========================================
 # 4. معالجة القوائم والأزرار الرئسية والفرعية
 # ==========================================
@@ -138,17 +135,16 @@ def core_menu(message):
     chat_id = message.chat.id
     
     if not config["is_active"] and uid != OWNER_ID:
-        bot.send_message(chat_id, "⚠️ عذراً، البوت في وضع الصيانة المؤقتة حالياً.")
+        bot.send_message(chat_id, "⚠️ عذراً، البوت في وضع الصيانة المؤقتة حالياً، سنعود قريباً.")
         return
 
-    # التأكد من وجود ملف قاعدة البيانات قبل الفحص لمنع تعليق خطوات التسجيل
     db_file = "players_db.txt"
     if not os.path.exists(db_file):
         with open(db_file, "w") as f:
             pass
-
     if message.text == "👤 حسابي":
-        player_found = None
+
+    player_found = None
         with open(db_file, "r") as f:
             for line in f:
                 if line.strip():
@@ -166,13 +162,12 @@ def core_menu(message):
                     balance_str = res.json().get("balance", res.text)
             except Exception:
                 pass
-                
             info_msg = (
-                f"ℹ️ **معلومات الحساب الخاص بك:**\n\n"
-                f"🆔 التلغرام: `{uid}`\n"
-                f"👤 اسم المستخدم: `{player_found['login']}`\n"
-                f"🔐 كلمة المرور: `{player_found['password']}`\n"
-                f"💰 الرصيد الحالي: `{balance_str}`"
+               f"ℹ️ **معلومات الحساب الخاص بك:**\n\n"
+               f"🆔 التلغرام: `{uid}`\n"
+               f"👤 اسم المستخدم: `{player_found['login']}`\n"
+               f"🔐 كلمة المرور: `{player_found['password']}`\n"
+               f"💰 الرصيد الحالي: `{balance_str}`"
             )
             bot.send_message(chat_id, info_msg, parse_mode="Markdown")
         else:
@@ -199,15 +194,15 @@ def core_menu(message):
     elif message.text == "📞 الدعم الفني":
         support_text = (
             "📞 **قسم الدعم الفني والمساعدة**\n\n"
-            "👋 **عزيزي اللاعب، نحن هنا دائماً من أجلك!**\n"
-            "نود طمأنتك بأن جميع معاملاتك وحساباتك محمية بأعلى معايير الأمان، وفريق الدعم متواجد على مدار الساعة لضمان تجربة سلسة وخالية من أي عقبات.\n\n"
-            "💡 **هل واجهتك مشكلة أو لديك استفسار؟**\n"
-            "تفضل بكتابة مشكلتك أو استفسارك هنا في رسالة واحدة وسيقوم فريق الدعم بالرد عليك فوراً:"
+         "👋 **عزيزي اللاعب، نحن هنا دائماً من أجلك!**\n"
+         "نود طمأنتك بأن جميع معاملاتك وحساباتك محمية بأعلى معايير الأمان، وفريق الدعم متواجد على مدار الساعة لضمان تجربة سلسة وخالية من أي عقبات.\n\n"
+         "💡 **هل واجهتك مشكلة أو لديك استفسار؟**\n"
+         "تفضل بكتابة مشكلتك أو استفسارك هنا في رسالة واحدة وسيقوم فريق الدعم بالرد عليك فور:"
         )
         bot.send_message(chat_id, support_text, parse_mode="Markdown")
         bot.register_next_step_handler(message, process_support_ticket)
 
-    elif message.text == "⚙️ قائمة التحكم (للمالك)" and uid == OWNER_ID:
+   elif message.text == "⚙️ قائمة التحكم (للمالك)" and uid == OWNER_ID:
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
             types.InlineKeyboardButton("🔐 حساب الكاشير", callback_data="owner_cashier"),
@@ -226,14 +221,6 @@ def core_menu(message):
         
         bot.send_message(chat_id, "⚙️ مرحباً بك يا مالك النظام في لوحة القيادة الخلفية والمشفرة بالكامل. اختر الإجراء المطلوب:", reply_markup=markup)
 
-        bot.send_message(chat_id, support_text, parse_mode="Markdown")
-        bot.register_next_step_handler(message, process_support_ticket)
-
-    elif message.text == "⚙️ قائمة التحكم (للمالك)" and uid == OWNER_ID:
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        markup.add(
-            types.InlineKeyboardButton("🔐 حساب الكاشير", callback_data="owner_cashier"),
-            types.InlineKeyboardButton("📝 تعديل الترحيب", callback_data="owner_welcome")
         )
         markup.add(
             types.InlineKeyboardButton("🔴 تعديل سيرياتيل", callback_data="owner_edit_syria"),
@@ -245,7 +232,7 @@ def core_menu(message):
         )
         status_text = "🛑 إطفاء البوت" if config["is_active"] else "🟢 تشغيل البوت"
         markup.add(types.InlineKeyboardButton(status_text, callback_data="owner_toggle_bot"))
-        
+
         bot.send_message(chat_id, "⚙️ مرحباً بك يا مالك النظام في لوحة القيادة الخلفية والمشفرة بالكامل. اختر الإجراء المطلوب:", reply_markup=markup)
 
 # ==========================================
@@ -253,13 +240,13 @@ def core_menu(message):
 # ==========================================
 @bot.callback_query_handler(func=lambda call: call.data == "start_reg")
 def start_registration(call):
-    bot.send_message(call.message.chat.id, "👤 يرجى إرسال اسم المستخدم المطلوب للحساب الجديد (أحرف وأرقام إنجليزية فقط):")
+    bot.send_message(call.message.chat.id, "👤 يرجى إرسال اسم المستخدم المطلوب للحساب الجديد (أحرف وأرقام إنجليزية فقط) :")
     bot.register_next_step_handler(call.message, reg_step_username)
 # ==========================================
 # 7. الترتيب الصحيح والمستقر لتشغيل الخطة المجانية
 # ==========================================
 def run_bot_polling():
-    print("[+] البوت ذو الأكواد المشوهة يعمل ويستمع للأوامر الآن...")
+    print("[+] البوت ذو الأكواد المموّهة يعمل ويستمع للأوامر الآن...")
     while True:
         try:
             bot.polling(none_stop=True, interval=0, timeout=20)
