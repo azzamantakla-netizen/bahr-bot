@@ -228,16 +228,25 @@ def core_menu(message):
 def start_registration(call):
     bot.send_message(call.message.chat.id, "👤 يرجى إرسال اسم المستخدم المطلوب للحساب الجديد (أحرف وأرقام إنجليزية فقط):")
     bot.register_next_step_handler(call.message, reg_step_username)
+# ==========================================
+# 7. الترتيب الصحيح والمستقر لتشغيل الخطة المجانية
+# ==========================================
+def run_bot_polling():
+    print("[+] البوت ذو الأكواد المشوهة يعمل ويستمع للأوامر الآن...")
+    while True:
+        try:
+            bot.polling(none_stop=True, interval=0, timeout=20)
+        except Exception:
+            import time
+            time.sleep(5)
 
-def reg_step_username(message):
-    username = message.text.strip()
-    user_steps[message.chat.id] = {"reg_user": username}
-    bot.send_message(message.chat.id, "🔐 الآن يرجى كتابة كلمة السر التي ترغب بها لحمايتك:")
-    bot.register_next_step_handler(message, reg_step_password)
-
-def reg_step_password(message):
-    password = message.text.strip()
-    chat_id = message.chat.id
-    username = user_steps[chat_id]["reg_user"]
+if __name__ == "__main__":
+    # 1. تشغيل استماع التلغرام في الخلفية (Thread) أولاً ليعمل بالتوازي
+    bot_thread = threading.Thread(target=run_bot_polling)
+    bot_thread.daemon = True
+    bot_thread.start()
     
-    refresh_session()
+    # 2. تشغيل سيرفر الويب (Flask) في الواجهة الرئيسية (Main Thread) لفتح المنفذ 10000 فوراً لقراءة Render
+    print("[+] السيرفر الوهمي نشط الآن لحماية واستقرار الخطة المجانية...")
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
