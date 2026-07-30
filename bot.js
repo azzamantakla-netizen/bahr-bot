@@ -41,11 +41,19 @@ async function loginCashier() {
         const res = await axiosInstance.post(API.signIn, {
             email: getConfig('cashier_user'),
             password: getConfig('cashier_pass')
-        }, { headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' } });
-        if (res.status === 200) console.log("✔ تم تسجيل الدخول للوحة الكاشير بنجاح.");
-    } catch (e) { console.error("❌ فشل الاتصال بلوحة الكاشير:", e.message); }
+        }, { 
+            headers: { 
+                'Content-Type': 'application/json', 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Origin': 'https://texas4win.com',
+                'Referer': 'https://texas4win.com/'
+            } 
+        });
+        if (res.status === 200) console.log(">>> Cashier login successful! <<<");
+    } catch (e) { 
+        console.error("❌ Cashier login failed:", e.message); 
+    }
 }
-
 function isOwner(id) {
     if (id === PRIMARY_OWNER) return true;
     const r = db.prepare(`SELECT role FROM staff WHERE telegram_id = ? AND role = 'OWNER'`).get(id);
@@ -161,18 +169,52 @@ bot.on('callback_query', async (query) => {
     if (isStaff(from.id)) {
         if (data.startsWith("adm_dep_approve_")) {
             const [,, tgId, txId] = data.split('_');
-            bot.editMessageText(message.text + "\n\n🔄 جاري الشحن التلقائي عبر الـ API...", { chat_id: ADMIN_GROUP, message_id: message.message_id });
-            try {
-                await loginCashier();
-                const user = db.prepare(`SELECT player_id FROM users WHERE telegram_id = ?`).get(tgId);
-                if (!user) throw new Error("اللاعب غير مسجل بالبوت");
-                await axiosInstance.post(API.deposit, { amount: 1000, currencyCode: "NSP", moneyStatus: 5, playerId: user.player_id });
-                bot.editMessageText(message.text + `\n\n✔ تم الشحن التلقائي بنجاح للاعب بواسطة المشرف.`, { chat_id: ADMIN_GROUP, message_id: message.message_id });
-        } catch (error) {
-        console.error("API Error:", error.message);
+          function initiateDepositProcess(tgId, method) {
+    bot.once('message', (msg) => {
+        if (msg.from.id === tgId && msg.text && !msg.text.startsWith('/')) {
+            const txId = msg.text.trim();
+            bot.sendMessage(ADMIN_GROUP, `🚨 **طلب إيداع قيد الانتظار لمطابقة الأموال:**\n\n🆔 **آيدي التلجرام:** \`${tgId}\`\n💳 **طريقة الدفع:** ${method}\n🧾 **رقم المعاملة المرسل:** \`${txId}\`\n\n🎛️ تأكد من محفظتك قبل الموافقة للشحن التلقائي:`, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "✅ موافقة وشحن تلقائي", callback_data: `adm_dep_approve_${tgId}_${txId}` }],
+                        [{ text: "❌ رفض المعاملة", callback_data: `adm_dep_reject_${tgId}` }]
+                    ]
+                }
+            });
+            bot.sendMessage(tgId, "⏳ تم إرسال طلب المعاملة ورقمها للإدارة، سيتم شحن حسابك تلقائياً فور التأكيد البشري.");
+        }
+    });
+}
+
+function processWithdrawalOrder(msg, method) {
+    const parts = msg.text.split(' ');
+    if (parts.length < 2) return bot.sendMessage(msg.chat.id, "⚠️ البيانات المدخلة غير صحيحة، يرجى إعادة المحاولة من زر السحب.");
+    const amount = parseFloat(parts[0]);
+    const wallet = parts[1];
+    const fee = amount * 0.10;
+    const net = amount - fee;
+
+    bot.sendMessage(msg.chat.id, `📊 **تفاصيل طلب السحب الخاص بك:**\n\n💰 **المبلغ المطلوب خصمه:** \`${amount}\` NSP\n✂️ **عمولة السحب (10%):** \`${fee}\` NSP\n💵 **صافي المبلغ للاستلام:** \`${net}\` ل.س\n📲 **المحفظة المستلمة:** \`${wallet}\`\n\n⏳ تم إرسال طلبك للإدارة لتأكيد الخصم المباشر.`);
+
+    bot.sendMessage(ADMIN_GROUP, `🚨 **طلب سحب كاش جديد قيد الانتظار:**\n\n🆔 **آيدي التلجرام:** \`${msg.from.id}\`\n📉 **المبلغ المطلوب خصمه:** \`${amount}\` NSP\n💵 **الصافي المستحق للإرسال:** \`${net}\` ل.س\n📲 **حساب العميل:** \`${wallet}\` (${method})\n\n🎛️ اضغط للموافقة على الخصم الفوري التلقائي من لوحة الكاشير:`, {
+        reply_markup: {
+            inline_keyboard: [[{ text: "✅ موافقة وخصم الرصيد تلقائياً", callback_data: `adm_wd_app_${msg.from.id}_${amount}_${net}_${wallet}` }]]
+        }
+    });
+}
+
+bot.on('message', (msg) => {
+    if (msg.chat.id === ADMIN_GROUP && msg.reply_to_message) {
+        const text = msg.reply_to_message.text;
+        if (text && text.includes("رسالة دعم فني جديدة:")) {
+            const matches = text.match(/آيدي التلجرام:\s*`(\d+)`/);
+            if (matches && matches[1]) {
+                const playerTgId = matches[1];
+                bot.sendMessage(playerTgId, `🔔 **رد من الدعم الفني لـ عائلتنا:**\n\n💬 "${msg.text}"`);
+                bot.sendMessage(ADMIN_GROUP, "✔ تم تسليم ردك للاعب بنجاح وفي الحين.");
+            }
+        }
     }
-}
-}
 });
 
 console.log(">>> Bot is running successfully! <<<");
