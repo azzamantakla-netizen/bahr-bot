@@ -23,7 +23,7 @@ def run_flask_server():
 # ==========================================
 # 2. الإعدادات الثابتة والبيانات السرية المرسلة
 # ==========================================
-BOT_TOKEN = "8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8"
+BOT_TOKEN = "8624354425:AAFN8W1EenNfjKOjq7fG0iRwwuQRspy4arQ"
 ADMIN_GROUP_ID = -1003983996094
 OWNER_ID = 6693251012
 
