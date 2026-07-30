@@ -89,7 +89,7 @@ bot.action('register_account', (ctx) => { ctx.answerCbQuery(); userStates[ctx.fr
 
 bot.hears('⚙️ لوحة الإدارة', (ctx) => { 
     if (!isOwner(ctx.from.id)) return ctx.reply('❌ هذا القسم مخصص لمالك البوت فقط.'); 
-    ctx.reply('⚙️ لوحة تحكم الإدارة الشاملة. اختر الإجراء المطلوب:', getAdminMenu()); 
+    ctx.reply('⚙️ أهلاً بك في لوحة تحكم الإدارة الشاملة. اختر الإجراء المطلوب:', getAdminMenu()); 
 }); 
 
 bot.hears('⚙️ تعديل رصيد لاعب', (ctx) => {
@@ -114,37 +114,40 @@ bot.hears('🏦 طلب سحب', (ctx) => {
 bot.action('w_syr', (ctx) => { ctx.answerCbQuery(); userStates[ctx.from.id] = { step: 'w_amt', method: 'Syriatel Cash' }; ctx.reply('✏️ يرجى كتابة المبلغ الذي ترغب بسحبه بالليرة السورية (أرقام فقط):'); });
 bot.action('w_cham', (ctx) => { ctx.answerCbQuery(); userStates[ctx.from.id] = { step: 'w_amt', method: 'Cham Cash' }; ctx.reply('✏️ يرجى كتابة المبلغ الذي ترغب بسحبه بالليرة السورية (أرقام فقط):'); });
 
-// أزرار التحكم الثابتة والنظيفة تماماً والخالية من أي أخطاء سنتكس
 bot.action('admin_approve_action', async (ctx) => {
     ctx.answerCbQuery();
-    ctx.reply('تنبيه للمشرف: يرجى تنفيذ إجراءات الشحن، السحب، والتفعيل المباشر والآمن من خلال لوحة تحكم الإدارة النصية لضمان أعلى مستويات الأمان المالي وقفل البيانات الفوري.');
+    ctx.reply('تنبيه للمشرف: يرجى تنفيذ إجراءات التعديل المباشر والآمن من خلال لوحة تحكم الإدارة النصية لضمان استقرار الملفات.');
 });
 bot.action('admin_reject_action', (ctx) => { ctx.answerCbQuery(); ctx.editMessageText('❌ تم رفض الطلب وإلغاء المعاملة بواسطة المشرف.'); });
 
 bot.on('message', async (ctx) => { 
-    const userId = ctx.from.id; const text = ctx.message.text; const currentState = userStates[userId]?.step; 
+    try {
+        const userId = ctx.from.id; const text = ctx.message.text; const currentState = userStates[userId]?.step; 
 
-    if (userStates[userId]?.step === 'proof' && (ctx.message.photo || text)) {
-        const method = userStates[userId].method; const captionText = ctx.message.caption || text || "";
-        const amountMatch = captionText.match(/\d+/); const amount = amountMatch ? parseInt(amountMatch) : 0;
-        const account = getPlayerAccount(userId); delete userStates[userId];
+        if (userStates[userId]?.step === 'proof' && (ctx.message.photo || text)) {
+            const method = userStates[userId].method; const captionText = ctx.message.caption || text || "";
+            let amount = 0;
+            // استخراج الأرقام بنظام نصي خالص بدون استخدام RegExp
+            let numStr = "";
+            for (let i = 0; i < captionText.length; i++) {
+                if (captionText[i] >= '0' && captionText[i] <= '9') { numStr += captionText[i]; }
+            }
+            if (numStr.length > 0) { amount = parseInt(numStr); }
+            
+            const account = getPlayerAccount(userId); delete userStates[userId];
 
-        if (ctx.message.photo) {
-            await bot.telegram.sendPhoto(ADMIN_GROUP_ID, ctx.message.photo[ctx.message.photo.length - 1].file_id, {
-                caption: `💰 إيصال شحن جديد واصل (${method}):\n\n• اللاعب: [${ctx.from.first_name}](tg://user?id=${userId})\n• حساب الكاشير: \`${account?.username || 'لا يوجد'}\`\n• المبلغ المحدد: *${amount.toLocaleString()} ل.س*\n\n• معرف اللاعب التلغرام: \`TGID:${userId}\``,
-                parse_mode: 'Markdown',
-                ...Markup.inlineKeyboard([[Markup.button.callback('🟢 قبول وإرسال إشعار', 'admin_approve_action')], [Markup.button.callback('🔴 رفض الإيصال', 'admin_reject_action')]])
-            });
+            if (ctx.message.photo) {
+                await bot.telegram.sendPhoto(ADMIN_GROUP_ID, ctx.message.photo[ctx.message.photo.length - 1].file_id, {
+                    caption: `💰 إيصال شحن جديد واصل (${method}):\n\n• اللاعب: [${ctx.from.first_name}](tg://user?id=${userId})\n• حساب الكاشير: \`${account?.username || 'لا يوجد'}\`\n• المبلغ المحدد: *${amount.toLocaleString()} ل.س*\n\n• معرف اللاعب التلغرام: \`TGID:${userId}\``,
+                    parse_mode: 'Markdown',
+                    ...Markup.inlineKeyboard([[Markup.button.callback('🟢 قبول وإرسال إشعار', 'admin_approve_action')], [Markup.button.callback('🔴 رفض الإيصال', 'admin_reject_action')]])
+                });
+            }
+            return ctx.reply('⏳ تم رفع إيصال شحنك بنجاح لقسم المالية والتدقيق المالي، يرجى الانتظار لحين مراجعته.');
         }
-        return ctx.reply('⏳ تم رفع إيصال شحنك بنجاح لقسم المالية والتدقيق المالي، يرجى الانتظار لحين مراجعته.');
-    }
 
-    if (currentState === 'username' && text) { userStates[userId] = { step: 'password', username: text }; return ctx.reply('🔒 ممتاز، الآن يرجى كتابة كلمة السر (Password) المطلوبة لحسابك لإتمام التسجيل:'); } 
-    if (currentState === 'password' && text) { 
-        const username = userStates[userId].username; delete userStates[userId];
-        await bot.telegram.sendMessage(ADMIN_GROUP_ID, `🔔 طلب إنشاء حساب جديد واصل:\n\n• اللاعب: [${ctx.from.first_name}](tg://user?id=${userId})\n• اسم المستخدم: \`${username}\`\n• كلمة المرور: \`${text}\`\n\n• معرف اللاعب التلغرام: \`TGID:${userId}\``, 
-            { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🟢 موافقة وتفعيل الحساب', 'admin_approve_action')], [Markup.button.callback('🔴 رفض الطلب', 'admin_reject_action')]]) }); 
-        return ctx.reply('⏳ تم إرسال طلبك للإدارة بنجاح، يرجى الانتظار بضع لحظات لحين تفعيله على لوحة الكاشير.'); 
-    } 
-
-    if (currentState === 'w_amt' && text) {
+        if (currentState === 'username' && text) { userStates[userId] = { step: 'password', username: text }; return ctx.reply('🔒 ممتاز، الآن يرجى كتابة كلمة السر (Password) المطلوبة لحسابك لإتمام التسجيل:'); } 
+        if (currentState === 'password' && text) { 
+            const username = userStates[userId].username; delete userStates[userId];
+            await bot.telegram.sendMessage(ADMIN_GROUP_ID, `🔔 طلب إنشاء حساب جديد واصل:\n\n• اللاعب: [${ctx.from.first_name}](tg://user?id=${userId})\n• اسم المستخدم: \`${username}\`\n• كلمة المرور: \`${text}\`\n\n• معرف اللاعب التلغرام: \`TGID:${userId}\``, 
+                { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🟢 موافقة وتفعيل الحساب', 'admin_approve_action')], [Markup.button.callback('🔴 رفض الطلب', 'admin_reject_action')]]) }); 
