@@ -28,7 +28,7 @@ if (!getConfig('sham_wallet', '')) setConfig('sham_wallet', 'a18758d5324eb7595d4
 if (!getConfig('bot_status', '')) setConfig('bot_status', 'ON');
 if (!getConfig('welcome_msg', '')) setConfig('welcome_msg', messages.welcome);
 
-// ----- إدارة واجهات برمجة التطبيقات (API Manager) -----
+// ----- واجهات برمجة التطبيقات (API Manager) -----
 const API = {
     signIn: "https://texas4win.com",
     balance: "https://texas4win.com",
@@ -78,14 +78,14 @@ bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id, getConfig('welcome_msg'), { parse_mode: 'Markdown', reply_markup: playerKeyboard(msg.from.id) });
 });
 
-// ----- معالج ضغطات الأزرار (التفاعل الذكي والسلس) -----
+// ----- معالج ضغطات الأزرار العام -----
 bot.on('callback_query', async (query) => {
     const { data, message, from } = query;
     bot.answerCallbackQuery(query.id);
 
     if (getConfig('bot_status') === 'OFF' && !isOwner(from.id)) return;
 
-    // سيناريو زر حسابي
+    // زر حسابي
     if (data === "p_account") {
         const user = db.prepare(`SELECT * FROM users WHERE telegram_id = ?`).get(from.id);
         if (!user) {
@@ -97,14 +97,14 @@ bot.on('callback_query', async (query) => {
         }
     }
 
-    // إنشاء حساب تلقائي
+    // إنشاء حساب تلقائي لـ أول مرة
     if (data === "p_create_acc") {
         bot.sendMessage(message.chat.id, "🔄 جاري التواصل مع السيرفر لإنشاء حسابك وتوليد البيانات الحصريّة...");
         const randUser = "TX_" + Math.floor(100000 + Math.random() * 900000);
         const randPass = Math.random().toString(36).slice(-8);
         try {
             await loginCashier();
-            const res = await axiosInstance.post(API.register, {
+            await axiosInstance.post(API.register, {
                 player: {
                     email: `${randUser}@texasbot.com`, firstname: "Player", lastname: "Bot",
                     login: randUser, middleName: "Bot", parentId: "2688288", password: randPass
@@ -115,18 +115,18 @@ bot.on('callback_query', async (query) => {
         } catch (e) { bot.sendMessage(message.chat.id, "❌ حدث خطأ من سيرفر اللوحة أثناء التسجيل، يرجى المحاولة لاحقاً."); }
     }
 
-    // سيناريو الإيداع
+    // فتح قائمة طرق الإيداع
     if (data === "p_deposit") {
         bot.sendMessage(message.chat.id, "📥 اختر وسيلة الدفع التي تناسبك للإيداع:", {
             reply_markup: { inline_keyboard: [[{ text: "🔴 Syriatel Cash", callback_data: "dep_syriatel" }], [{ text: "🔵 Sham Cash", callback_data: "dep_sham" }]] }
         });
     }
-    if (data === "dep_syriatel") bot.sendMessage(message.chat.id, messages.syriatelDeposit(getConfig('syriatel_code')), { parse_mode: 'Markdown' }).then(m => initiateDepositProcess(from.id, 'Syriatel Cash'));
-    if (data === "dep_sham") bot.sendMessage(message.chat.id, messages.shamDeposit(getConfig('sham_wallet')), { parse_mode: 'Markdown' }).then(m => initiateDepositProcess(from.id, 'Sham Cash'));
+    if (data === "dep_syriatel") bot.sendMessage(message.chat.id, messages.syriatelDeposit(getConfig('syriatel_code')), { parse_mode: 'Markdown' }).then(() => initiateDepositProcess(from.id, 'Syriatel Cash'));
+    if (data === "dep_sham") bot.sendMessage(message.chat.id, messages.shamDeposit(getConfig('sham_wallet')), { parse_mode: 'Markdown' }).then(() => initiateDepositProcess(from.id, 'Sham Cash'));
 
-    // سيناريو السحب (عمولة 10%)
+    // فتح قائمة طرق السحب
     if (data === "p_withdraw") {
-        bot.sendMessage(message.chat.id, "📤 اختر وسيلة الدفع لاستلام أرباحك كاش:", {
+        bot.sendMessage(message.chat.id, "📤 اختر وسيلة الدفع لاستلاف أرباحك كاش:", {
             reply_markup: { inline_keyboard: [[{ text: "🔴 استلام عبر Syriatel Cash", callback_data: "wd_syriatel" }], [{ text: "🔵 استلام عبر Sham Cash", callback_data: "wd_sham" }]] }
         });
     }
@@ -137,7 +137,7 @@ bot.on('callback_query', async (query) => {
         });
     }
 
-    // سيناريو الدعم الفني
+    // فتح الدعم الفني
     if (data === "p_support") {
         bot.sendMessage(message.chat.id, "📞 **أنت بأمان لا تقلق، نحن هنا لخدمتك! فريقنا جاهز على مدار الساعة. فقط اكتب لنا ما هي المشكلة وسنقوم بالرد عليها فوراً.** 👇").then(() => {
             bot.once('message', (sMsg) => {
@@ -149,7 +149,7 @@ bot.on('callback_query', async (query) => {
         });
     }
 
-    // لوحة التحكم الإدارية للمالك
+    // لوحة المالك الإدارية
     if (data === "m_panel" && isOwner(from.id)) {
         bot.sendMessage(message.chat.id, "⚙️ **لوحة التحكم العليا للمالك الإداري:**", {
             reply_markup: {
@@ -168,10 +168,8 @@ bot.on('callback_query', async (query) => {
         setConfig('bot_status', next);
         bot.sendMessage(message.chat.id, `⚙️ تم تغيير حالة البوت الحركية إلى: **${next}**`, { parse_mode: 'Markdown' });
     }
-});
 
-// ----- معالجة تفاصيل تدفق الإيداع والسحب والمطابقة التلقائية -----
-function initiateDepositProcess(tgId, method) {
-    bot.once('message', (msg) => {
-        if (msg.from.id === tgId && msg.text && !msg.text.startsWith('/')) {
-            const txId = msg.text.trim();
+    // ----- معالجة طلبات وموافقة المشرفين (Admin Decision Rules) -----
+    if (isStaff(from.id)) {
+        if (data.startsWith("adm_dep_approve_")) {
+            const [,, tgId, txId] = data.split('_');
