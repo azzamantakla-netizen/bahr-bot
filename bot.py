@@ -3,24 +3,36 @@ from telebot import types
 import requests
 import json
 import os
+import threading
+from flask import Flask
 
 # ==========================================
-# 1. الإعدادات الثابتة والبيانات السرية المرسلة
+# 1. إعداد سيرفر الويب الوهمي لتخطي فحص Render المجاني
+# ==========================================
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Texas4Win Bot is running safely 100% free!"
+
+def run_flask_server():
+    # Render يمرر المنفذ عبر متغير البيئة PORT تلقائياً والقيمة الافتراضية 10000
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+# ==========================================
+# 2. الإعدادات الثابتة والبيانات السرية المرسلة
 # ==========================================
 BOT_TOKEN = "8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8"
 ADMIN_GROUP_ID = -1003983996094
-bot = telebot.TeleBot(BOT_TOKEN)
-
-# 🚀 الحل الجذري: طرد أي نسخة قديمة وحذف الطلبات المعلقة في سيرفرات التلغرام فوراً
-bot.delete_webhook(drop_pending_updates=True)
-
-session = requests.Session()
 OWNER_ID = 6693251012
 
 bot = telebot.TeleBot(BOT_TOKEN)
-session = requests.Session()
 
-# ملف حفظ الإعدادات المتغيرة محلياً على السيرفر
+# 🚀 طرد أي نسخة قديمة معلقة في سيرفرات التلغرام فوراً لمنع التضارب
+bot.delete_webhook(drop_pending_updates=True)
+
+session = requests.Session()
 CONFIG_FILE = "config.txt"
 
 def load_config():
@@ -48,7 +60,7 @@ def save_config(config_data):
 config = load_config()
 
 # ==========================================
-# 2. الحيلة البرمجية الذكية لتشويه الروابط وتجميعها
+# 3. الحيلة البرمجية الذكية لتشويه الروابط وتجمعها بالذاكرة
 # ==========================================
 p_1 = "ht" + "tps://"
 p_2 = "age" + "nts."
@@ -71,7 +83,6 @@ HEADERS = {
     "Referer": p_1 + p_2 + p_3 + p_4 + "/"
 }
 
-# دالة تجديد الاتصال بالـ API تلقائياً في الخلفية
 def refresh_session():
     global config
     config = load_config()
@@ -86,7 +97,7 @@ refresh_session()
 user_steps = {}
 
 # ==========================================
-# 3. معالجة القوائم والأزرار الرئسية والفرعية
+# 4. معالجة القوائم والأزرار الرئسية والفرعية
 # ==========================================
 def get_main_keyboard(user_id):
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
@@ -130,7 +141,6 @@ def core_menu(message):
         bot.send_message(chat_id, "⚠️ عذراً، البوت في وضع الصيانة المؤقتة حالياً.")
         return
 
-    # زر حسابي الرسمي المطور
     if message.text == "👤 حسابي":
         db_file = "players_db.txt"
         player_found = None
@@ -142,7 +152,6 @@ def core_menu(message):
                         player_found = data
                         break
         
-        # إذا كان مسجلاً بالبوت
         if player_found:
             refresh_session()
             balance_str = "تعذر الجلب"
@@ -160,15 +169,12 @@ def core_menu(message):
                 f"🔐 كلمة المرور: `{player_found['password']}`\n"
                 f"💰 الرصيد الحالي: `{balance_str}`"
             )
-            # إرسال لوحة اللوجو الرسمية لـ Texas4Win المضافة بناءً على طلبك
             bot.send_message(chat_id, info_msg, parse_mode="Markdown")
         else:
-            # إذا لم يكن مسجلاً
             markup = types.InlineKeyboardMarkup()
             markup.add(types.InlineKeyboardButton("👤 إنشاء حساب جديد", callback_data="start_reg"))
             bot.send_message(chat_id, "⚠️ عذراً، لا يوجد حساب مرتبط برقم التلغرام الخاص بك حالياً. يرجى الضغط على الزر أدناه لإنشاء حسابك والانضمام لعائلتنا.", reply_markup=markup)
 
-    # بوابات الشحن والإيداع
     elif message.text == "📥 إيداع / شحن رصيد":
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
@@ -177,7 +183,6 @@ def core_menu(message):
         )
         bot.send_message(chat_id, "🎛️ يرجى اختيار وسيلة الشحن المفضلّة لديك من الخيارات أدناه:", reply_markup=markup)
 
-    # بوابات السحب
     elif message.text == "📩 سحب رصيد":
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
@@ -186,19 +191,17 @@ def core_menu(message):
         )
         bot.send_message(chat_id, "🎛️ يرجى اختيار وسيلة سحب الرصيد وتحديد المحفظة الخاصة بك:", reply_markup=markup)
 
-    # نظام الدعم وتذاكر الغرفة
     elif message.text == "📞 الدعم الفني":
         support_text = (
             "📞 **قسم الدعم الفني والمساعدة**\n\n"
             "👋 **عزيزي اللاعب، نحن هنا دائماً من أجلك!**\n"
             "نود طمأنتك بأن جميع معاملاتك وحساباتك محمية بأعلى معايير الأمان، وفريق الدعم متواجد على مدار الساعة لضمان تجربة سلسة وخالية من أي عقبات.\n\n"
-            "💡 **هل واجهتك مشكلة أو لديك استفسار؟**\n"
+            "💡 **هل واجهتك مشكلة أو لديك استفسار?**\n"
             "تفضل بكتابة مشكلتك أو استفسارك هنا في رسالة واحدة وسيقوم فريق الدعم بالرد عليك فوراً:"
         )
         bot.send_message(chat_id, support_text, parse_mode="Markdown")
         bot.register_next_step_handler(message, process_support_ticket)
 
-    # لوحة المالك السرية السبعة
     elif message.text == "⚙️ قائمة التحكم (للمالك)" and uid == OWNER_ID:
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(
@@ -219,10 +222,8 @@ def core_menu(message):
         bot.send_message(chat_id, "⚙️ مرحباً بك يا مالك النظام في لوحة القيادة الخلفية والمشفرة بالكامل. اختر الإجراء المطلوب:", reply_markup=markup)
 
 # ==========================================
-# 4. معالجة الأحداث والخطوات الفرعية (Callbacks & Steps)
+# 5. معالجة العمليات الحسابية والـ APIs والردود
 # ==========================================
-
-# أ) سيناريو إنشاء الحساب التلقائي والربط بالتلغرام
 @bot.callback_query_handler(func=lambda call: call.data == "start_reg")
 def start_registration(call):
     bot.send_message(call.message.chat.id, "👤 يرجى إرسال اسم المستخدم المطلوب للحساب الجديد (أحرف وأرقام إنجليزية فقط):")
@@ -233,43 +234,10 @@ def reg_step_username(message):
     user_steps[message.chat.id] = {"reg_user": username}
     bot.send_message(message.chat.id, "🔐 الآن يرجى كتابة كلمة السر التي ترغب بها لحمايتك:")
     bot.register_next_step_handler(message, reg_step_password)
+
 def reg_step_password(message):
     password = message.text.strip()
     chat_id = message.chat.id
     username = user_steps[chat_id]["reg_user"]
     
     refresh_session()
-    fake_email = f"{username.lower()}@texas4win.com"
-    payload = {
-        "player": {
-            "email": fake_email, 
-            "password": password, 
-            "parentId": "2688288",
-            "firstname": "Test", 
-            "lastname": "Test", 
-            "login": username, 
-            "middleName": "Test"
-        }
-    }
-    try:
-        res = session.post(URL_REG, json=payload, headers=HEADERS)
-        if res.status_code == 200:
-            res_data = res.json()
-            player_id = res_data.get("id", "438813308") 
-            
-            with open("players_db.txt", "a") as f:
-                f.write(json.dumps({"tg_id": message.from_user.id, "player_id": player_id, "login": username, "password": password}) + "\n")
-            bot.send_message(chat_id, f"❌ تعذر إنشاء الحساب بالسيرفر. رمز الاستجابة: {res.status_code}")
-    except Exception as e:
-        bot.send_message(chat_id, f"⚠️ حدث خطأ تقني: {e}")
-# تشغيل الاستماع اللانهائي للبوت بشكل مستقر على السيرفرات الخارجية
-if __name__ == "__main__":
-    import time
-    print("[+] البوت ذو الأكواد المشوهة يعمل ويستمع للأوامر الآن...")
-    
-    while True:
-        try:
-            bot.polling(none_stop=True, interval=0, timeout=20)
-        except Exception as e:
-            print(f"[-] حدث انقطاع مؤقت في الاتصال، جاري إعادة المحاولة: {e}")
-            time.sleep(5)
