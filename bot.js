@@ -3,7 +3,6 @@ const axios = require('axios');
 const Database = require('better-sqlite3');
 const messages = require('./messages');
 
-// ----- الإعدادات الحساسة المحفوظة مسبقاً -----
 const TOKEN = "8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8";
 const ADMIN_GROUP = -1003983996094;
 const PRIMARY_OWNER = 6693251012;
@@ -12,12 +11,10 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 const db = new Database('bot_data.db');
 const axiosInstance = axios.create({ withCredentials: true });
 
-// ----- تهيئة قاعدة البيانات لحفظ الإعدادات ديناميكياً -----
 db.prepare(`CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)`).run();
 db.prepare(`CREATE TABLE IF NOT EXISTS users (telegram_id INTEGER PRIMARY KEY, player_id TEXT, username TEXT, password TEXT)`).run();
 db.prepare(`CREATE TABLE IF NOT EXISTS staff (telegram_id INTEGER PRIMARY KEY, role TEXT)`).run();
 
-// تعبئة البيانات الافتراضية إذا كانت فارغة لعدم ضياعها عند إعادة التشغيل
 const setConfig = (key, val) => db.prepare(`INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)`).run(key, val);
 const getConfig = (key, fallback) => { const r = db.prepare(`SELECT value FROM config WHERE key = ?`).get(key); return r ? r.value : fallback; };
 
@@ -28,7 +25,6 @@ if (!getConfig('sham_wallet', '')) setConfig('sham_wallet', 'a18758d5324eb7595d4
 if (!getConfig('bot_status', '')) setConfig('bot_status', 'ON');
 if (!getConfig('welcome_msg', '')) setConfig('welcome_msg', messages.welcome);
 
-// ----- واجهات برمجة التطبيقات (API Manager) -----
 const API = {
     signIn: "https://texas4win.com",
     balance: "https://texas4win.com",
@@ -47,7 +43,6 @@ async function loginCashier() {
     } catch (e) { console.error("❌ فشل الاتصال بلوحة الكاشير:", e.message); }
 }
 
-// ----- دوال التحقق من الصلاحيات -----
 function isOwner(id) {
     if (id === PRIMARY_OWNER) return true;
     const r = db.prepare(`SELECT role FROM staff WHERE telegram_id = ? AND role = 'OWNER'`).get(id);
@@ -59,7 +54,6 @@ function isStaff(id) {
     return !!r;
 }
 
-// ----- القوائم والأزرار الاحترافية -----
 const playerKeyboard = (userId) => {
     const inline_keyboard = [
         [{ text: "👤 حسابي", callback_data: "p_account" }],
@@ -70,7 +64,6 @@ const playerKeyboard = (userId) => {
     return { inline_keyboard };
 };
 
-// ----- معالجة الأوامر الرئيسية -----
 bot.onText(/\/start/, (msg) => {
     if (getConfig('bot_status') === 'OFF' && !isOwner(msg.from.id)) {
         return bot.sendMessage(msg.chat.id, "🛑 الصيانة جارية حالياً للبوت، يرجى المحاولة لاحقاً.");
@@ -78,14 +71,12 @@ bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id, getConfig('welcome_msg'), { parse_mode: 'Markdown', reply_markup: playerKeyboard(msg.from.id) });
 });
 
-// ----- معالج ضغطات الأزرار العام -----
 bot.on('callback_query', async (query) => {
     const { data, message, from } = query;
     bot.answerCallbackQuery(query.id);
 
     if (getConfig('bot_status') === 'OFF' && !isOwner(from.id)) return;
 
-    // زر حسابي
     if (data === "p_account") {
         const user = db.prepare(`SELECT * FROM users WHERE telegram_id = ?`).get(from.id);
         if (!user) {
@@ -97,7 +88,6 @@ bot.on('callback_query', async (query) => {
         }
     }
 
-    // إنشاء حساب تلقائي لـ أول مرة
     if (data === "p_create_acc") {
         bot.sendMessage(message.chat.id, "🔄 جاري التواصل مع السيرفر لإنشاء حسابك وتوليد البيانات الحصريّة...");
         const randUser = "TX_" + Math.floor(100000 + Math.random() * 900000);
@@ -115,7 +105,6 @@ bot.on('callback_query', async (query) => {
         } catch (e) { bot.sendMessage(message.chat.id, "❌ حدث خطأ من سيرفر اللوحة أثناء التسجيل، يرجى المحاولة لاحقاً."); }
     }
 
-    // فتح قائمة طرق الإيداع
     if (data === "p_deposit") {
         bot.sendMessage(message.chat.id, "📥 اختر وسيلة الدفع التي تناسبك للإيداع:", {
             reply_markup: { inline_keyboard: [[{ text: "🔴 Syriatel Cash", callback_data: "dep_syriatel" }], [{ text: "🔵 Sham Cash", callback_data: "dep_sham" }]] }
@@ -124,7 +113,6 @@ bot.on('callback_query', async (query) => {
     if (data === "dep_syriatel") bot.sendMessage(message.chat.id, messages.syriatelDeposit(getConfig('syriatel_code')), { parse_mode: 'Markdown' }).then(() => initiateDepositProcess(from.id, 'Syriatel Cash'));
     if (data === "dep_sham") bot.sendMessage(message.chat.id, messages.shamDeposit(getConfig('sham_wallet')), { parse_mode: 'Markdown' }).then(() => initiateDepositProcess(from.id, 'Sham Cash'));
 
-    // فتح قائمة طرق السحب
     if (data === "p_withdraw") {
         bot.sendMessage(message.chat.id, "📤 اختر وسيلة الدفع لاستلاف أرباحك كاش:", {
             reply_markup: { inline_keyboard: [[{ text: "🔴 استلام عبر Syriatel Cash", callback_data: "wd_syriatel" }], [{ text: "🔵 استلام عبر Sham Cash", callback_data: "wd_sham" }]] }
@@ -137,7 +125,6 @@ bot.on('callback_query', async (query) => {
         });
     }
 
-    // فتح الدعم الفني
     if (data === "p_support") {
         bot.sendMessage(message.chat.id, "📞 **أنت بأمان لا تقلق، نحن هنا لخدمتك! فريقنا جاهز على مدار الساعة. فقط اكتب لنا ما هي المشكلة وسنقوم بالرد عليها فوراً.** 👇").then(() => {
             bot.once('message', (sMsg) => {
@@ -149,7 +136,6 @@ bot.on('callback_query', async (query) => {
         });
     }
 
-    // لوحة المالك الإدارية
     if (data === "m_panel" && isOwner(from.id)) {
         bot.sendMessage(message.chat.id, "⚙️ **لوحة التحكم العليا للمالك الإداري:**", {
             reply_markup: {
@@ -169,7 +155,13 @@ bot.on('callback_query', async (query) => {
         bot.sendMessage(message.chat.id, `⚙️ تم تغيير حالة البوت الحركية إلى: **${next}**`, { parse_mode: 'Markdown' });
     }
 
-    // ----- معالجة طلبات وموافقة المشرفين (Admin Decision Rules) -----
     if (isStaff(from.id)) {
         if (data.startsWith("adm_dep_approve_")) {
             const [,, tgId, txId] = data.split('_');
+            bot.editMessageText(message.text + "\n\n🔄 جاري الشحن التلقائي عبر الـ API...", { chat_id: ADMIN_GROUP, message_id: message.message_id });
+            try {
+                await loginCashier();
+                const user = db.prepare(`SELECT player_id FROM users WHERE telegram_id = ?`).get(tgId);
+                if (!user) throw new Error("اللاعب غير مسجل بالبوت");
+                await axiosInstance.post(API.deposit, { amount: 1000, currencyCode: "NSP", moneyStatus: 5, playerId: user.player_id });
+                bot.editMessageText(message.text + `\n\n✔ تم الشحن التلقائي بنجاح للاعب بواسطة المشرف.`, { chat_id: ADMIN_GROUP, message_id: message.message_id });
