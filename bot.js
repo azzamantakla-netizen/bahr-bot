@@ -191,25 +191,13 @@ function processWithdrawalOrder(msg, method) {
     if (parts.length < 2) return bot.sendMessage(msg.chat.id, "⚠️ البيانات المدخلة غير صحيحة، يرجى إعادة المحاولة من زر السحب.");
     const amount = parseFloat(parts[0]);
     const wallet = parts[1];
-    const fee = amount * 0.10;
-    const net = amount - fee;
-
-    bot.sendMessage(msg.chat.id, `📊 **تفاصيل طلب السحب الخاص بك:**\n\n💰 **المبلغ المطلوب خصمه:** \`${amount}\` NSP\n✂️ **عمولة السحب (10%):** \`${fee}\` NSP\n💵 **صافي المبلغ للاستلام:** \`${net}\` ل.س\n📲 **المحفظة المستلمة:** \`${wallet}\`\n\n⏳ تم إرسال طلبك للإدارة لتأكيد الخصم المباشر.`);
-
-    bot.sendMessage(ADMIN_GROUP, `🚨 **طلب سحب كاش جديد قيد الانتظار:**\n\n🆔 **آيدي التلجرام:** \`${msg.from.id}\`\n📉 **المبلغ المطلوب خصمه:** \`${amount}\` NSP\n💵 **الصافي المستحق للإرسال:** \`${net}\` ل.س\n📲 **حساب العميل:** \`${wallet}\` (${method})\n\n🎛️ اضغط للموافقة على الخصم الفوري التلقائي من لوحة الكاشير:`, {
-        reply_markup: {
-            inline_keyboard: [[{ text: "✅ موافقة وخصم الرصيد تلقائياً", callback_data: `adm_wd_app_${msg.from.id}_${amount}_${net}_${wallet}` }]]
-        }
-    });
-}
-
-bot.on('message', (msg) => {
+    bot.on('message', (msg) => {
     if (msg.chat.id === ADMIN_GROUP && msg.reply_to_message) {
         const text = msg.reply_to_message.text;
         if (text && text.includes("رسالة دعم فني جديدة:")) {
             const matches = text.match(/آيدي التلجرام:\s*`(\d+)`/);
-            if (matches && matches[1]) {
-                const playerTgId = matches[1];
+            if (matches && matches) {
+                const playerTgId = matches;
                 bot.sendMessage(playerTgId, `🔔 **رد من الدعم الفني لـ عائلتنا:**\n\n💬 "${msg.text}"`);
                 bot.sendMessage(ADMIN_GROUP, "✔ تم تسليم ردك للاعب بنجاح وفي الحين.");
             }
