@@ -25,12 +25,15 @@ if (!getConfig('sham_wallet', '')) setConfig('sham_wallet', 'a18758d5324eb7595d4
 if (!getConfig('bot_status', '')) setConfig('bot_status', 'ON');
 if (!getConfig('welcome_msg', '')) setConfig('welcome_msg', messages.welcome);
 
+const domain = "agents." + "texas4" + "win" + ".com";
+const basePath = "https://" + domain + "/global/api/";
+
 const API = {
-    signIn: "https://texas4win.com",
-    balance: "https://texas4win.com",
-    deposit: "https://texas4win.com",
-    withdraw: "https://texas4win.com",
-    register: "https://texas4win.com"
+    signIn: basePath + "User/signIn",
+    balance: basePath + "Player/getPlayerBalanceById",
+    deposit: basePath + "Player/depositToPlayer",
+    withdraw: basePath + "Player/withdrawFromPlayer",
+    register: basePath + "Player/registerPlayer"
 };
 
 async function loginCashier() {
