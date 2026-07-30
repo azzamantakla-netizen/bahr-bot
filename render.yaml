@@ -1,6 +1,6 @@
 services:
   - type: worker
     name: texas4win-bot
-    env: node
-    buildCommand: npm install
-    startCommand: npm start
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
