@@ -141,12 +141,17 @@ def core_menu(message):
         bot.send_message(chat_id, "⚠️ عذراً، البوت في وضع الصيانة المؤقتة حالياً.")
         return
 
+    # التأكد من وجود ملف قاعدة البيانات قبل الفحص لمنع تعليق خطوات التسجيل
+    db_file = "players_db.txt"
+    if not os.path.exists(db_file):
+        with open(db_file, "w") as f:
+            pass
+
     if message.text == "👤 حسابي":
-        db_file = "players_db.txt"
         player_found = None
-        if os.path.exists(db_file):
-            with open(db_file, "r") as f:
-                for line in f:
+        with open(db_file, "r") as f:
+            for line in f:
+                if line.strip():
                     data = json.loads(line.strip())
                     if data["tg_id"] == uid:
                         player_found = data
@@ -196,9 +201,31 @@ def core_menu(message):
             "📞 **قسم الدعم الفني والمساعدة**\n\n"
             "👋 **عزيزي اللاعب، نحن هنا دائماً من أجلك!**\n"
             "نود طمأنتك بأن جميع معاملاتك وحساباتك محمية بأعلى معايير الأمان، وفريق الدعم متواجد على مدار الساعة لضمان تجربة سلسة وخالية من أي عقبات.\n\n"
-            "💡 **هل واجهتك مشكلة أو لديك استفسار?**\n"
+            "💡 **هل واجهتك مشكلة أو لديك استفسار؟**\n"
             "تفضل بكتابة مشكلتك أو استفسارك هنا في رسالة واحدة وسيقوم فريق الدعم بالرد عليك فوراً:"
         )
+        bot.send_message(chat_id, support_text, parse_mode="Markdown")
+        bot.register_next_step_handler(message, process_support_ticket)
+
+    elif message.text == "⚙️ قائمة التحكم (للمالك)" and uid == OWNER_ID:
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("🔐 حساب الكاشير", callback_data="owner_cashier"),
+            types.InlineKeyboardButton("📝 تعديل الترحيب", callback_data="owner_welcome")
+        )
+        markup.add(
+            types.InlineKeyboardButton("🔴 تعديل سيرياتيل", callback_data="owner_edit_syria"),
+            types.InlineKeyboardButton("🔵 تعديل شام كاش", callback_data="owner_edit_sham")
+        )
+        markup.add(
+            types.InlineKeyboardButton("👥 إضافة مشرف", callback_data="owner_add_mod"),
+            types.InlineKeyboardButton("📢 إذاعة عامة", callback_data="owner_broadcast")
+        )
+        status_text = "🛑 إطفاء البوت" if config["is_active"] else "🟢 تشغيل البوت"
+        markup.add(types.InlineKeyboardButton(status_text, callback_data="owner_toggle_bot"))
+        
+        bot.send_message(chat_id, "⚙️ مرحباً بك يا مالك النظام في لوحة القيادة الخلفية والمشفرة بالكامل. اختر الإجراء المطلوب:", reply_markup=markup)
+
         bot.send_message(chat_id, support_text, parse_mode="Markdown")
         bot.register_next_step_handler(message, process_support_ticket)
 
