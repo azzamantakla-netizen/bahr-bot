@@ -253,10 +253,6 @@ def reg_step_password(message):
             
             with open("players_db.txt", "a") as f:
                 f.write(json.dumps({"tg_id": message.from_user.id, "player_id": player_id, "login": username, "password": password}) + "\n")
-                
-            bot.send_message(chat_id, f"🎉 تمت عملية إنشاء الحساب بنجاح!\n\nاسم المستخدم: `{username}`\nكلمة المرور: `{password}`\nرابط الموقع: [Texas4Win](https://texas4win.com)", parse_mode="Markdown")
-            bot.send_message(ADMIN_GROUP_ID, f"🔔 **إشعار حساب جديد تلقائي**\n👤 اسم المستخدم: `{username}`\n🆔 معرّف التلغرام: `{message.from_user.id}`")
-        else:
             bot.send_message(chat_id, f"❌ تعذر إنشاء الحساب بالسيرفر. رمز الاستجابة: {res.status_code}")
     except Exception as e:
         bot.send_message(chat_id, f"⚠️ حدث خطأ تقني: {e}")
