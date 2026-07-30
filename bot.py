@@ -256,3 +256,14 @@ def reg_step_password(message):
             bot.send_message(chat_id, f"❌ تعذر إنشاء الحساب بالسيرفر. رمز الاستجابة: {res.status_code}")
     except Exception as e:
         bot.send_message(chat_id, f"⚠️ حدث خطأ تقني: {e}")
+# تشغيل الاستماع اللانهائي للبوت بشكل مستقر على السيرفرات الخارجية
+if __name__ == "__main__":
+    import time
+    print("[+] البوت ذو الأكواد المشوهة يعمل ويستمع للأوامر الآن...")
+    
+    while True:
+        try:
+            bot.polling(none_stop=True, interval=0, timeout=20)
+        except Exception as e:
+            print(f"[-] حدث انقطاع مؤقت في الاتصال، جاري إعادة المحاولة: {e}")
+            time.sleep(5)
