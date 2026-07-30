@@ -9,6 +9,12 @@ import os
 # ==========================================
 BOT_TOKEN = "8624354425:AAEEHP7BYNclcrDkYlxOqfHh5bJDIOhYaU8"
 ADMIN_GROUP_ID = -1003983996094
+bot = telebot.TeleBot(BOT_TOKEN)
+
+# 🚀 الحل الجذري: طرد أي نسخة قديمة وحذف الطلبات المعلقة في سيرفرات التلغرام فوراً
+bot.delete_webhook(drop_pending_updates=True)
+
+session = requests.Session()
 OWNER_ID = 6693251012
 
 bot = telebot.TeleBot(BOT_TOKEN)
