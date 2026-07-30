@@ -168,11 +168,11 @@ bot.on('callback_query', async (query) => {
                 if (!user) throw new Error("اللاعب غير مسجل بالبوت");
                 await axiosInstance.post(API.deposit, { amount: 1000, currencyCode: "NSP", moneyStatus: 5, playerId: user.player_id });
                 bot.editMessageText(message.text + `\n\n✔ تم الشحن التلقائي بنجاح للاعب بواسطة المشرف.`, { chat_id: ADMIN_GROUP, message_id: message.message_id });
-    } catch (e) {
-        bot.editMessageText(message.text + "\n\n❌ فشل الشحن التلقائي: " + e.message, { chat_id: ADMIN_GROUP, message_id: message.message_id });
+        } catch (error) {
+        console.error("API Error:", error.message);
     }
-  }
+}
 }
 });
 
-console.log("🚀 البوت يعمل بنجاح...");
+console.log(">>> Bot is running successfully! <<<");
