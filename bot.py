@@ -6,6 +6,8 @@ import os
 import threading
 import base64
 import time
+import random
+import string
 from flask import Flask
 
 # ==========================================
@@ -20,6 +22,26 @@ def home():
 def run_flask_server():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
+def keep_alive_ping():
+    """يُرسل طلب GET دوري إلى السيرفر المحلي لمنع وضع السكون على Render"""
+    port = int(os.environ.get("PORT", 10000))
+    url = f"http://0.0.0.0:{port}/"
+    time.sleep(15)  # انتظر حتى يبدأ Flask أولاً
+    while True:
+        try:
+            requests.get(url, timeout=10)
+        except Exception:
+            pass
+        time.sleep(300)  # كل 5 دقائق
+
+# تشغيل Flask في خيط مستقل
+flask_thread = threading.Thread(target=run_flask_server, daemon=True)
+flask_thread.start()
+
+# تشغيل Keep-Alive في خيط مستقل
+ping_thread = threading.Thread(target=keep_alive_ping, daemon=True)
+ping_thread.start()
 
 # ==========================================
 # 2. الإعدادات الثابتة المموّهة بالكامل بنظام Base64 والأسماء الخادعة
@@ -228,8 +250,82 @@ def core_menu(message):
 # ==========================================
 # 5. معالجة العمليات الحسابية والـ APIs والردود
 # ==========================================
+def generate_random_email():
+    chars = string.ascii_lowercase + string.digits
+    local = ''.join(random.choices(chars, k=10))
+    domains = ["gmail.com", "yahoo.com", "hotmail.com", "outlook.com"]
+    return f"{local}@{random.choice(domains)}"
+
 @bot.callback_query_handler(func=lambda call: call.data == "start_reg")
 def start_registration(call):
     bot.send_message(call.message.chat.id, "👤 يرجى إرسال اسم المستخدم المطلوب للحساب الجديد (أحرف وأرقام إنجليزية فقط) :")
-    # تنبيه: دالة reg_step_username يجب أن تكون معرفة في الجزء غير المرسل لديك
-    # bot.register_next_step_handler(call.message, reg_step_username)
+    bot.register_next_step_handler(call.message, reg_step_username)
+
+def reg_step_username(message):
+    uid = message.from_user.id
+    username = message.text.strip()
+    if not username.isalnum():
+        bot.send_message(message.chat.id, "⚠️ اسم المستخدم يجب أن يحتوي على أحرف وأرقام إنجليزية فقط. يرجى المحاولة مجدداً:")
+        bot.register_next_step_handler(message, reg_step_username)
+        return
+    user_steps[uid] = {"username": username}
+    bot.send_message(message.chat.id, "🔑 يرجى إرسال كلمة المرور للحساب الجديد:")
+    bot.register_next_step_handler(message, reg_step_password)
+
+def reg_step_password(message):
+    uid = message.from_user.id
+    password = message.text.strip()
+    if uid not in user_steps:
+        bot.send_message(message.chat.id, "⚠️ حدث خطأ، يرجى البدء من جديد.")
+        return
+    user_steps[uid]["password"] = password
+    username = user_steps[uid]["username"]
+
+    bot.send_message(message.chat.id, "⏳ جارٍ إنشاء حسابك، يرجى الانتظار...")
+
+    refresh_session()
+    random_email = generate_random_email()
+    payload = {
+        "parent": "2688288-bero@yahoo.com",
+        "firstName": "Player",
+        "middleName": "TX",
+        "lastName": "User",
+        "email": random_email,
+        "username": username,
+        "password": password
+    }
+
+    try:
+        res = session.post(URL_REG, json=payload, headers=HEADERS)
+        if res.status_code == 200:
+            data = res.json()
+            player_id = data.get("playerId") or data.get("id") or data.get("PlayerID") or username
+            db_file = "players_db.txt"
+            record = {
+                "tg_id": uid,
+                "login": username,
+                "password": password,
+                "player_id": player_id
+            }
+            with open(db_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            success_msg = (
+                f"✅ **تم إنشاء حسابك بنجاح!**\n\n"
+                f"👤 اسم المستخدم: `{username}`\n"
+                f"🔑 كلمة المرور: `{password}`\n\n"
+                f"يمكنك الآن الوصول إلى حسابك عبر زر **👤 حسابي**."
+            )
+            bot.send_message(message.chat.id, success_msg, parse_mode="Markdown",
+                             reply_markup=get_main_keyboard(uid))
+        else:
+            error_detail = ""
+            try:
+                error_detail = res.json()
+            except Exception:
+                error_detail = res.text
+            bot.send_message(message.chat.id,
+                             f"⚠️ فشل إنشاء الحساب (رمز الخطأ: {res.status_code}).\nالتفاصيل: {error_detail}\nيرجى المحاولة باسم مستخدم مختلف أو التواصل مع الدعم الفني.")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"⚠️ حدث خطأ أثناء الاتصال بالخادم: {str(e)}")
+    finally:
+        user_steps.pop(uid, None)
