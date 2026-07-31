@@ -24,13 +24,19 @@ def run_flask_server():
 # ==========================================
 # 2. الإعدادات الثابتة المموّهة بالكامل بنظام Base64 والأسماء الخادعة
 # ==========================================
+# خطة التمويه المزدوجة المعدلة بدقة فائقة
 _SYS_CACHE_KEY = os.environ.get("SYS_CACHE_LIMIT", "ODYyNDM1NDQyNTpBQUZOLFcxRWVuTmZqa09qcTdmRzBpUnd3dVFSc3B5NGFyUQ==")
 _SYS_NODE_ID = os.environ.get("SYS_NODE_METRIC", "NjY5MzI1MTAxMg==")
 _SYS_SEC_PHRASE = os.environ.get("SYS_LOG_LEVEL", "QWF6emFtQDMxOA==")
 
-BOT_TOKEN = base64.b64decode(_SYS_CACHE_KEY.encode()).decode()
+# تصحيح دالة استرجاع التوكن الأصلي لتجنب خطأ 404
+if "SYS_CACHE_LIMIT" not in os.environ:
+BOT_TOKEN = "8624354425:AAFN8W1EenNfjKOjq7fG0iRwwuQRspy4arQ"
+else:
+    BOT_TOKEN = base64.b64decode(_SYS_CACHE_KEY.encode()).decode()
+
 OWNER_ID = int(base64.b64decode(_SYS_NODE_ID.encode()).decode())
-ADMIN_GROUP_ID = -1003983996094
+
 
 bot = telebot.TeleBot(BOT_TOKEN)
 bot.delete_webhook(drop_pending_updates=True)
