@@ -86,11 +86,12 @@ def refresh_session():
     global config
     config = load_config()
     payload = {"username": config["agent_user"], "password": config["agent_pass"]}
-    try:
-        res = session.post(URL_IN, json=payload, headers=HEADERS)
-    return res.status_code == 200
-    except Exception:
-        return False
+            try:
+            res = session.post(URL_IN, json=payload, headers=HEADERS)
+            return res.status_code == 200
+        except Exception:
+            return False
+
 refresh_session()
 user_steps = {}
 # ==========================================
