@@ -8,7 +8,7 @@ import random
 import string
 from flask import Flask, request
 
-# إجبار نظام التشغيل على حجز مسار ثابت ودائم للمتصفح داخل مشروع ريندر لمنع اختفائه
+# تثبيت مسار دائم ومضمون للمتصفح الخفي داخل سيرفر ريندر
 os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(os.getcwd(), ".local", "share", "ms-playwright")
 
 from playwright.sync_api import sync_playwright
@@ -82,35 +82,62 @@ def browser_create_player(username, password):
     cfg = load_config()
     try:
         with sync_playwright() as p:
+            # تشغيل المتصفح مع إضافة ترويسات وهويات وهمية لتخطي حجب الروبوتات و Cloudflare
             browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
-            page = browser.new_page()
+            
+            # محاكاة شاشة كمبيوتر حقيقي بالكامل لحيلة نظام الأمان
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 720},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            )
+            page = context.new_page()
             
             page.goto(PANEL_URL, timeout=60000)
             page.wait_for_load_state("networkidle")
+            time.sleep(3)  # انتظار إضافي لاستقرار الأكواد البرمجية للموقع
             
-            # استهداف الحقول بالاعتماد على الأيقونات المرئية الثابتة في صورتك
-            page.locator("div:has(> i.fa-user, > span.fa-user, > i[class*='user']) input, input[type='text']").first.fill(cfg["agent_user"])
-            page.locator("div:has(> i.fa-lock, > span.fa-lock, > i[class*='lock']) input, input[type='password']").first.fill(cfg["agent_pass"])
+            # 🔥 التكتيك السحري: الإدخال الأعمى بالـ Tab وقهر فخ الـ Timeout
+            # الضغط على الصفحة أولاً لضمان التركيز
+            page.click("body")
+            time.sleep(1)
             
-            page.click("button:has-text('Sign In'), .btn:has-text('Sign In'), text='Sign In'")
+            # محاكاة الكتابة البشرية المتسلسلة للخانات دون البحث عن أسمائها
+            page.keyboard.type(cfg["agent_user"], delay=100)
+            page.keyboard.press("Tab")
+            time.sleep(0.5)
+            page.keyboard.type(cfg["agent_pass"], delay=100)
+            time.sleep(0.5)
+            page.keyboard.press("Enter")
+            
+            # انتظار الانتقال للوحة الداخلية بعد تسجيل الدخول
             page.wait_for_load_state("networkidle")
+            time.sleep(4)
             
+            # 2. التوجه لصفحة إنشاء اللاعب
             CREATE_PAGE = PANEL_URL + "/#/player/create"
             page.goto(CREATE_PAGE, timeout=60000)
             page.wait_for_load_state("networkidle")
+            time.sleep(2)
             
-            page.locator("input[placeholder*='user-name'], input[placeholder*='Username']").first.fill(username)
+            # ملء بيانات اللاعب الجديد في الخانات الأربعة بالاعتماد على الترتيب الافتراضي المتوقع
+            page.keyboard.press("Tab") # التنقل لخانة اسم المستخدم لللاعب
+            page.keyboard.type(username, delay=100)
+            page.keyboard.press("Tab") # خانة الإيميل
             random_email = generate_random_email()
-            page.locator("input[placeholder*='Email'], input[placeholder*='email']").first.fill(random_email)
-            page.locator("input[placeholder*='Password'], input[placeholder*='password']").last.fill(password)
+            page.keyboard.type(random_email, delay=100)
+            page.keyboard.press("Tab") # خانة الباسورد
+            page.keyboard.type(password, delay=100)
+            time.sleep(1)
             
-            page.click("input[placeholder*='Parent'], .v-select, .dropdown-toggle")
-            page.wait_for_timeout(1000)
+            # النقر واختيار الـ Parent الخاص بك
+            page.click("input[placeholder*='Parent'], .v-select, .dropdown-toggle, input[role='combobox']")
+            time.sleep(1)
             page.click("text='2688288-bero@yahoo.com'")
-            page.wait_for_timeout(1000)
+            time.sleep(1)
             
-            page.click("button:has-text('Register'), button.register-btn, .btn-primary:has-text('Register')")
-            page.wait_for_timeout(4000)
+            # الضغط على زر الحفظ النهائي Register
+            page.keyboard.press("Enter")
+            time.sleep(3)
             
             browser.close()
             return True, "نجاح"
@@ -208,25 +235,3 @@ def reg_step_password(message):
             )
             global_bot.send_message(message.chat.id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
         else:
-            global_bot.send_message(message.chat.id, f"⚠️ تعذر الإنشاء عبر المحاكي:\n`{detail}`\n\nيرجى التواصل مع الإدارة لإتمام حسابك يدوياً.")
-
-    threading.Thread(target=run_safe_browser_task).start()
-    user_steps.pop(uid, None)
-
-def setup_webhook_init():
-    time.sleep(4)
-    try:
-        global_bot.remove_webhook()
-        time.sleep(1)
-        global_bot.set_webhook(url=f"{RENDER_URL}/{BOT_TOKEN}")
-        print(f"Webhook securely established at: {RENDER_URL}/{BOT_TOKEN}")
-    except Exception:
-        pass
-
-if __name__ == '__main__':
-    threading.Thread(target=setup_webhook_init, daemon=True).start()
-    
-    print("Waitress Server is hosting the Webhook Engine on Port 10000...")
-    from waitress import serve
-    port = int(os.environ.get("PORT", 10000))
-    serve(app, host="0.0.0.0", port=port, threads=8)
