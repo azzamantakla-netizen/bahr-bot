@@ -7,6 +7,7 @@ import threading
 import base64
 import time
 import random
+import string
 from flask import Flask
 from playwright.sync_api import sync_playwright
 from waitress import serve  # السيرفر الاحترافي لمنع توقف Render
@@ -22,7 +23,6 @@ def home():
 
 def run_flask_server():
     port = int(os.environ.get("PORT", 10000))
-    # تشغيل السيرفر عبر waitress لمنع حجز الخيط الرئيسي وتجنب غلق التطبيق
     serve(app, host="0.0.0.0", port=port)
 
 def keep_alive_ping():
@@ -87,25 +87,62 @@ user_steps = {}
 p_1, p_2, p_3, p_4 = "ht" + "tps://", "age" + "nts.", "tex" + "as4" + "win", ".c" + "om"
 PANEL_URL = p_1 + p_2 + p_3 + p_4
 
+def generate_random_email():
+    chars = string.ascii_lowercase + string.digits
+    local = ''.join(random.choices(chars, k=10))
+    domains = ["gmail.com", "yahoo.com", "hotmail.com", "outlook.com"]
+    return f"{local}@{random.choice(domains)}"
+
 # ==========================================
-# 3. محرك الأتمتة والمحاكاة الذكي (Playwright)
+# 3. محرك الأتمتة والمحاكاة الذكي المحدث (Playwright)
 # ==========================================
 def automated_create_player(username, password):
     cfg = load_config()
     try:
         with sync_playwright() as p:
+            # تشغيل المتصفح الخفي بإعدادات الأمان والتخفي لمنع الحظر
             browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
             page = browser.new_page()
             
+            # 1. تسجيل الدخول إلى لوحة كاشير Texas4win
             page.goto(PANEL_URL, timeout=60000)
             page.wait_for_load_state("networkidle")
             
-            # ملء حقول تسجيل دخول الوكيل تلقائياً
             page.fill("input[type='text'], input[placeholder*='user']", cfg["agent_user"])
             page.fill("input[type='password'], input[placeholder*='pass']", cfg["agent_pass"])
             
             page.click("button[type='submit'], btn-submit, .login-btn")
             page.wait_for_load_state("networkidle")
+            
+            # 2. التوجه المباشر إلى صفحة إنشاء اللاعب الافتراضية للسكريبت
+            CREATE_URL = PANEL_URL + "/#/player/create"  # الرابط القياسي المعتمد لمنصات React
+            page.goto(CREATE_URL, timeout=60000)
+            page.wait_for_load_state("networkidle")
+            
+            # 3. ملء البيانات بدقة بالاعتماد على صورتك المرفقة:
+            # أ) ملء حقل اسم المستخدم المطلوب من اللاعب
+            page.fill("input[placeholder*='user-name']", username)
+            
+            # ب) توليد وملء البريد الإلكتروني العشوائي المطلوب
+            random_email = generate_random_email()
+            page.fill("input[placeholder*='Email']", random_email)
+            
+            # ج) ملء كلمة المرور التي اختارها اللاعب (بدون قيود، حتى لو كانت 123)
+            page.fill("input[placeholder*='Password']", password)
+            
+            # د) محاكاة النقر على سهم اختيار الـ Parent (الوكيل) لتظهر القائمة المنسدلة
+            page.click("input[placeholder*='Parent'], div:has(> input[placeholder*='Parent']), .v-select, .dropdown-toggle")
+            page.wait_for_timeout(1000)  # انتظار ثانية لظهور القائمة
+            
+            # هـ) النقر على خيار حسابك من القائمة لتفعيل زر التسجيل الأزرق
+            page.click("text='2688288-bero@yahoo.com'")
+            page.wait_for_timeout(1000)  # استقرار الواجهة بعد الاختيار
+            
+            # و) الضغط على زر التسجيل الأزرق (Register) الظاهر في أسفل يمين صورتك
+            page.click("button:has-text('Register'), .btn-primary:has-text('Register'), button.register-btn, input[type='submit']")
+            
+            # انتظار إنهاء الخادم لعملية الحفظ
+            page.wait_for_timeout(3000)
             
             browser.close()
             return True, "نجاح"
@@ -113,7 +150,7 @@ def automated_create_player(username, password):
         return False, str(e)
 
 # ==========================================
-# 4. لوحات المفاتيح والأوامر
+# 4. لوحات المفاتيح والأوامر للعملاء والآدمن
 # ==========================================
 def get_main_keyboard(user_id):
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
@@ -202,44 +239,3 @@ def reg_step_username(message):
     user_steps[uid] = {"username": username}
     
     bot.send_message(message.chat.id, "🔑 يرجى إرسال كلمة المرور للحساب الجديد:")
-    bot.register_next_step_handler(message, reg_step_password)
-
-def reg_step_password(message):
-    uid = message.from_user.id
-    password = message.text.strip()
-    if uid not in user_steps:
-        bot.send_message(message.chat.id, "⚠️ حدث خطأ، يرجى البدء من جديد.")
-        return
-    
-    username = user_steps[uid]["username"]
-    bot.send_message(message.chat.id, "⏳ جارٍ إنشاء حسابك وتأكيده مع اللوحة، يرجى الانتظار ثوانٍ...")
-
-    success, detail = automated_create_player(username, password)
-    
-    if success:
-        record = {"tg_id": uid, "login": username, "password": password}
-        with open(DB_FILE, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
-            
-        success_msg = (
-            f"✅ **تم إنشاء حسابك بنجاح!**\n\n"
-            f"👤 اسم المستخدم: `{username}`\n"
-            f"🔑 كلمة المرور: `{password}`\n\n"
-            f"يمكنك تسجيل الدخول الآن في الموقع مباشرة والاستمتاع باللعب! 🎉"
-        )
-        bot.send_message(message.chat.id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
-    else:
-        bot.send_message(message.chat.id, f"⚠️ عذراً، تعذر إتمام العملية تلقائياً حالياً.\nيرجى التواصل مع الدعم الفني لحل المشكلة.")
-    
-    user_steps.pop(uid, None)
-
-@bot.callback_query_handler(func=lambda call: call.data == "owner_toggle_bot")
-def toggle_bot(call):
-    if call.from_user.id != OWNER_ID: return
-    config["is_active"] = not config["is_active"]
-    save_config(config)
-    bot.answer_callback_query(call.id, f"حالة البوت الحالية: {config['is_active']}")
-
-if __name__ == '__main__':
-    print("Bot started perfectly with Waitress Server...")
-    bot.infinity_polling()
