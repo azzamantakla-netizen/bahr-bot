@@ -78,7 +78,6 @@ def browser_create_player(username, password):
     cfg = load_config()
     try:
         with sync_playwright() as p:
-            # تشغيل المتصفح الخفي مع تكتيك التخفي الكامل للبصمة البرمجية
             browser = p.chromium.launch(
                 headless=True, 
                 args=[
@@ -94,18 +93,15 @@ def browser_create_player(username, password):
             )
             page = context.new_page()
             
-            # 1. تسجيل الدخول للوحة التحكم
             page.goto(PANEL_URL, timeout=60000)
             page.wait_for_load_state("networkidle")
             time.sleep(3) 
             
-            # التركيز الصريح والمباشر على أول خانة إدخال نصية (اسم المستخدم)
             first_input = page.locator("input[type='text'], input[type='email']").first
             first_input.wait_for(state="visible", timeout=15000)
             first_input.click()
             time.sleep(1)
             
-            # أتمتة الكتابة المتسلسلة والمحاكاة الذكية بنظام الـ Tab والأدخل الأعمى
             page.keyboard.type(cfg["agent_user"], delay=100)
             page.keyboard.press("Tab")
             time.sleep(0.5)
@@ -113,23 +109,19 @@ def browser_create_player(username, password):
             time.sleep(0.5)
             page.keyboard.press("Enter")
             
-            # انتظار الانتقال الكامل للوحة الداخلية بعد تسجيل الدخول
             page.wait_for_load_state("networkidle")
             time.sleep(5) 
             
-            # 2. التوجه لصفحة إنشاء اللاعب
             CREATE_PAGE = PANEL_URL + "/#/player/create"
             page.goto(CREATE_PAGE, timeout=60000)
             page.wait_for_load_state("networkidle")
             time.sleep(3)
             
-            # تركيز صريح على أول خانة إدخال لبيانات اللاعب الجديد
             player_first_input = page.locator("input[type='text']").first
             player_first_input.wait_for(state="visible", timeout=15000)
             player_first_input.click()
             time.sleep(1)
             
-            # إدخال البيانات بالترتيب التتابعي المتوقع للوحة
             page.keyboard.type(username, delay=100)
             page.keyboard.press("Tab") 
             time.sleep(0.5)
@@ -142,13 +134,11 @@ def browser_create_player(username, password):
             page.keyboard.type(password, delay=100)
             time.sleep(1)
             
-            # فتح قائمة الـ Parent واختيار حساب الوكيل الخاص بك
             page.click("input[placeholder*='Parent'], .v-select, .dropdown-toggle, input[role='combobox']", timeout=15000)
             time.sleep(1.5)
             page.click("text='2688288-bero@yahoo.com'", timeout=15000)
             time.sleep(1)
             
-            # إتمام التسجيل النهائي والحفظ عبر زر Enter
             page.keyboard.press("Enter")
             time.sleep(4)
             
@@ -198,12 +188,7 @@ def core_menu(message):
                             player_found = data
                             break
         if player_found:
-            info_msg = (
-                f"ℹ️ **معلومات الحساب الخاص بك:**\n\n"
-                f"👤 اسم المستخدم: `{player_found['login']}`\n"
-                f"🔑 كلمة المرور: `{player_found['password']}`\n\n"
-                f"💰 لرؤية رصيدك وتعبئته، تفضل بالاختيار من القائمة."
-            )
+            info_msg = f"ℹ️ **معلومات الحساب الخاص بك:**\n\n👤 اسم المستخدم: `{player_found['login']}`\n🔑 كلمة المرور: `{player_found['password']}`\n\n💰 لرؤية رصيدك وتعبئته، تفضل بالاختيار من القائمة."
             global_bot.send_message(chat_id, info_msg, parse_mode="Markdown")
         else:
             markup = telebot.types.InlineKeyboardMarkup()
@@ -229,11 +214,25 @@ def reg_step_username(message):
     global_bot.send_message(message.chat.id, "🔑 يرجى إرسال كلمة المرور للحساب الجديد:")
     global_bot.register_next_step_handler(message, reg_step_password)
 
-# دالة معالجة تشغيل مهمة المحاكي المستقلة خارج النطاق التداخلي لمنع خطأ المسافات البادئة
+# تم إزالة الأقواس المتداخلة نهائياً من صياغة الرسائل لضمان استقرار البناء
 def run_safe_browser_task(chat_id, uid, username, password):
     success, detail = browser_create_player(username, password)
     if success:
         with open(DB_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
-        success_msg = (
-            f"✅ **تم إنشاء حسابك بنجاح وتأكيده حياً!**\n\n"
+        
+        success_msg = f"✅ **تم إنشاء حسابك بنجاح وتأكيده حياً!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`\n\nيمكنك تسجيل الدخول الآن في الموقع مباشرة والاستمتاع باللعب! 🎉"
+        global_bot.send_message(chat_id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
+    else:
+        fail_msg = f"⚠️ تعذر الإنشاء عبر المحاكي بسبب: `{detail}`\n\nيرجى التواصل مع الإدارة لإتمام حسابك يدوياً."
+        global_bot.send_message(chat_id, fail_msg, parse_mode="Markdown")
+        
+    if uid in user_steps:
+        del user_steps[uid]
+
+def reg_step_password(message):
+    uid = message.from_user.id
+    password = message.text.strip()
+    if uid not in user_steps:
+        global_bot.send_message(message.chat.id, "⚠️ حدث خطأ، يرجى البدء من جديد.")
+        return
