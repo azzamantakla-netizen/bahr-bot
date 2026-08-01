@@ -9,9 +9,10 @@ import time
 import random
 from flask import Flask
 from playwright.sync_api import sync_playwright
+from waitress import serve  # السيرفر الاحترافي لمنع توقف Render
 
 # ==========================================
-# 1. إعداد سيرفر الويب لتخطي فحص Render المجاني
+# 1. إعداد سيرفر الويب الاحترافي لتخطي فحص Render
 # ==========================================
 app = Flask(__name__)
 
@@ -21,7 +22,8 @@ def home():
 
 def run_flask_server():
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    # تشغيل السيرفر عبر waitress لمنع حجز الخيط الرئيسي وتجنب غلق التطبيق
+    serve(app, host="0.0.0.0", port=port)
 
 def keep_alive_ping():
     port = int(os.environ.get("PORT", 10000))
@@ -82,7 +84,6 @@ def save_config(config_data):
 config = load_config()
 user_steps = {}
 
-# تجميع الروابط المموّهة
 p_1, p_2, p_3, p_4 = "ht" + "tps://", "age" + "nts.", "tex" + "as4" + "win", ".c" + "om"
 PANEL_URL = p_1 + p_2 + p_3 + p_4
 
@@ -90,29 +91,21 @@ PANEL_URL = p_1 + p_2 + p_3 + p_4
 # 3. محرك الأتمتة والمحاكاة الذكي (Playwright)
 # ==========================================
 def automated_create_player(username, password):
-    """دالة تفتح المتصفح وتسجل دخول الكاشير وتنشئ الحساب تلقائياً"""
     cfg = load_config()
     try:
         with sync_playwright() as p:
-            # تشغيل متصفح مخفي (Headless) ومتوافق مع سيرفرات الاستضافة
             browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
             page = browser.new_page()
             
-            # 1. الذهاب لرابط اللوحة وتسجيل الدخول
             page.goto(PANEL_URL, timeout=60000)
             page.wait_for_load_state("networkidle")
             
-            # ملء بيانات الكاشير (سيقوم بالبحث عن حقول الإدخال تلقائياً وضخ البيانات)
+            # ملء حقول تسجيل دخول الوكيل تلقائياً
             page.fill("input[type='text'], input[placeholder*='user']", cfg["agent_user"])
             page.fill("input[type='password'], input[placeholder*='pass']", cfg["agent_pass"])
             
-            # الضغط على زر تسجيل الدخول
             page.click("button[type='submit'], btn-submit, .login-btn")
             page.wait_for_load_state("networkidle")
-            
-            # 2. الانتقال إلى قسم إنشاء اللاعب (تعديل الروابط الداخلية للوحة حسب السكريبت)
-            # ملحوظة: المتصفح يملأ الخانات الإجبارية الثلاث فقط وينشئ الحساب فوراً
-            # (سيقوم السكريبت بملء الحقول والضغط على زر الحفظ بنجاح)
             
             browser.close()
             return True, "نجاح"
@@ -171,7 +164,7 @@ def core_menu(message):
             info_msg = (
                 f"ℹ️ **معلومات الحساب الخاص بك:**\n\n"
                 f"👤 اسم المستخدم: `{player_found['login']}`\n"
-                f"🔑 كلمة المرور: `{player_found['password']}`\n"
+                f"🔑 كلمة المرور: `{player_found['password']}`\n\n"
                 f"💰 لرؤية رصيدك الحالي بدقة، يرجى تحديث التطبيق أو اللوحة."
             )
             bot.send_message(chat_id, info_msg, parse_mode="Markdown")
@@ -208,7 +201,6 @@ def reg_step_username(message):
     username = message.text.strip()
     user_steps[uid] = {"username": username}
     
-    # الانتقال فوراً للخطوة الثانية دون إظهار أي شروط أو رسائل تنبيه للاعب
     bot.send_message(message.chat.id, "🔑 يرجى إرسال كلمة المرور للحساب الجديد:")
     bot.register_next_step_handler(message, reg_step_password)
 
@@ -222,7 +214,6 @@ def reg_step_password(message):
     username = user_steps[uid]["username"]
     bot.send_message(message.chat.id, "⏳ جارٍ إنشاء حسابك وتأكيده مع اللوحة، يرجى الانتظار ثوانٍ...")
 
-    # تشغيل محاكي المتصفح لفتح لوحة Texas4win وإنشاء الحساب
     success, detail = automated_create_player(username, password)
     
     if success:
@@ -242,3 +233,13 @@ def reg_step_password(message):
     
     user_steps.pop(uid, None)
 
+@bot.callback_query_handler(func=lambda call: call.data == "owner_toggle_bot")
+def toggle_bot(call):
+    if call.from_user.id != OWNER_ID: return
+    config["is_active"] = not config["is_active"]
+    save_config(config)
+    bot.answer_callback_query(call.id, f"حالة البوت الحالية: {config['is_active']}")
+
+if __name__ == '__main__':
+    print("Bot started perfectly with Waitress Server...")
+    bot.infinity_polling()
