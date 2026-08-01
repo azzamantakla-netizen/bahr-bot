@@ -7,9 +7,11 @@ import base64
 import random
 import string
 from flask import Flask, request
-import telebot
-from telebot import types
-from waitress import serve
+
+# إجبار نظام التشغيل على حجز مسار ثابت ودائم للمتصفح داخل مشروع ريندر لمنع اختفائه
+os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(os.getcwd(), ".local", "share", "ms-playwright")
+
+from playwright.sync_api import sync_playwright
 
 # ==========================================
 # 1. إعداد سيرفر الويب واستقبال الـ Webhook
@@ -26,8 +28,6 @@ else:
 
 OWNER_ID = int(base64.b64decode(_SYS_NODE_ID.encode()).decode())
 
-bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
-
 CONFIG_FILE = "config.txt"
 DB_FILE = "players_db.txt"
 
@@ -35,20 +35,21 @@ RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://onrender.com").rstri
 
 @app.route('/')
 def home():
-    return "Texas4Win API Webhook Bot is Running Successfully 100% Free!"
+    return "Texas4Win Automated Webhook Bot is Running Perfectly!"
 
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def receive_updates():
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
-        update = types.Update.de_json(json_string)
-        bot.process_new_updates([update])
+        import telebot
+        update = telebot.types.Update.de_json(json_string)
+        global_bot.process_new_updates([update])
         return ''
     else:
         return 'Forbidden', 403
 
 # ==========================================
-# 2. منطق وإعدادات البوت والاتصال الخفيف المباشر بـ Texas4Win
+# 2. منطق وإعدادات البوت وأتمتة المتصفح الذكي
 # ==========================================
 def load_config():
     if not os.path.exists(CONFIG_FILE):
@@ -67,47 +68,9 @@ def load_config():
 
 config = load_config()
 user_steps = {}
-api_session = requests.Session()
 
-# تركيب روابط النظام الخلفي بدقة متناهية
 p_1, p_2, p_3, p_4 = "ht" + "tps://", "age" + "nts.", "tex" + "as4" + "win", ".c" + "om"
-CORE_URL = p_1 + p_2 + p_3 + p_4 + "/gl" + "oba" + "l/a" + "pi"
-URL_IN = CORE_URL + "/Us" + "er/s" + "ignIn"
-URL_REG = CORE_URL + "/Pla" + "yer/r" + "egist" + "erPla" + "yer"
-
-# ترويسات أمان تماثل تماماً متصفح جوجل كروم لتخطي حظورات وجدران حماية الموقع
-HEADERS = {
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "ar,en-US;q=0.9,en;q=0.8",
-    "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Origin": p_1 + p_2 + p_3 + p_4,
-    "Referer": p_1 + p_2 + p_3 + p_4 + "/",
-    "Connection": "keep-alive"
-}
-
-def refresh_agent_session():
-    """تسجيل دخول برمي يحاكي الواجهة تماماً للحصول على توكن الصلاحيات الحية"""
-    cfg = load_config()
-    payload = {
-        "username": cfg["agent_user"].strip(),
-        "password": cfg["agent_pass"].strip()
-    }
-    try:
-        # مسح الترويسة القديمة لعدم حدوث تعارض
-        HEADERS.pop("Authorization", None)
-        res = api_session.post(URL_IN, json=payload, headers=HEADERS, timeout=20)
-        if res.status_code == 200:
-            data = res.json()
-            # فك مصفوفة التوكن أياً كان عمقها في سيرفر التكساس
-            token = data.get("token") or data.get("data", {}).get("token") or data.get("accessToken")
-            if token:
-                HEADERS["Authorization"] = f"Bearer {token}"
-                return True, "تم جلب التوكن"
-            return False, f"نجح الاتصال لكن لم نجد خانة التوكن في الرد: {res.text}"
-        return False, f"الموقع رفض بيانات الكاشير بموجب رمز استجابة: {res.status_code} - الرد: {res.text}"
-    except Exception as e:
-        return False, f"تعذر الاتصال بالمنصة كلياً: {str(e)}"
+PANEL_URL = p_1 + p_2 + p_3 + p_4
 
 def generate_random_email():
     chars = string.ascii_lowercase + string.digits
@@ -115,48 +78,65 @@ def generate_random_email():
     domains = ["gmail.com", "yahoo.com", "hotmail.com"]
     return f"{local}@{random.choice(domains)}"
 
-def api_create_player(username, password):
-    """إنشاء لاعب فوري عبر الطلب الرقمي المباشر السريع والخالي من الرامات والتعليق"""
-    success_login, detail_login = refresh_agent_session()
-    if not success_login:
-        return False, f"فشل تفويض الكاشير: {detail_login}"
-        
-    random_email = generate_random_email()
-    payload = {
-        "parent": "2688288-bero@yahoo.com",
-        "firstName": "Player",
-        "middleName": "TX",
-        "lastName": "User",
-        "email": random_email,
-        "username": username,
-        "password": password
-    }
+def browser_create_player(username, password):
+    cfg = load_config()
     try:
-        res = api_session.post(URL_REG, json=payload, headers=HEADERS, timeout=25)
-        if res.status_code == 200:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
+            page = browser.new_page()
+            
+            page.goto(PANEL_URL, timeout=60000)
+            page.wait_for_load_state("networkidle")
+            
+            # استهداف الحقول بالاعتماد على الأيقونات المرئية الثابتة في صورتك
+            page.locator("div:has(> i.fa-user, > span.fa-user, > i[class*='user']) input, input[type='text']").first.fill(cfg["agent_user"])
+            page.locator("div:has(> i.fa-lock, > span.fa-lock, > i[class*='lock']) input, input[type='password']").first.fill(cfg["agent_pass"])
+            
+            page.click("button:has-text('Sign In'), .btn:has-text('Sign In'), text='Sign In'")
+            page.wait_for_load_state("networkidle")
+            
+            CREATE_PAGE = PANEL_URL + "/#/player/create"
+            page.goto(CREATE_PAGE, timeout=60000)
+            page.wait_for_load_state("networkidle")
+            
+            page.locator("input[placeholder*='user-name'], input[placeholder*='Username']").first.fill(username)
+            random_email = generate_random_email()
+            page.locator("input[placeholder*='Email'], input[placeholder*='email']").first.fill(random_email)
+            page.locator("input[placeholder*='Password'], input[placeholder*='password']").last.fill(password)
+            
+            page.click("input[placeholder*='Parent'], .v-select, .dropdown-toggle")
+            page.wait_for_timeout(1000)
+            page.click("text='2688288-bero@yahoo.com'")
+            page.wait_for_timeout(1000)
+            
+            page.click("button:has-text('Register'), button.register-btn, .btn-primary:has-text('Register')")
+            page.wait_for_timeout(4000)
+            
+            browser.close()
             return True, "نجاح"
-        else:
-            try: err_msg = res.json().get("message") or res.json().get("error") or res.text
-            except Exception: err_msg = res.text
-            return False, f"رفض التسجيل من السيرفر: {err_msg} (رمز: {res.status_code})"
     except Exception as e:
-        return False, f"خطأ شبكة أثناء التسجيل: {str(e)}"
+        return False, str(e)
 
 def get_main_keyboard(user_id):
-    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    markup.add(types.KeyboardButton("👤 حسابي"))
-    markup.add(types.KeyboardButton("📩 سحب رصيد"), types.KeyboardButton("📥 إيداع / شحن رصيد"))
-    markup.add(types.KeyboardButton("📞 الدعم الفني"))
+    import telebot
+    markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    markup.add(telebot.types.KeyboardButton("👤 حسابي"))
+    markup.add(telebot.types.KeyboardButton("📩 سحب رصيد"), telebot.types.KeyboardButton("📥 إيداع / شحن رصيد"))
+    markup.add(telebot.types.KeyboardButton("📞 الدعم الفني"))
     if user_id == OWNER_ID:
-        markup.add(types.KeyboardButton("⚙️ قائمة التحكم (للمالك)"))
+        markup.add(telebot.types.KeyboardButton("⚙️ قائمة التحكم (للمالك)"))
     return markup
 
-@bot.message_handler(commands=['start'])
+import telebot
+global_bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
+global_bot.delete_webhook(drop_pending_updates=True)
+
+@global_bot.message_handler(commands=['start'])
 def start_cmd(message):
     uid = message.from_user.id
-    bot.send_message(message.chat.id, config["welcome_msg"], reply_markup=get_main_keyboard(uid))
+    global_bot.send_message(message.chat.id, config["welcome_msg"], reply_markup=get_main_keyboard(uid))
 
-@bot.message_handler(func=lambda message: True)
+@global_bot.message_handler(func=lambda message: True)
 def core_menu(message):
     uid = message.from_user.id
     chat_id = message.chat.id
@@ -178,68 +158,75 @@ def core_menu(message):
                 f"🔑 كلمة المرور: `{player_found['password']}`\n\n"
                 f"💰 لرؤية رصيدك وتعبئته، تفضل بالاختيار من القائمة."
             )
-            bot.send_message(chat_id, info_msg, parse_mode="Markdown")
+            global_bot.send_message(chat_id, info_msg, parse_mode="Markdown")
         else:
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("👤 إنشاء حساب جديد", callback_data="start_reg"))
-            bot.send_message(chat_id, "⚠️ لا يوجد حساب مرتبط بك حالياً. اضغط على الزر لإنشاء حساب فوراً.", reply_markup=markup)
+            markup = telebot.types.InlineKeyboardMarkup()
+            markup.add(telebot.types.InlineKeyboardButton("👤 إنشاء حساب جديد", callback_data="start_reg"))
+            global_bot.send_message(chat_id, "⚠️ لا يوجد حساب مرتبط بك حالياً. اضغط على الزر لإنشاء حساب فوراً.", reply_markup=markup)
 
     elif message.text == "📥 إيداع / شحن رصيد":
-        bot.send_message(chat_id, "📥 خيارات الشحن (سيرياتيل كاش / شام كاش) قيد التفعيل التلقائي الآن.")
+        global_bot.send_message(chat_id, "📥 خيارات الشحن (سيرياتيل كاش / شام كاش) قيد التفعيل التلقائي الآن.")
 
     elif message.text == "📩 سحب رصيد":
-        bot.send_message(chat_id, "📩 خيارات السحب قيد التفعيل التلقائي الآن.")
+        global_bot.send_message(chat_id, "📩 خيارات السحب قيد التفعيل التلقائي الآن.")
 
     elif message.text == "📞 الدعم الفني":
-        bot.send_message(chat_id, "📞 فريق الدعم متواجد لخدمتكم، تفضل بطرح استفسارك وسيصل للإدارة.")
+        global_bot.send_message(chat_id, "📞 فريق الدعم متواجد لخدمتكم، تفضل بطرح استفسارك وسيصل للإدارة.")
 
-@bot.callback_query_handler(func=lambda call: call.data == "start_reg")
+@global_bot.callback_query_handler(func=lambda call: call.data == "start_reg")
 def start_registration(call):
-    bot.send_message(call.message.chat.id, "👤 يرجى إرسال اسم المستخدم المطلوب للحساب الجديد:")
-    bot.register_next_step_handler(call.message, reg_step_username)
+    global_bot.send_message(call.message.chat.id, "👤 يرجى إرسال اسم المستخدم المطلوب للحساب الجديد:")
+    global_bot.register_next_step_handler(call.message, reg_step_username)
 
 def reg_step_username(message):
     uid = message.from_user.id
     username = message.text.strip()
     user_steps[uid] = {"username": username}
-    bot.send_message(message.chat.id, "🔑 يرجى إرسال كلمة المرور للحساب الجديد:")
-    bot.register_next_step_handler(message, reg_step_password)
+    global_bot.send_message(message.chat.id, "🔑 يرجى إرسال كلمة المرور للحساب الجديد:")
+    global_bot.register_next_step_handler(message, reg_step_password)
 
 def reg_step_password(message):
     uid = message.from_user.id
     password = message.text.strip()
     if uid not in user_steps:
-        bot.send_message(message.chat.id, "⚠️ حدث خطأ، يرجى البدء من جديد.")
+        global_bot.send_message(message.chat.id, "⚠️ حدث خطأ، يرجى البدء من جديد.")
         return
     
     username = user_steps[uid]["username"]
-    bot.send_message(message.chat.id, "⏳ جارٍ إنشاء وتأكيد حسابك الجديد مع السيرفر تلقائياً بأعلى سرعة...")
+    global_bot.send_message(message.chat.id, "⏳ جارٍ إطلاق المحاكي الذكي لإنشاء حسابك وتأكيده مع اللوحة تلقائياً...")
 
-    success, detail = api_create_player(username, password)
-    
-    if success:
-        with open(DB_FILE, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
-        success_msg = (
-            f"✅ **تم إنشاء حسابك بنجاح وسرعة قصوى!**\n\n"
-            f"👤 اسم المستخدم: `{username}`\n"
-            f"🔑 كلمة المرور: `{password}`\n\n"
-            f"يمكنك تسجيل الدخول الآن في الموقع مباشرة والاستمتاع باللعب! 🎉"
-        )
-        bot.send_message(message.chat.id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
-    else:
-        bot.send_message(message.chat.id, f"⚠️ تعذر الإنشاء لسبب تنظيمي من المنصة:\n\n`{detail}`\n\nيرجى تعديل الاسم والمحاولة مجدداً.")
+    def run_safe_browser_task():
+        success, detail = browser_create_player(username, password)
+        if success:
+            with open(DB_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
+            success_msg = (
+                f"✅ **تم إنشاء حسابك بنجاح وتأكيده حياً!**\n\n"
+                f"👤 اسم المستخدم: `{username}`\n"
+                f"🔑 كلمة المرور: `{password}`\n\n"
+                f"يمكنك تسجيل الدخول الآن في الموقع مباشرة والاستمتاع باللعب! 🎉"
+            )
+            global_bot.send_message(message.chat.id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
+        else:
+            global_bot.send_message(message.chat.id, f"⚠️ تعذر الإنشاء عبر المحاكي:\n`{detail}`\n\nيرجى التواصل مع الإدارة لإتمام حسابك يدوياً.")
 
+    threading.Thread(target=run_safe_browser_task).start()
     user_steps.pop(uid, None)
 
-# ==========================================
-# 3. دالة ربط وتفعيل الـ Webhook تلقائياً عند الإقلاع
-# ==========================================
 def setup_webhook_init():
     time.sleep(4)
     try:
-        bot.remove_webhook()
+        global_bot.remove_webhook()
         time.sleep(1)
-        bot.set_webhook(url=f"{RENDER_URL}/{BOT_TOKEN}")
+        global_bot.set_webhook(url=f"{RENDER_URL}/{BOT_TOKEN}")
         print(f"Webhook securely established at: {RENDER_URL}/{BOT_TOKEN}")
-    except Exception as e:
+    except Exception:
+        pass
+
+if __name__ == '__main__':
+    threading.Thread(target=setup_webhook_init, daemon=True).start()
+    
+    print("Waitress Server is hosting the Webhook Engine on Port 10000...")
+    from waitress import serve
+    port = int(os.environ.get("PORT", 10000))
+    serve(app, host="0.0.0.0", port=port, threads=8)
