@@ -33,8 +33,8 @@ bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 CONFIG_FILE = "config.txt"
 DB_FILE = "players_db.txt"
 
-# رابط الخدمة الخاص بك على ريندر لإرسال التحديثات إليه تلقائياً
-RENDER_URL = "https://onrender.com"
+# جلب رابط الخدمة الفعلي تلقائياً وديناميكياً من ريندر لمنع اختفاء الأزرار
+RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://onrender.com").rstrip('/')
 
 @app.route('/')
 def home():
@@ -217,13 +217,13 @@ def reg_step_password(message):
 # 3. دالة ربط وتفعيل الـ Webhook تلقائياً عند الإقلاع
 # ==========================================
 def setup_webhook_init():
-    time.sleep(5)
+    time.sleep(4)
     try:
         bot.remove_webhook()
         time.sleep(1)
-        # إجبار تليجرام على إرسال البيانات للرابط الجديد والآمن للـ Webhook
+        # تفعيل الرابط الأوتوماتيكي والآمن للحساب
         bot.set_webhook(url=f"{RENDER_URL}/{BOT_TOKEN}")
-        print("Webhook successfully set up on Telegram servers!")
+        print(f"Webhook securely established at: {RENDER_URL}/{BOT_TOKEN}")
     except Exception as e:
         print(f"Error setting up Webhook: {str(e)}")
 
