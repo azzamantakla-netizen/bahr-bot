@@ -10,20 +10,16 @@ import random
 import string
 from flask import Flask
 from playwright.sync_api import sync_playwright
-from waitress import serve  # السيرفر الاحترافي لمنع توقف Render
+from waitress import serve
 
 # ==========================================
-# 1. إعداد سيرفر الويب الاحترافي لتخطي فحص Render
+# 1. إعداد سيرفر الويب الاحترافي الملتزم بالبورت
 # ==========================================
 app = Flask(__name__)
 
 @app.route('/')
 def home():
     return "Texas4Win Automated Bot is Running Successfully!"
-
-def run_flask_server():
-    port = int(os.environ.get("PORT", 10000))
-    serve(app, host="0.0.0.0", port=port)
 
 def keep_alive_ping():
     port = int(os.environ.get("PORT", 10000))
@@ -35,12 +31,6 @@ def keep_alive_ping():
         except Exception:
             pass
         time.sleep(300)
-
-flask_thread = threading.Thread(target=run_flask_server, daemon=True)
-flask_thread.start()
-
-ping_thread = threading.Thread(target=keep_alive_ping, daemon=True)
-ping_thread.start()
 
 # ==========================================
 # 2. الإعدادات والبيانات المشفرة (Base64)
@@ -94,17 +84,15 @@ def generate_random_email():
     return f"{local}@{random.choice(domains)}"
 
 # ==========================================
-# 3. محرك الأتمتة والمحاكاة الذكي المحدث (Playwright)
+# 3. محرك الأتمتة والمحاكاة الذكي المستقر (Playwright)
 # ==========================================
 def automated_create_player(username, password):
     cfg = load_config()
     try:
         with sync_playwright() as p:
-            # تشغيل المتصفح الخفي بإعدادات الأمان والتخفي لمنع الحظر
             browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
             page = browser.new_page()
             
-            # 1. تسجيل الدخول إلى لوحة كاشير Texas4win
             page.goto(PANEL_URL, timeout=60000)
             page.wait_for_load_state("networkidle")
             
@@ -114,34 +102,24 @@ def automated_create_player(username, password):
             page.click("button[type='submit'], btn-submit, .login-btn")
             page.wait_for_load_state("networkidle")
             
-            # 2. التوجه المباشر إلى صفحة إنشاء اللاعب الافتراضية للسكريبت
-            CREATE_URL = PANEL_URL + "/#/player/create"  # الرابط القياسي المعتمد لمنصات React
+            CREATE_URL = PANEL_URL + "/#/player/create"
             page.goto(CREATE_URL, timeout=60000)
             page.wait_for_load_state("networkidle")
             
-            # 3. ملء البيانات بدقة بالاعتماد على صورتك المرفقة:
-            # أ) ملء حقل اسم المستخدم المطلوب من اللاعب
             page.fill("input[placeholder*='user-name']", username)
             
-            # ب) توليد وملء البريد الإلكتروني العشوائي المطلوب
             random_email = generate_random_email()
             page.fill("input[placeholder*='Email']", random_email)
             
-            # ج) ملء كلمة المرور التي اختارها اللاعب (بدون قيود، حتى لو كانت 123)
             page.fill("input[placeholder*='Password']", password)
             
-            # د) محاكاة النقر على سهم اختيار الـ Parent (الوكيل) لتظهر القائمة المنسدلة
             page.click("input[placeholder*='Parent'], div:has(> input[placeholder*='Parent']), .v-select, .dropdown-toggle")
-            page.wait_for_timeout(1000)  # انتظار ثانية لظهور القائمة
+            page.wait_for_timeout(1000)
             
-            # هـ) النقر على خيار حسابك من القائمة لتفعيل زر التسجيل الأزرق
             page.click("text='2688288-bero@yahoo.com'")
-            page.wait_for_timeout(1000)  # استقرار الواجهة بعد الاختيار
+            page.wait_for_timeout(1000)
             
-            # و) الضغط على زر التسجيل الأزرق (Register) الظاهر في أسفل يمين صورتك
             page.click("button:has-text('Register'), .btn-primary:has-text('Register'), button.register-btn, input[type='submit']")
-            
-            # انتظار إنهاء الخادم لعملية الحفظ
             page.wait_for_timeout(3000)
             
             browser.close()
@@ -226,7 +204,7 @@ def core_menu(message):
         bot.send_message(chat_id, "⚙️ لوحة التحكم السرية للمالك:", reply_markup=markup)
 
 # ==========================================
-# 5. معالجة التسجيل المتسلسل السلس (بدون شروط)
+# 5. معالجة التسجيل المتسلسل السلس
 # ==========================================
 @bot.callback_query_handler(func=lambda call: call.data == "start_reg")
 def start_registration(call):
@@ -237,5 +215,32 @@ def reg_step_username(message):
     uid = message.from_user.id
     username = message.text.strip()
     user_steps[uid] = {"username": username}
-    
     bot.send_message(message.chat.id, "🔑 يرجى إرسال كلمة المرور للحساب الجديد:")
+    bot.register_next_step_handler(message, reg_step_password)
+
+def reg_step_password(message):
+    uid = message.from_user.id
+    password = message.text.strip()
+    if uid not in user_steps:
+        bot.send_message(message.chat.id, "⚠️ حدث خطأ، يرجى البدء من جديد.")
+        return
+    
+    username = user_steps[uid]["username"]
+    bot.send_message(message.chat.id, "⏳ جارٍ إنشاء حسابك وتأكيده مع اللوحة، يرجى الانتظار ثوانٍ...")
+
+    # تشغيل محاكي المتصفح في الخلفية
+    success, detail = automated_create_player(username, password)
+    
+    if success:
+        record = {"tg_id": uid, "login": username, "password": password}
+        with open(DB_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            
+        success_msg = (
+            f"✅ **تم إنشاء حسابك بنجاح!**\n\n"
+            f"👤 اسم المستخدم: `{username}`\n"
+            f"🔑 كلمة المرور: `{password}`\n\n"
+            f"يمكنك تسجيل الدخول الآن في الموقع مباشرة والاستمتاع باللعب! 🎉"
+        )
+        bot.send_message(message.chat.id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
+    else:
