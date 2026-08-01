@@ -214,7 +214,6 @@ def reg_step_username(message):
     global_bot.send_message(message.chat.id, "🔑 يرجى إرسال كلمة المرور للحساب الجديد:")
     global_bot.register_next_step_handler(message, reg_step_password)
 
-# تم إزالة الأقواس المتداخلة نهائياً من صياغة الرسائل لضمان استقرار البناء
 def run_safe_browser_task(chat_id, uid, username, password):
     success, detail = browser_create_player(username, password)
     if success:
@@ -236,3 +235,5 @@ def reg_step_password(message):
     if uid not in user_steps:
         global_bot.send_message(message.chat.id, "⚠️ حدث خطأ، يرجى البدء من جديد.")
         return
+        
+    username = user_steps[uid]["username"]
