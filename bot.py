@@ -78,7 +78,7 @@ def browser_create_player(username, password):
     cfg = load_config()
     try:
         with sync_playwright() as p:
-            # تشغيل المتصفح مع إضافة حيلة تخطي حجب الروبوتات و Cloudflare على سيرفرات Render
+            # تشغيل المتصفح الخفي مع تكتيك التخفي الكامل للبصمة البرمجية
             browser = p.chromium.launch(
                 headless=True, 
                 args=[
@@ -99,13 +99,13 @@ def browser_create_player(username, password):
             page.wait_for_load_state("networkidle")
             time.sleep(3) 
             
-            # 🔥 التكتيك المطور لضمان التركيز: البحث عن أول حقل إدخال نصي لاسم المستخدم والضغط عليه
+            # التركيز الصريح والمباشر على أول خانة إدخال نصية (اسم المستخدم)
             first_input = page.locator("input[type='text'], input[type='email']").first
             first_input.wait_for(state="visible", timeout=15000)
             first_input.click()
             time.sleep(1)
             
-            # محاكاة الكتابة المتسلسلة المستقرة بنظام الـ Tab والأدخل الأعمى
+            # أتمتة الكتابة المتسلسلة والمحاكاة الذكية بنظام الـ Tab والأدخل الأعمى
             page.keyboard.type(cfg["agent_user"], delay=100)
             page.keyboard.press("Tab")
             time.sleep(0.5)
@@ -113,7 +113,7 @@ def browser_create_player(username, password):
             time.sleep(0.5)
             page.keyboard.press("Enter")
             
-            # انتظار معالجة الدخول والانتقال للوحة
+            # انتظار الانتقال الكامل للوحة الداخلية بعد تسجيل الدخول
             page.wait_for_load_state("networkidle")
             time.sleep(5) 
             
@@ -123,13 +123,13 @@ def browser_create_player(username, password):
             page.wait_for_load_state("networkidle")
             time.sleep(3)
             
-            # تركيز صريح على أول خانة في صفحة الإنشاء (اسم المستخدم للاعب الجديد)
+            # تركيز صريح على أول خانة إدخال لبيانات اللاعب الجديد
             player_first_input = page.locator("input[type='text']").first
             player_first_input.wait_for(state="visible", timeout=15000)
             player_first_input.click()
             time.sleep(1)
             
-            # ملء بيانات اللاعب الجديد بالترتيب الافتراضي
+            # إدخال البيانات بالترتيب التتابعي المتوقع للوحة
             page.keyboard.type(username, delay=100)
             page.keyboard.press("Tab") 
             time.sleep(0.5)
@@ -142,13 +142,13 @@ def browser_create_player(username, password):
             page.keyboard.type(password, delay=100)
             time.sleep(1)
             
-            # النقر واختيار الـ Parent الخاص بك
+            # فتح قائمة الـ Parent واختيار حساب الوكيل الخاص بك
             page.click("input[placeholder*='Parent'], .v-select, .dropdown-toggle, input[role='combobox']", timeout=15000)
             time.sleep(1.5)
             page.click("text='2688288-bero@yahoo.com'", timeout=15000)
             time.sleep(1)
             
-            # الضغط على زر الحفظ النهائي Register
+            # إتمام التسجيل النهائي والحفظ عبر زر Enter
             page.keyboard.press("Enter")
             time.sleep(4)
             
@@ -229,14 +229,11 @@ def reg_step_username(message):
     global_bot.send_message(message.chat.id, "🔑 يرجى إرسال كلمة المرور للحساب الجديد:")
     global_bot.register_next_step_handler(message, reg_step_password)
 
-def reg_step_password(message):
-    uid = message.from_user.id
-    password = message.text.strip()
-    if uid not in user_steps:
-        global_bot.send_message(message.chat.id, "⚠️ حدث خطأ، يرجى البدء من جديد.")
-        return
-        
-    username = user_steps[uid]["username"]
-    global_bot.send_message(message.chat.id, "⏳ جارٍ إطلاق المحاكي الذكي لإنشاء حسابك وتأكيده مع اللوحة تلقائياً...")
-    
-    def run_safe_browser_task():
+# دالة معالجة تشغيل مهمة المحاكي المستقلة خارج النطاق التداخلي لمنع خطأ المسافات البادئة
+def run_safe_browser_task(chat_id, uid, username, password):
+    success, detail = browser_create_player(username, password)
+    if success:
+        with open(DB_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
+        success_msg = (
+            f"✅ **تم إنشاء حسابك بنجاح وتأكيده حياً!**\n\n"
