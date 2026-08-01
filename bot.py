@@ -10,10 +10,6 @@ from flask import Flask, request
 import telebot
 from telebot import types
 from waitress import serve
-from playwright.sync_api import sync_playwright
-
-# تثبيت مسار دائم ومضمون للمتصفح الخفي داخل سيرفر ريندر
-os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(os.getcwd(), ".local", "share", "ms-playwright")
 
 # ==========================================
 # 1. إعداد سيرفر الويب واستقبال الـ Webhook
@@ -39,7 +35,7 @@ RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://onrender.com").rstri
 
 @app.route('/')
 def home():
-    return "Texas4Win Automated Webhook Bot is Running Perfectly!"
+    return "Texas4Win API Webhook Bot is Running Successfully 100% Free!"
 
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def receive_updates():
@@ -52,7 +48,7 @@ def receive_updates():
         return 'Forbidden', 403
 
 # ==========================================
-# 2. منطق وإعدادات البوت والـ API لـ Texas4Win
+# 2. منطق وإعدادات البوت والاتصال الخفيف المباشر بـ Texas4Win
 # ==========================================
 def load_config():
     if not os.path.exists(CONFIG_FILE):
@@ -71,9 +67,47 @@ def load_config():
 
 config = load_config()
 user_steps = {}
+api_session = requests.Session()
 
+# تركيب روابط النظام الخلفي بدقة متناهية
 p_1, p_2, p_3, p_4 = "ht" + "tps://", "age" + "nts.", "tex" + "as4" + "win", ".c" + "om"
-PANEL_URL = p_1 + p_2 + p_3 + p_4
+CORE_URL = p_1 + p_2 + p_3 + p_4 + "/gl" + "oba" + "l/a" + "pi"
+URL_IN = CORE_URL + "/Us" + "er/s" + "ignIn"
+URL_REG = CORE_URL + "/Pla" + "yer/r" + "egist" + "erPla" + "yer"
+
+# ترويسات أمان تماثل تماماً متصفح جوجل كروم لتخطي حظورات وجدران حماية الموقع
+HEADERS = {
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "ar,en-US;q=0.9,en;q=0.8",
+    "Content-Type": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Origin": p_1 + p_2 + p_3 + p_4,
+    "Referer": p_1 + p_2 + p_3 + p_4 + "/",
+    "Connection": "keep-alive"
+}
+
+def refresh_agent_session():
+    """تسجيل دخول برمي يحاكي الواجهة تماماً للحصول على توكن الصلاحيات الحية"""
+    cfg = load_config()
+    payload = {
+        "username": cfg["agent_user"].strip(),
+        "password": cfg["agent_pass"].strip()
+    }
+    try:
+        # مسح الترويسة القديمة لعدم حدوث تعارض
+        HEADERS.pop("Authorization", None)
+        res = api_session.post(URL_IN, json=payload, headers=HEADERS, timeout=20)
+        if res.status_code == 200:
+            data = res.json()
+            # فك مصفوفة التوكن أياً كان عمقها في سيرفر التكساس
+            token = data.get("token") or data.get("data", {}).get("token") or data.get("accessToken")
+            if token:
+                HEADERS["Authorization"] = f"Bearer {token}"
+                return True, "تم جلب التوكن"
+            return False, f"نجح الاتصال لكن لم نجد خانة التوكن في الرد: {res.text}"
+        return False, f"الموقع رفض بيانات الكاشير بموجب رمز استجابة: {res.status_code} - الرد: {res.text}"
+    except Exception as e:
+        return False, f"تعذر الاتصال بالمنصة كلياً: {str(e)}"
 
 def generate_random_email():
     chars = string.ascii_lowercase + string.digits
@@ -81,45 +115,32 @@ def generate_random_email():
     domains = ["gmail.com", "yahoo.com", "hotmail.com"]
     return f"{local}@{random.choice(domains)}"
 
-def browser_create_player(username, password):
-    """تشغيل المحاكي لملء البيانات بناءً على أيقونات صورتك بدقة متناهية"""
-    cfg = load_config()
+def api_create_player(username, password):
+    """إنشاء لاعب فوري عبر الطلب الرقمي المباشر السريع والخالي من الرامات والتعليق"""
+    success_login, detail_login = refresh_agent_session()
+    if not success_login:
+        return False, f"فشل تفويض الكاشير: {detail_login}"
+        
+    random_email = generate_random_email()
+    payload = {
+        "parent": "2688288-bero@yahoo.com",
+        "firstName": "Player",
+        "middleName": "TX",
+        "lastName": "User",
+        "email": random_email,
+        "username": username,
+        "password": password
+    }
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
-            page = browser.new_page()
-            
-            page.goto(PANEL_URL, timeout=60000)
-            page.wait_for_load_state("networkidle")
-            
-            # استهداف الحقول بالاعتماد على الأيقونات المرئية الثابتة في صورتك
-            page.locator("div:has(> i.fa-user, > span.fa-user, > i[class*='user']) input, input[type='text']").first.fill(cfg["agent_user"])
-            page.locator("div:has(> i.fa-lock, > span.fa-lock, > i[class*='lock']) input, input[type='password']").first.fill(cfg["agent_pass"])
-            
-            page.click("button:has-text('Sign In'), .btn:has-text('Sign In'), text='Sign In'")
-            page.wait_for_load_state("networkidle")
-            
-            CREATE_PAGE = PANEL_URL + "/#/player/create"
-            page.goto(CREATE_PAGE, timeout=60000)
-            page.wait_for_load_state("networkidle")
-            
-            page.locator("input[placeholder*='user-name'], input[placeholder*='Username']").first.fill(username)
-            random_email = generate_random_email()
-            page.locator("input[placeholder*='Email'], input[placeholder*='email']").first.fill(random_email)
-            page.locator("input[placeholder*='Password'], input[placeholder*='password']").last.fill(password)
-            
-            page.click("input[placeholder*='Parent'], .v-select, .dropdown-toggle")
-            page.wait_for_timeout(1000)
-            page.click("text='2688288-bero@yahoo.com'")
-            page.wait_for_timeout(1000)
-            
-            page.click("button:has-text('Register'), button.register-btn, .btn-primary:has-text('Register')")
-            page.wait_for_timeout(4000)
-            
-            browser.close()
+        res = api_session.post(URL_REG, json=payload, headers=HEADERS, timeout=25)
+        if res.status_code == 200:
             return True, "نجاح"
+        else:
+            try: err_msg = res.json().get("message") or res.json().get("error") or res.text
+            except Exception: err_msg = res.text
+            return False, f"رفض التسجيل من السيرفر: {err_msg} (رمز: {res.status_code})"
     except Exception as e:
-        return False, str(e)
+        return False, f"خطأ شبكة أثناء التسجيل: {str(e)}"
 
 def get_main_keyboard(user_id):
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
@@ -192,25 +213,23 @@ def reg_step_password(message):
         return
     
     username = user_steps[uid]["username"]
-    bot.send_message(message.chat.id, "⏳ جارٍ إطلاق المحاكي الذكي لإنشاء حسابك وتأكيده مع اللوحة تلقائياً...")
+    bot.send_message(message.chat.id, "⏳ جارٍ إنشاء وتأكيد حسابك الجديد مع السيرفر تلقائياً بأعلى سرعة...")
 
-    # تشغيل عملية محاكاة المتصفح في خيط مستقل آمن لـ Playwright
-    def run_safe_browser_task():
-        success, detail = browser_create_player(username, password)
-        if success:
-            with open(DB_FILE, "a", encoding="utf-8") as f:
-                f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
-            success_msg = (
-                f"✅ **تم إنشاء حسابك بنجاح وتأكيده حياً!**\n\n"
-                f"👤 اسم المستخدم: `{username}`\n"
-                f"🔑 كلمة المرور: `{password}`\n\n"
-                f"يمكنك تسجيل الدخول الآن في الموقع مباشرة والاستمتاع باللعب! 🎉"
-            )
-            bot.send_message(message.chat.id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
-        else:
-            bot.send_message(message.chat.id, f"⚠️ تعذر الإنشاء عبر المحاكي:\n`{detail}`\n\nيرجى التواصل مع الإدارة لإتمام حسابك يدوياً.")
+    success, detail = api_create_player(username, password)
+    
+    if success:
+        with open(DB_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
+        success_msg = (
+            f"✅ **تم إنشاء حسابك بنجاح وسرعة قصوى!**\n\n"
+            f"👤 اسم المستخدم: `{username}`\n"
+            f"🔑 كلمة المرور: `{password}`\n\n"
+            f"يمكنك تسجيل الدخول الآن في الموقع مباشرة والاستمتاع باللعب! 🎉"
+        )
+        bot.send_message(message.chat.id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
+    else:
+        bot.send_message(message.chat.id, f"⚠️ تعذر الإنشاء لسبب تنظيمي من المنصة:\n\n`{detail}`\n\nيرجى تعديل الاسم والمحاولة مجدداً.")
 
-    threading.Thread(target=run_safe_browser_task).start()
     user_steps.pop(uid, None)
 
 # ==========================================
@@ -224,11 +243,3 @@ def setup_webhook_init():
         bot.set_webhook(url=f"{RENDER_URL}/{BOT_TOKEN}")
         print(f"Webhook securely established at: {RENDER_URL}/{BOT_TOKEN}")
     except Exception as e:
-        print(f"Error setting up Webhook: {str(e)}")
-
-if __name__ == '__main__':
-    # ربط الـ Webhook في الخلفية بشكل آمن
-    threading.Thread(target=setup_webhook_init, daemon=True).start()
-    
-    # تشغيل السيرفر الاحترافي الممسوك لمنع الـ Exited Early
-    print("Waitress Server is hosting the Webhook Engine on Port 10000...")
