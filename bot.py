@@ -24,7 +24,7 @@ def home():
 def keep_alive_ping():
     port = int(os.environ.get("PORT", 10000))
     url = f"http://127.0.0.1:{port}/"
-    time.sleep(15)
+    time.sleep(20)
     while True:
         try:
             requests.get(url, timeout=10)
@@ -77,7 +77,6 @@ user_steps = {}
 p_1, p_2, p_3, p_4 = "ht" + "tps://", "age" + "nts.", "tex" + "as4" + "win", ".c" + "om"
 PANEL_URL = p_1 + p_2 + p_3 + p_4
 
-# نظام قفل الطابور لمنع فتح متصفحات متعددة معاً وحماية السيرفر واللوحة
 registration_lock = threading.Lock()
 
 def generate_random_email():
@@ -110,10 +109,8 @@ def automated_create_player(username, password):
             page.wait_for_load_state("networkidle")
             
             page.fill("input[placeholder*='user-name']", username)
-            
             random_email = generate_random_email()
             page.fill("input[placeholder*='Email']", random_email)
-            
             page.fill("input[placeholder*='Password']", password)
             
             page.click("input[placeholder*='Parent'], div:has(> input[placeholder*='Parent']), .v-select, .dropdown-toggle")
@@ -205,9 +202,7 @@ def core_menu(message):
         status_text = "🛑 إطفاء البوت" if config["is_active"] else "🟢 تشغيل البوت"
         markup.add(types.InlineKeyboardButton(status_text, callback_data="owner_toggle_bot"))
         bot.send_message(chat_id, "⚙️ لوحة التحكم السرية للمالك:", reply_markup=markup)
-        
     else:
-        # إصلاح خطأ المسافات البرمجية القديم للسطر رقم 246 وما بعده لضمان استقرار المعالجة للأوامر غير المعروفة
         pass
 
 # ==========================================
@@ -235,7 +230,6 @@ def reg_step_password(message):
     username = user_steps[uid]["username"]
     bot.send_message(message.chat.id, "⏳ تم وضع طلبك في الطابور الآمن وجارٍ معالجته، يرجى الانتظار ثوانٍ...")
 
-    # تشغيل محاكي المتصفح في خيط آمن ومحمي بنظام طابور متسلسل لمنع الضغط والتداخل
     def process_queue_task():
         with registration_lock:
             success, detail = automated_create_player(username, password)
@@ -244,3 +238,9 @@ def reg_step_password(message):
                 with open(DB_FILE, "a", encoding="utf-8") as f:
                     f.write(json.dumps(record, ensure_ascii=False) + "\n")
                     
+                success_msg = (
+                    f"✅ **تم إنشاء حسابك بنجاح!**\n\n"
+                    f"👤 اسم المستخدم: `{username}`\n"
+                    f"🔑 كلمة المرور: `{password}`\n\n"
+                    f"يمكنك تسجيل الدخول الآن في الموقع مباشرة والاستمتاع باللعب! 🎉"
+                )
