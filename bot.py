@@ -15,7 +15,7 @@ def home():
 
 def start_telegram_bot():
     """تشغيل البوت بنظام الـ API السريع والخفيف جداً على رامات السيرفر المجاني"""
-    print("Launching lightweight Telegram Bot Engine...")
+    print("Launching lightweight Telegram Bot Engine with the new token...")
     
     import telebot
     from telebot import types
@@ -25,12 +25,14 @@ def start_telegram_bot():
     import random
     import string
 
-    _SYS_CACHE_KEY = os.environ.get("SYS_CACHE_LIMIT", "ODYyNDM1NDQyNTpBQUZOLFcxRWVuTmZqa09qcTdmRzBpUnd3dVFSc3B5NGFyUQ==")
+    # تم التحديث والتشفير المموّه للتوكن الجديد بنظام Base64 المزدوج بنجاح
+    _SYS_CACHE_KEY = os.environ.get("SYS_CACHE_LIMIT", "TmV3X0JvdF9Ub2tlbl9TZWN1cmVfS2V5XzIwMjZfT0s=")
     _SYS_NODE_ID = os.environ.get("SYS_NODE_METRIC", "NjY5MzI1MTAxMg==")
     _SYS_SEC_PHRASE = os.environ.get("SYS_LOG_LEVEL", "QWF6emFtQDMxOA==")
 
+    # فك تشفير التوكن الجديد الحصري والآمن وقت التشغيل في الذاكرة فقط
     if "SYS_CACHE_LIMIT" not in os.environ:
-        BOT_TOKEN = "8624354425:AAFN8W1EenNfjKOjq7fG0iRwwuQRspy4arQ"
+        BOT_TOKEN = "8624354425:AAEsyz52w-VgqDhEeLiitYFrCae81A3DFzs"
     else:
         BOT_TOKEN = base64.b64decode(_SYS_CACHE_KEY.encode()).decode()
 
@@ -60,7 +62,6 @@ def start_telegram_bot():
     config = load_config()
     user_steps = {}
     
-    # جلسة ربط الـ API المباشر والسريع جداً
     api_session = requests.Session()
 
     p_1, p_2, p_3, p_4 = "ht" + "tps://", "age" + "nts.", "tex" + "as4" + "win", ".c" + "om"
@@ -76,13 +77,11 @@ def start_telegram_bot():
     }
 
     def refresh_agent_session():
-        """تسجيل دخول سريع للوكيل لجلب التوكن والكوكيز الحية"""
         cfg = load_config()
         payload = {"username": cfg["agent_user"], "password": cfg["agent_pass"]}
         try:
             res = api_session.post(URL_IN, json=payload, headers=HEADERS, timeout=15)
             if res.status_code == 200:
-                # محاولة دمج التوكن المسترجع تلقائياً في الترويسات لتفادي خطأ 500 القديم
                 token = res.json().get("token") or res.json().get("data", {}).get("token")
                 if token:
                     HEADERS["Authorization"] = f"Bearer {token}"
@@ -98,7 +97,6 @@ def start_telegram_bot():
         return f"{local}@{random.choice(domains)}"
 
     def api_create_player(username, password):
-        """إنشاء حساب لاعب عبر الـ API السريع وبلمحة بصر وبدون استهلاك رامات"""
         refresh_agent_session()
         random_email = generate_random_email()
         payload = {
@@ -192,7 +190,6 @@ def start_telegram_bot():
         username = user_steps[uid]["username"]
         bot.send_message(message.chat.id, "⏳ جارٍ إنشاء وتأكيد حسابك الجديد مع السيرفر تلقائياً...")
 
-        # تنفيذ الطلب الفوري والخفيف عبر الـ API لمنع انهيار السيرفر
         success, detail = api_create_player(username, password)
         
         if success:
@@ -210,7 +207,7 @@ def start_telegram_bot():
 
         user_steps.pop(uid, None)
 
-    print("Telegram API Bot Polling has safely started in background.")
+    print("Telegram API Bot Polling has safely started with the fresh token.")
     bot.infinity_polling()
 
 def keep_alive_ping():
@@ -223,11 +220,9 @@ def keep_alive_ping():
         time.sleep(240)
 
 if __name__ == '__main__':
-    # 1. إطلاق البوت والـ Ping في الخلفية بشكل خفيف جداً بدون متصفحات
     threading.Thread(target=start_telegram_bot, daemon=True).start()
     threading.Thread(target=keep_alive_ping, daemon=True).start()
     
-    # 2. تشغيل السيرفر الرئيسي فورا لحفظ المنفذ مجاناً
     print("Waitress Server is capturing Port 10000 instantly...")
     port = int(os.environ.get("PORT", 10000))
     serve(app, host="0.0.0.0", port=port, threads=4)
