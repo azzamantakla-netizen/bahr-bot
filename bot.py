@@ -10,11 +10,10 @@ from flask import Flask, request
 import telebot
 from telebot import types
 from waitress import serve
-
-# إجبار نظام التشغيل على حجز مسار ثابت ودائم للمتصفح داخل مشروع ريندر لمنع اختفائه
-os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(os.getcwd(), ".local", "share", "ms-playwright")
-
 from playwright.sync_api import sync_playwright
+
+# تثبيت مسار دائم ومضمون للمتصفح الخفي داخل سيرفر ريندر
+os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(os.getcwd(), ".local", "share", "ms-playwright")
 
 # ==========================================
 # 1. إعداد سيرفر الويب واستقبال الـ Webhook
@@ -40,7 +39,7 @@ RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://onrender.com").rstri
 
 @app.route('/')
 def home():
-    return "Texas4Win Webhook Bot is Running Successfully 100% Free!"
+    return "Texas4Win Automated Webhook Bot is Running Perfectly!"
 
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def receive_updates():
@@ -53,7 +52,7 @@ def receive_updates():
         return 'Forbidden', 403
 
 # ==========================================
-# 2. منطق وإعدادات البوت وأتمتة المتصفح الذكي
+# 2. منطق وإعدادات البوت والـ API لـ Texas4Win
 # ==========================================
 def load_config():
     if not os.path.exists(CONFIG_FILE):
@@ -83,6 +82,7 @@ def generate_random_email():
     return f"{local}@{random.choice(domains)}"
 
 def browser_create_player(username, password):
+    """تشغيل المحاكي لملء البيانات بناءً على أيقونات صورتك بدقة متناهية"""
     cfg = load_config()
     try:
         with sync_playwright() as p:
@@ -92,32 +92,27 @@ def browser_create_player(username, password):
             page.goto(PANEL_URL, timeout=60000)
             page.wait_for_load_state("networkidle")
             
-            # 🔥 التعديل الذكي: ملء الخانات بناءً على موضع الأيقونات المرئية في صورتك المرفقة لقهر حماية الموقع
+            # استهداف الحقول بالاعتماد على الأيقونات المرئية الثابتة في صورتك
             page.locator("div:has(> i.fa-user, > span.fa-user, > i[class*='user']) input, input[type='text']").first.fill(cfg["agent_user"])
             page.locator("div:has(> i.fa-lock, > span.fa-lock, > i[class*='lock']) input, input[type='password']").first.fill(cfg["agent_pass"])
             
-            # النقر على الزر البرتقالي المكتوب عليه Sign In بالضبط
             page.click("button:has-text('Sign In'), .btn:has-text('Sign In'), text='Sign In'")
             page.wait_for_load_state("networkidle")
             
-            # 2. التوجه لصفحة إنشاء اللاعب
             CREATE_PAGE = PANEL_URL + "/#/player/create"
             page.goto(CREATE_PAGE, timeout=60000)
             page.wait_for_load_state("networkidle")
             
-            # ملء بيانات اللاعب الجديد في الخانات الأربعة
             page.locator("input[placeholder*='user-name'], input[placeholder*='Username']").first.fill(username)
             random_email = generate_random_email()
             page.locator("input[placeholder*='Email'], input[placeholder*='email']").first.fill(random_email)
             page.locator("input[placeholder*='Password'], input[placeholder*='password']").last.fill(password)
             
-            # النقر واختيار الـ Parent الخاص بك
             page.click("input[placeholder*='Parent'], .v-select, .dropdown-toggle")
             page.wait_for_timeout(1000)
             page.click("text='2688288-bero@yahoo.com'")
             page.wait_for_timeout(1000)
             
-            # الضغط على زر الحفظ النهائي Register الأزرق
             page.click("button:has-text('Register'), button.register-btn, .btn-primary:has-text('Register')")
             page.wait_for_timeout(4000)
             
@@ -199,21 +194,23 @@ def reg_step_password(message):
     username = user_steps[uid]["username"]
     bot.send_message(message.chat.id, "⏳ جارٍ إطلاق المحاكي الذكي لإنشاء حسابك وتأكيده مع اللوحة تلقائياً...")
 
-    success, detail = browser_create_player(username, password)
-    
-    if success:
-        with open(DB_FILE, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
-        success_msg = (
-            f"✅ **تم إنشاء حسابك بنجاح وتأكيده حياً!**\n\n"
-            f"👤 اسم المستخدم: `{username}`\n"
-            f"🔑 كلمة المرور: `{password}`\n\n"
-            f"يمكنك تسجيل الدخول الآن في الموقع مباشرة والاستمتاع باللعب! 🎉"
-        )
-        bot.send_message(message.chat.id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
-    else:
-        bot.send_message(message.chat.id, f"⚠️ تعذر الإنشاء عبر المحاكي:\n`{detail}`\n\nيرجى التواصل مع الإدارة لإتمام حسابك يدوياً.")
+    # تشغيل عملية محاكاة المتصفح في خيط مستقل آمن لـ Playwright
+    def run_safe_browser_task():
+        success, detail = browser_create_player(username, password)
+        if success:
+            with open(DB_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
+            success_msg = (
+                f"✅ **تم إنشاء حسابك بنجاح وتأكيده حياً!**\n\n"
+                f"👤 اسم المستخدم: `{username}`\n"
+                f"🔑 كلمة المرور: `{password}`\n\n"
+                f"يمكنك تسجيل الدخول الآن في الموقع مباشرة والاستمتاع باللعب! 🎉"
+            )
+            bot.send_message(message.chat.id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
+        else:
+            bot.send_message(message.chat.id, f"⚠️ تعذر الإنشاء عبر المحاكي:\n`{detail}`\n\nيرجى التواصل مع الإدارة لإتمام حسابك يدوياً.")
 
+    threading.Thread(target=run_safe_browser_task).start()
     user_steps.pop(uid, None)
 
 # ==========================================
@@ -230,7 +227,8 @@ def setup_webhook_init():
         print(f"Error setting up Webhook: {str(e)}")
 
 if __name__ == '__main__':
+    # ربط الـ Webhook في الخلفية بشكل آمن
     threading.Thread(target=setup_webhook_init, daemon=True).start()
     
+    # تشغيل السيرفر الاحترافي الممسوك لمنع الـ Exited Early
     print("Waitress Server is hosting the Webhook Engine on Port 10000...")
-    port = int(os.environ.get("PORT", 10000))
