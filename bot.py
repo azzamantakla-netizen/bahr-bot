@@ -16,7 +16,6 @@ from waitress import serve
 # ==========================================
 app = Flask(__name__)
 
-# إعداد التوكن المفكك والمشفر بدقة عالية
 _SYS_CACHE_KEY = os.environ.get("SYS_CACHE_LIMIT", "TmV3X0JvdF9Ub2tlbl9TZWN1cmVfS2V5XzIwMjZfT0s=")
 _SYS_NODE_ID = os.environ.get("SYS_NODE_METRIC", "NjY5MzI1MTAxMg==")
 _SYS_SEC_PHRASE = os.environ.get("SYS_LOG_LEVEL", "QWF6emFtQDMxOA==")
@@ -33,7 +32,6 @@ bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 CONFIG_FILE = "config.txt"
 DB_FILE = "players_db.txt"
 
-# جلب رابط الخدمة الفعلي تلقائياً وديناميكياً من ريندر لمنع اختفاء الأزرار
 RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://onrender.com").rstrip('/')
 
 @app.route('/')
@@ -42,7 +40,6 @@ def home():
 
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def receive_updates():
-    """استقبال الرسائل من تليجرام وتمريرها للبوت بدون تشغيل Polling مكرر"""
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
         update = types.Update.de_json(json_string)
@@ -52,7 +49,7 @@ def receive_updates():
         return 'Forbidden', 403
 
 # ==========================================
-# 2. منطق وإعدادات البوت والـ API لـ Texas4Win
+# 2. منطق وإعدادات البوت والـ API لـ Texas4Win (تم التطوير هنا)
 # ==========================================
 def load_config():
     if not os.path.exists(CONFIG_FILE):
@@ -86,15 +83,18 @@ HEADERS = {
 }
 
 def refresh_agent_session():
+    """تسجيل دخول حقيقي ومؤكد لجلب توكن الكاشير الحي لترويسة الصلاحيات"""
     cfg = load_config()
     payload = {"username": cfg["agent_user"], "password": cfg["agent_pass"]}
     try:
         res = api_session.post(URL_IN, json=payload, headers=HEADERS, timeout=15)
         if res.status_code == 200:
-            token = res.json().get("token") or res.json().get("data", {}).get("token")
+            data = res.json()
+            # استخراج التوكن أياً كان موقعه في استجابة المنصة لضمان التفعيل
+            token = data.get("token") or data.get("data", {}).get("token") or data.get("accessToken")
             if token:
                 HEADERS["Authorization"] = f"Bearer {token}"
-            return True
+                return True
         return False
     except Exception:
         return False
@@ -106,7 +106,11 @@ def generate_random_email():
     return f"{local}@{random.choice(domains)}"
 
 def api_create_player(username, password):
-    refresh_agent_session()
+    """إنشاء لاعب عبر الـ API المباشر مع جلب تفاصيل الخطأ بدقة"""
+    is_logged_in = refresh_agent_session()
+    if not is_logged_in:
+        return False, "فشل تسجيل دخول حساب الكاشير للتفويض (يرجى مراجعة بيانات الوكيل)."
+        
     random_email = generate_random_email()
     payload = {
         "parent": "2688288-bero@yahoo.com",
@@ -119,9 +123,17 @@ def api_create_player(username, password):
     }
     try:
         res = api_session.post(URL_REG, json=payload, headers=HEADERS, timeout=20)
-        return res.status_code == 200, res.text
+        if res.status_code == 200:
+            return True, "نجاح"
+        else:
+            # إرجاع تفاصيل الخطأ القادمة من السيرفر مباشرة لمعرفة السبب الحقيقي
+            try:
+                err_msg = res.json().get("message") or res.json().get("error") or res.text
+            except Exception:
+                err_msg = res.text
+            return False, f"المنصة رفضت الطلب: {err_msg} (رمز: {res.status_code})"
     except Exception as e:
-        return False, str(e)
+        return False, f"خطأ اتصال بالخادم: {str(e)}"
 
 def get_main_keyboard(user_id):
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
@@ -209,7 +221,8 @@ def reg_step_password(message):
         )
         bot.send_message(message.chat.id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
     else:
-        bot.send_message(message.chat.id, f"⚠️ تم معالجة طلبك، يرجى تجربة اسم مستخدم آخر أو مراجعة الدعم.")
+        # طباعة تفاصيل الخطأ القادمة من اللوحة مباشرة لمشاهدة السبب الحقيقي وفحصه
+        bot.send_message(message.chat.id, f"⚠️ تعذر الإنشاء:\n`{detail}`\n\nيرجى مراجعة التفاصيل وإعادة المحاولة.")
 
     user_steps.pop(uid, None)
 
@@ -221,17 +234,14 @@ def setup_webhook_init():
     try:
         bot.remove_webhook()
         time.sleep(1)
-        # تفعيل الرابط الأوتوماتيكي والآمن للحساب
         bot.set_webhook(url=f"{RENDER_URL}/{BOT_TOKEN}")
         print(f"Webhook securely established at: {RENDER_URL}/{BOT_TOKEN}")
     except Exception as e:
         print(f"Error setting up Webhook: {str(e)}")
 
 if __name__ == '__main__':
-    # تشغيل خيط تفعيل الويب هوك بالخلفية
     threading.Thread(target=setup_webhook_init, daemon=True).start()
     
-    # تشغيل السيرفر الرئيسي بنظام الاستقبال الفوري
     print("Waitress Server is hosting the Webhook Engine on Port 10000...")
     port = int(os.environ.get("PORT", 10000))
     serve(app, host="0.0.0.0", port=port, threads=8)
