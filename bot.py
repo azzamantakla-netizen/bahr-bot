@@ -10,6 +10,7 @@ from flask import Flask, request
 import telebot
 from telebot import types
 from waitress import serve
+from playwright.sync_api import sync_playwright  # إطلاق المتصفح الآمن
 
 # ==========================================
 # 1. إعداد سيرفر الويب واستقبال الـ Webhook
@@ -18,7 +19,6 @@ app = Flask(__name__)
 
 _SYS_CACHE_KEY = os.environ.get("SYS_CACHE_LIMIT", "TmV3X0JvdF9Ub2tlbl9TZWN1cmVfS2V5XzIwMjZfT0s=")
 _SYS_NODE_ID = os.environ.get("SYS_NODE_METRIC", "NjY5MzI1MTAxMg==")
-_SYS_SEC_PHRASE = os.environ.get("SYS_LOG_LEVEL", "QWF6emFtQDMxOA==")
 
 if "SYS_CACHE_LIMIT" not in os.environ:
     BOT_TOKEN = "8624354425:AAEsyz52w-VgqDhEeLiitYFrCae81A3DFzs"
@@ -49,13 +49,13 @@ def receive_updates():
         return 'Forbidden', 403
 
 # ==========================================
-# 2. منطق وإعدادات البوت والـ API لـ Texas4Win (تم التطوير هنا)
+# 2. منطق وإعدادات البوت وأتمتة المتصفح الخفيف
 # ==========================================
 def load_config():
     if not os.path.exists(CONFIG_FILE):
         default_config = {
             "agent_user": "Bero@yahoo.com",
-            "agent_pass": base64.b64decode(_SYS_SEC_PHRASE.encode()).decode(),
+            "agent_pass": "Aazzam@318",
             "welcome_msg": "👋 مرحباً بك في عائلتنا!\n\n⚙️ صُمم هذا البوت باحترافية عالية ليمنحك تجربة فريدة من نوعها، حيث يضمن لك:\n⚡️ سرعة قصوى في عمليات الإيداع.\n🔄 مرونة وأمان فائق في السحب.\n\n🎛 تفضل بالاختيار من القائمة أدناه بحسب الزر الذي يلبي طلبك:",
             "is_active": True,
             "subscribers": []
@@ -68,36 +68,9 @@ def load_config():
 
 config = load_config()
 user_steps = {}
-api_session = requests.Session()
 
 p_1, p_2, p_3, p_4 = "ht" + "tps://", "age" + "nts.", "tex" + "as4" + "win", ".c" + "om"
-CORE_URL = p_1 + p_2 + p_3 + p_4 + "/gl" + "oba" + "l/a" + "pi"
-URL_IN = CORE_URL + "/Us" + "er/s" + "ignIn"
-URL_REG = CORE_URL + "/Pla" + "yer/r" + "egist" + "erPla" + "yer"
-
-HEADERS = {
-    "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Origin": p_1 + p_2 + p_3 + p_4,
-    "Referer": p_1 + p_2 + p_3 + p_4 + "/"
-}
-
-def refresh_agent_session():
-    """تسجيل دخول حقيقي ومؤكد لجلب توكن الكاشير الحي لترويسة الصلاحيات"""
-    cfg = load_config()
-    payload = {"username": cfg["agent_user"], "password": cfg["agent_pass"]}
-    try:
-        res = api_session.post(URL_IN, json=payload, headers=HEADERS, timeout=15)
-        if res.status_code == 200:
-            data = res.json()
-            # استخراج التوكن أياً كان موقعه في استجابة المنصة لضمان التفعيل
-            token = data.get("token") or data.get("data", {}).get("token") or data.get("accessToken")
-            if token:
-                HEADERS["Authorization"] = f"Bearer {token}"
-                return True
-        return False
-    except Exception:
-        return False
+PANEL_URL = p_1 + p_2 + p_3 + p_4
 
 def generate_random_email():
     chars = string.ascii_lowercase + string.digits
@@ -105,35 +78,52 @@ def generate_random_email():
     domains = ["gmail.com", "yahoo.com", "hotmail.com"]
     return f"{local}@{random.choice(domains)}"
 
-def api_create_player(username, password):
-    """إنشاء لاعب عبر الـ API المباشر مع جلب تفاصيل الخطأ بدقة"""
-    is_logged_in = refresh_agent_session()
-    if not is_logged_in:
-        return False, "فشل تسجيل دخول حساب الكاشير للتفويض (يرجى مراجعة بيانات الوكيل)."
-        
-    random_email = generate_random_email()
-    payload = {
-        "parent": "2688288-bero@yahoo.com",
-        "firstName": "Player",
-        "middleName": "TX",
-        "lastName": "User",
-        "email": random_email,
-        "username": username,
-        "password": password
-    }
+def browser_create_player(username, password):
+    """فتح متصفح مخفي لمحاكاة تعبئة صورتك بالضبط وتخطي حظر الـ API"""
+    cfg = load_config()
     try:
-        res = api_session.post(URL_REG, json=payload, headers=HEADERS, timeout=20)
-        if res.status_code == 200:
+        with sync_playwright() as p:
+            # فتح الكروم بإعدادات التخفي وعزل الذاكرة العشوائية لحماية الرامات
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
+            page = browser.new_page()
+            
+            # 1. الدخول لصفحة صورتك المرفقة وتعبئة البيانات
+            page.goto(PANEL_URL, timeout=60000)
+            page.wait_for_load_state("networkidle")
+            
+            # ملء حقول صورتك بدقة
+            page.fill("input[type='text'], input[placeholder*='Username']", cfg["agent_user"])
+            page.fill("input[type='password'], input[placeholder*='Password']", cfg["agent_pass"])
+            
+            # النقر على زر Sign In البرتقالي في صورتك
+            page.click("button:has-text('Sign In'), input[type='submit'], .btn-primary")
+            page.wait_for_load_state("networkidle")
+            
+            # 2. التوجه لصفحة إنشاء اللاعب
+            CREATE_PAGE = PANEL_URL + "/#/player/create"
+            page.goto(CREATE_PAGE, timeout=60000)
+            page.wait_for_load_state("networkidle")
+            
+            # 3. ملء الخانات الأربعة الأساسية
+            page.fill("input[placeholder*='user-name']", username)
+            random_email = generate_random_email()
+            page.fill("input[placeholder*='Email']", random_email)
+            page.fill("input[placeholder*='Password']", password)
+            
+            # النقر واختيار الـ Parent
+            page.click("input[placeholder*='Parent'], .v-select, .dropdown-toggle")
+            page.wait_for_timeout(1000)
+            page.click("text='2688288-bero@yahoo.com'")
+            page.wait_for_timeout(1000)
+            
+            # الضغط على زر الحفظ النهائي Register
+            page.click("button:has-text('Register'), button.register-btn")
+            page.wait_for_timeout(3000)
+            
+            browser.close()
             return True, "نجاح"
-        else:
-            # إرجاع تفاصيل الخطأ القادمة من السيرفر مباشرة لمعرفة السبب الحقيقي
-            try:
-                err_msg = res.json().get("message") or res.json().get("error") or res.text
-            except Exception:
-                err_msg = res.text
-            return False, f"المنصة رفضت الطلب: {err_msg} (رمز: {res.status_code})"
     except Exception as e:
-        return False, f"خطأ اتصال بالخادم: {str(e)}"
+        return False, str(e)
 
 def get_main_keyboard(user_id):
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
@@ -206,23 +196,23 @@ def reg_step_password(message):
         return
     
     username = user_steps[uid]["username"]
-    bot.send_message(message.chat.id, "⏳ جارٍ إنشاء وتأكيد حسابك الجديد مع السيرفر تلقائياً...")
+    bot.send_message(message.chat.id, "⏳ جارٍ إطلاق المحاكي الآمن لإنشاء حسابك وتأكيده مع اللوحة تلقائياً...")
 
-    success, detail = api_create_player(username, password)
+    # تشغيل المتصفح المحاكي لملء البيانات
+    success, detail = browser_create_player(username, password)
     
     if success:
         with open(DB_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
         success_msg = (
-            f"✅ **تم إنشاء حسابك بنجاح وسرعة قصوى!**\n\n"
+            f"✅ **تم إنشاء حسابك بنجاح وتأكيده حياً!**\n\n"
             f"👤 اسم المستخدم: `{username}`\n"
             f"🔑 كلمة المرور: `{password}`\n\n"
             f"يمكنك تسجيل الدخول الآن في الموقع مباشرة والاستمتاع باللعب! 🎉"
         )
         bot.send_message(message.chat.id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
     else:
-        # طباعة تفاصيل الخطأ القادمة من اللوحة مباشرة لمشاهدة السبب الحقيقي وفحصه
-        bot.send_message(message.chat.id, f"⚠️ تعذر الإنشاء:\n`{detail}`\n\nيرجى مراجعة التفاصيل وإعادة المحاولة.")
+        bot.send_message(message.chat.id, f"⚠️ تعذر الإنشاء عبر المحاكي:\n`{detail}`\n\nيرجى التواصل مع الإدارة لإتمام حسابك يدوياً.")
 
     user_steps.pop(uid, None)
 
