@@ -14,7 +14,7 @@ from waitress import serve
 # إجبار نظام التشغيل على حجز مسار ثابت ودائم للمتصفح داخل مشروع ريندر لمنع اختفائه
 os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(os.getcwd(), ".local", "share", "ms-playwright")
 
-from playwright.sync_api import sync_playwright  # استدعاء المتصفح بعد تثبيت المسار البيئي
+from playwright.sync_api import sync_playwright
 
 # ==========================================
 # 1. إعداد سيرفر الويب واستقبال الـ Webhook
@@ -53,7 +53,7 @@ def receive_updates():
         return 'Forbidden', 403
 
 # ==========================================
-# 2. منطق وإعدادات البوت وأتمتة المتصفح الخفيف
+# 2. منطق وإعدادات البوت وأتمتة المتصفح الذكي
 # ==========================================
 def load_config():
     if not os.path.exists(CONFIG_FILE):
@@ -92,28 +92,34 @@ def browser_create_player(username, password):
             page.goto(PANEL_URL, timeout=60000)
             page.wait_for_load_state("networkidle")
             
-            page.fill("input[type='text'], input[placeholder*='Username']", cfg["agent_user"])
-            page.fill("input[type='password'], input[placeholder*='Password']", cfg["agent_pass"])
+            # 🔥 التعديل الذكي: ملء الخانات بناءً على موضع الأيقونات المرئية في صورتك المرفقة لقهر حماية الموقع
+            page.locator("div:has(> i.fa-user, > span.fa-user, > i[class*='user']) input, input[type='text']").first.fill(cfg["agent_user"])
+            page.locator("div:has(> i.fa-lock, > span.fa-lock, > i[class*='lock']) input, input[type='password']").first.fill(cfg["agent_pass"])
             
-            page.click("button:has-text('Sign In'), input[type='submit'], .btn-primary")
+            # النقر على الزر البرتقالي المكتوب عليه Sign In بالضبط
+            page.click("button:has-text('Sign In'), .btn:has-text('Sign In'), text='Sign In'")
             page.wait_for_load_state("networkidle")
             
+            # 2. التوجه لصفحة إنشاء اللاعب
             CREATE_PAGE = PANEL_URL + "/#/player/create"
             page.goto(CREATE_PAGE, timeout=60000)
             page.wait_for_load_state("networkidle")
             
-            page.fill("input[placeholder*='user-name']", username)
+            # ملء بيانات اللاعب الجديد في الخانات الأربعة
+            page.locator("input[placeholder*='user-name'], input[placeholder*='Username']").first.fill(username)
             random_email = generate_random_email()
-            page.fill("input[placeholder*='Email']", random_email)
-            page.fill("input[placeholder*='Password']", password)
+            page.locator("input[placeholder*='Email'], input[placeholder*='email']").first.fill(random_email)
+            page.locator("input[placeholder*='Password'], input[placeholder*='password']").last.fill(password)
             
+            # النقر واختيار الـ Parent الخاص بك
             page.click("input[placeholder*='Parent'], .v-select, .dropdown-toggle")
             page.wait_for_timeout(1000)
             page.click("text='2688288-bero@yahoo.com'")
             page.wait_for_timeout(1000)
             
-            page.click("button:has-text('Register'), button.register-btn")
-            page.wait_for_timeout(3000)
+            # الضغط على زر الحفظ النهائي Register الأزرق
+            page.click("button:has-text('Register'), button.register-btn, .btn-primary:has-text('Register')")
+            page.wait_for_timeout(4000)
             
             browser.close()
             return True, "نجاح"
@@ -191,7 +197,7 @@ def reg_step_password(message):
         return
     
     username = user_steps[uid]["username"]
-    bot.send_message(message.chat.id, "⏳ جارٍ إطلاق المحاكي الآمن لإنشاء حسابك وتأكيده مع اللوحة تلقائياً...")
+    bot.send_message(message.chat.id, "⏳ جارٍ إطلاق المحاكي الذكي لإنشاء حسابك وتأكيده مع اللوحة تلقائياً...")
 
     success, detail = browser_create_player(username, password)
     
@@ -228,4 +234,3 @@ if __name__ == '__main__':
     
     print("Waitress Server is hosting the Webhook Engine on Port 10000...")
     port = int(os.environ.get("PORT", 10000))
-    serve(app, host="0.0.0.0", port=port, threads=8)
