@@ -10,7 +10,11 @@ from flask import Flask, request
 import telebot
 from telebot import types
 from waitress import serve
-from playwright.sync_api import sync_playwright  # إطلاق المتصفح الآمن
+
+# إجبار نظام التشغيل على حجز مسار ثابت ودائم للمتصفح داخل مشروع ريندر لمنع اختفائه
+os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(os.getcwd(), ".local", "share", "ms-playwright")
+
+from playwright.sync_api import sync_playwright  # استدعاء المتصفح بعد تثبيت المسار البيئي
 
 # ==========================================
 # 1. إعداد سيرفر الويب واستقبال الـ Webhook
@@ -79,44 +83,35 @@ def generate_random_email():
     return f"{local}@{random.choice(domains)}"
 
 def browser_create_player(username, password):
-    """فتح متصفح مخفي لمحاكاة تعبئة صورتك بالضبط وتخطي حظر الـ API"""
     cfg = load_config()
     try:
         with sync_playwright() as p:
-            # فتح الكروم بإعدادات التخفي وعزل الذاكرة العشوائية لحماية الرامات
             browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
             page = browser.new_page()
             
-            # 1. الدخول لصفحة صورتك المرفقة وتعبئة البيانات
             page.goto(PANEL_URL, timeout=60000)
             page.wait_for_load_state("networkidle")
             
-            # ملء حقول صورتك بدقة
             page.fill("input[type='text'], input[placeholder*='Username']", cfg["agent_user"])
             page.fill("input[type='password'], input[placeholder*='Password']", cfg["agent_pass"])
             
-            # النقر على زر Sign In البرتقالي في صورتك
             page.click("button:has-text('Sign In'), input[type='submit'], .btn-primary")
             page.wait_for_load_state("networkidle")
             
-            # 2. التوجه لصفحة إنشاء اللاعب
             CREATE_PAGE = PANEL_URL + "/#/player/create"
             page.goto(CREATE_PAGE, timeout=60000)
             page.wait_for_load_state("networkidle")
             
-            # 3. ملء الخانات الأربعة الأساسية
             page.fill("input[placeholder*='user-name']", username)
             random_email = generate_random_email()
             page.fill("input[placeholder*='Email']", random_email)
             page.fill("input[placeholder*='Password']", password)
             
-            # النقر واختيار الـ Parent
             page.click("input[placeholder*='Parent'], .v-select, .dropdown-toggle")
             page.wait_for_timeout(1000)
             page.click("text='2688288-bero@yahoo.com'")
             page.wait_for_timeout(1000)
             
-            # الضغط على زر الحفظ النهائي Register
             page.click("button:has-text('Register'), button.register-btn")
             page.wait_for_timeout(3000)
             
@@ -198,7 +193,6 @@ def reg_step_password(message):
     username = user_steps[uid]["username"]
     bot.send_message(message.chat.id, "⏳ جارٍ إطلاق المحاكي الآمن لإنشاء حسابك وتأكيده مع اللوحة تلقائياً...")
 
-    # تشغيل المتصفح المحاكي لملء البيانات
     success, detail = browser_create_player(username, password)
     
     if success:
