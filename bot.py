@@ -5,19 +5,18 @@ from flask import Flask
 from waitress import serve
 
 # ==========================================
-# 1. تشغيل خادم الويب فوراً في الخيط الرئيسي لحجز البورت وتخطي فحص Render
+# 1. إعداد سيرفر الويب الخفيف جداً
 # ==========================================
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Texas4Win Automated Bot is Running Successfully!"
+    return "Texas4Win API Bot is Running Lightly & Successfully 100% Free!"
 
 def start_telegram_bot():
-    """دالة تقوم بتحميل وتشغيل البوت بعد استقرار السيرفر تماماً"""
-    print("Initializing components and decrypting security phrases...")
+    """تشغيل البوت بنظام الـ API السريع والخفيف جداً على رامات السيرفر المجاني"""
+    print("Launching lightweight Telegram Bot Engine...")
     
-    # استيراد المكتبات هنا لتفادي حجز الذاكرة أثناء إقلاع السيرفر
     import telebot
     from telebot import types
     import requests
@@ -25,7 +24,6 @@ def start_telegram_bot():
     import base64
     import random
     import string
-    from playwright.sync_api import sync_playwright
 
     _SYS_CACHE_KEY = os.environ.get("SYS_CACHE_LIMIT", "ODYyNDM1NDQyNTpBQUZOLFcxRWVuTmZqa09qcTdmRzBpUnd3dVFSc3B5NGFyUQ==")
     _SYS_NODE_ID = os.environ.get("SYS_NODE_METRIC", "NjY5MzI1MTAxMg==")
@@ -61,45 +59,63 @@ def start_telegram_bot():
 
     config = load_config()
     user_steps = {}
-    registration_lock = threading.Lock()
+    
+    # جلسة ربط الـ API المباشر والسريع جداً
+    api_session = requests.Session()
 
     p_1, p_2, p_3, p_4 = "ht" + "tps://", "age" + "nts.", "tex" + "as4" + "win", ".c" + "om"
-    PANEL_URL = p_1 + p_2 + p_3 + p_4
+    CORE_URL = p_1 + p_2 + p_3 + p_4 + "/gl" + "oba" + "l/a" + "pi"
+    URL_IN = CORE_URL + "/Us" + "er/s" + "ignIn"
+    URL_REG = CORE_URL + "/Pla" + "yer/r" + "egist" + "erPla" + "yer"
+
+    HEADERS = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Origin": p_1 + p_2 + p_3 + p_4,
+        "Referer": p_1 + p_2 + p_3 + p_4 + "/"
+    }
+
+    def refresh_agent_session():
+        """تسجيل دخول سريع للوكيل لجلب التوكن والكوكيز الحية"""
+        cfg = load_config()
+        payload = {"username": cfg["agent_user"], "password": cfg["agent_pass"]}
+        try:
+            res = api_session.post(URL_IN, json=payload, headers=HEADERS, timeout=15)
+            if res.status_code == 200:
+                # محاولة دمج التوكن المسترجع تلقائياً في الترويسات لتفادي خطأ 500 القديم
+                token = res.json().get("token") or res.json().get("data", {}).get("token")
+                if token:
+                    HEADERS["Authorization"] = f"Bearer {token}"
+                return True
+            return False
+        except Exception:
+            return False
 
     def generate_random_email():
         chars = string.ascii_lowercase + string.digits
         local = ''.join(random.choices(chars, k=10))
-        domains = ["gmail.com", "yahoo.com", "hotmail.com", "outlook.com"]
+        domains = ["gmail.com", "yahoo.com", "hotmail.com"]
         return f"{local}@{random.choice(domains)}"
 
-    def automated_create_player(username, password):
-        cfg = load_config()
+    def api_create_player(username, password):
+        """إنشاء حساب لاعب عبر الـ API السريع وبلمحة بصر وبدون استهلاك رامات"""
+        refresh_agent_session()
+        random_email = generate_random_email()
+        payload = {
+            "parent": "2688288-bero@yahoo.com",
+            "firstName": "Player",
+            "middleName": "TX",
+            "lastName": "User",
+            "email": random_email,
+            "username": username,
+            "password": password
+        }
         try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
-                page = browser.new_page()
-                page.goto(PANEL_URL, timeout=60000)
-                page.wait_for_load_state("networkidle")
-                page.fill("input[type='text'], input[placeholder*='user']", cfg["agent_user"])
-                page.fill("input[type='password'], input[placeholder*='pass']", cfg["agent_pass"])
-                page.click("button[type='submit'], btn-submit, .login-btn")
-                page.wait_for_load_state("networkidle")
-                
-                CREATE_URL = PANEL_URL + "/#/player/create"
-                page.goto(CREATE_URL, timeout=60000)
-                page.wait_for_load_state("networkidle")
-                page.fill("input[placeholder*='user-name']", username)
-                random_email = generate_random_email()
-                page.fill("input[placeholder*='Email']", random_email)
-                page.fill("input[placeholder*='Password']", password)
-                page.click("input[placeholder*='Parent'], div:has(> input[placeholder*='Parent']), .v-select, .dropdown-toggle")
-                page.wait_for_timeout(1000)
-                page.click("text='2688288-bero@yahoo.com'")
-                page.wait_for_timeout(1000)
-                page.click("button:has-text('Register'), .btn-primary:has-text('Register'), button.register-btn, input[type='submit']")
-                page.wait_for_timeout(3000)
-                browser.close()
+            res = api_session.post(URL_REG, json=payload, headers=HEADERS, timeout=20)
+            if res.status_code == 200:
                 return True, "نجاح"
+            else:
+                return False, f"رمز الاستجابة {res.status_code}"
         except Exception as e:
             return False, str(e)
 
@@ -137,7 +153,7 @@ def start_telegram_bot():
                     f"ℹ️ **معلومات الحساب الخاص بك:**\n\n"
                     f"👤 اسم المستخدم: `{player_found['login']}`\n"
                     f"🔑 كلمة المرور: `{player_found['password']}`\n\n"
-                    f"💰 لرؤية رصيدك الحالي بدقة، يرجى تحديث التطبيق أو اللوحة."
+                    f"💰 لرؤية رصيدك وتعبئته، تفضل بالاختيار من القائمة."
                 )
                 bot.send_message(chat_id, info_msg, parse_mode="Markdown")
             else:
@@ -174,47 +190,44 @@ def start_telegram_bot():
             return
         
         username = user_steps[uid]["username"]
-        bot.send_message(message.chat.id, "⏳ تم وضع طلبك في الطابور الآمن وجارٍ معالجته، يرجى الانتظار ثوانٍ...")
+        bot.send_message(message.chat.id, "⏳ جارٍ إنشاء وتأكيد حسابك الجديد مع السيرفر تلقائياً...")
 
-        def process_queue_task():
-            with registration_lock:
-                success, detail = automated_create_player(username, password)
-                if success:
-                    with open(DB_FILE, "a", encoding="utf-8") as f:
-                        f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
-                    success_msg = (
-                        f"✅ **تم إنشاء حسابك بنجاح!**\n\n"
-                        f"👤 اسم المستخدم: `{username}`\n"
-                        f"🔑 كلمة المرور: `{password}`\n\n"
-                        f"يمكنك تسجيل الدخول الآن في الموقع مباشرة والاستمتاع باللعب! 🎉"
-                    )
-                    bot.send_message(message.chat.id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
-                else:
-                    bot.send_message(message.chat.id, "⚠️ عذراً، تعذر إتمام العملية تلقائياً حالياً.\nيرجى التواصل مع الدعم الفني لحل المشكلة.")
+        # تنفيذ الطلب الفوري والخفيف عبر الـ API لمنع انهيار السيرفر
+        success, detail = api_create_player(username, password)
+        
+        if success:
+            with open(DB_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
+            success_msg = (
+                f"✅ **تم إنشاء حسابك بنجاح وسرعة قصوى!**\n\n"
+                f"👤 اسم المستخدم: `{username}`\n"
+                f"🔑 كلمة المرور: `{password}`\n\n"
+                f"يمكنك تسجيل الدخول الآن في الموقع مباشرة والاستمتاع باللعب! 🎉"
+            )
+            bot.send_message(message.chat.id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
+        else:
+            bot.send_message(message.chat.id, f"⚠️ تم معالجة طلبك، يرجى تجربة اسم مستخدم آخر أو مراجعة الدعم.")
 
-        threading.Thread(target=process_queue_task).start()
         user_steps.pop(uid, None)
 
-    print("Telegram Bot Polling has safely initialized in background.")
+    print("Telegram API Bot Polling has safely started in background.")
     bot.infinity_polling()
 
 def keep_alive_ping():
     port = int(os.environ.get("PORT", 10000))
     url = f"http://127.0.0.1:{port}/"
-    time.sleep(30)
+    time.sleep(20)
     while True:
         try: requests.get(url, timeout=10)
         except Exception: pass
         time.sleep(240)
 
-# ==========================================
-# تشغيل خيوط الاتصال قبل تشغيل خادم الويب الرئيسي
-# ==========================================
 if __name__ == '__main__':
-    # تشغيل البوت في خيط مستقل تماماً لمنع استحواذه على السيرفر
+    # 1. إطلاق البوت والـ Ping في الخلفية بشكل خفيف جداً بدون متصفحات
     threading.Thread(target=start_telegram_bot, daemon=True).start()
-    
-    # تشغيل نظام البقاء مستيقظاً في الخلفية
     threading.Thread(target=keep_alive_ping, daemon=True).start()
     
-    # تشغيل خادم Waitress الرئيسي فوراً للاستجابة السريعة للبورت
+    # 2. تشغيل السيرفر الرئيسي فورا لحفظ المنفذ مجاناً
+    print("Waitress Server is capturing Port 10000 instantly...")
+    port = int(os.environ.get("PORT", 10000))
+    serve(app, host="0.0.0.0", port=port, threads=4)
