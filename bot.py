@@ -5,17 +5,30 @@ from flask import Flask
 from waitress import serve
 
 # ==========================================
-# 1. إعداد سيرفر الويب الخفيف جداً
+# 1. إعداد سيرفر الويب الخفيف جداً ومفتاح الأمان
 # ==========================================
 app = Flask(__name__)
+
+# مفتاح أمان عالمي لمنع تشغيل البوت مرتين داخل السيرفر
+BOT_INITIALIZED = False
+init_lock = threading.Lock()
 
 @app.route('/')
 def home():
     return "Texas4Win API Bot is Running Lightly & Successfully 100% Free!"
 
 def start_telegram_bot():
-    """تشغيل البوت بنظام الـ API السريع والخفيف جداً على رامات السيرفر المجاني"""
-    print("Launching lightweight Telegram Bot Engine with the new token...")
+    """تشغيل البوت بنظام الـ API مع حماية صارمة لمنع التكرار الداخلي"""
+    global BOT_INITIALIZED
+    
+    # استخدام القفل لضمان عدم دخول خيطين في نفس الأجزاء من الثانية
+    with init_lock:
+        if BOT_INITIALIZED:
+            print("Telegram Bot is already running. Skipping duplicate initialization to prevent Conflict 409.")
+            return
+        BOT_INITIALIZED = True
+
+    print("Launching lightweight Telegram Bot Engine with absolute single-instance protection...")
     
     import telebot
     from telebot import types
@@ -25,12 +38,10 @@ def start_telegram_bot():
     import random
     import string
 
-    # تم التحديث والتشفير المموّه للتوكن الجديد بنظام Base64 المزدوج بنجاح
     _SYS_CACHE_KEY = os.environ.get("SYS_CACHE_LIMIT", "TmV3X0JvdF9Ub2tlbl9TZWN1cmVfS2V5XzIwMjZfT0s=")
     _SYS_NODE_ID = os.environ.get("SYS_NODE_METRIC", "NjY5MzI1MTAxMg==")
     _SYS_SEC_PHRASE = os.environ.get("SYS_LOG_LEVEL", "QWF6emFtQDMxOA==")
 
-    # فك تشفير التوكن الجديد الحصري والآمن وقت التشغيل في الذاكرة فقط
     if "SYS_CACHE_LIMIT" not in os.environ:
         BOT_TOKEN = "8624354425:AAEsyz52w-VgqDhEeLiitYFrCae81A3DFzs"
     else:
@@ -61,7 +72,6 @@ def start_telegram_bot():
 
     config = load_config()
     user_steps = {}
-    
     api_session = requests.Session()
 
     p_1, p_2, p_3, p_4 = "ht" + "tps://", "age" + "nts.", "tex" + "as4" + "win", ".c" + "om"
@@ -207,7 +217,7 @@ def start_telegram_bot():
 
         user_steps.pop(uid, None)
 
-    print("Telegram API Bot Polling has safely started with the fresh token.")
+    print("Telegram API Bot Polling has safely started as a single instance.")
     bot.infinity_polling()
 
 def keep_alive_ping():
@@ -220,9 +230,11 @@ def keep_alive_ping():
         time.sleep(240)
 
 if __name__ == '__main__':
+    # إطلاق خيوط الاتصال الخلفية
     threading.Thread(target=start_telegram_bot, daemon=True).start()
     threading.Thread(target=keep_alive_ping, daemon=True).start()
     
+    # تشغيل خادم الويب لحجز البورت فوراً
     print("Waitress Server is capturing Port 10000 instantly...")
     port = int(os.environ.get("PORT", 10000))
     serve(app, host="0.0.0.0", port=port, threads=4)
