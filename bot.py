@@ -10,7 +10,6 @@ from flask import Flask, request
 
 # تثبيت مسار دائم ومضمون للمتصفح الخفي داخل سيرفر ريندر
 os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(os.getcwd(), ".local", "share", "ms-playwright")
-
 from playwright.sync_api import sync_playwright
 
 # ==========================================
@@ -27,10 +26,8 @@ else:
     BOT_TOKEN = base64.b64decode(_SYS_CACHE_KEY.encode()).decode()
 
 OWNER_ID = int(base64.b64decode(_SYS_NODE_ID.encode()).decode())
-
 CONFIG_FILE = "config.txt"
 DB_FILE = "players_db.txt"
-
 RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://onrender.com").rstrip('/')
 
 @app.route('/')
@@ -68,7 +65,6 @@ def load_config():
 
 config = load_config()
 user_steps = {}
-
 p_1, p_2, p_3, p_4 = "ht" + "tps://", "age" + "nts.", "tex" + "as4" + "win", ".c" + "om"
 PANEL_URL = p_1 + p_2 + p_3 + p_4
 
@@ -82,26 +78,34 @@ def browser_create_player(username, password):
     cfg = load_config()
     try:
         with sync_playwright() as p:
-            # تشغيل المتصفح مع إضافة ترويسات وهويات وهمية لتخطي حجب الروبوتات و Cloudflare
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
+            # تشغيل المتصفح مع إضافة حيلة تخطي حجب الروبوتات و Cloudflare على سيرفرات Render
+            browser = p.chromium.launch(
+                headless=True, 
+                args=[
+                    "--no-sandbox", 
+                    "--disable-setuid-sandbox",
+                    "--disable-blink-features=AutomationControlled"
+                ]
+            )
             
-            # محاكاة شاشة كمبيوتر حقيقي بالكامل لحيلة نظام الأمان
             context = browser.new_context(
                 viewport={"width": 1280, "height": 720},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             )
             page = context.new_page()
             
+            # 1. تسجيل الدخول للوحة التحكم
             page.goto(PANEL_URL, timeout=60000)
             page.wait_for_load_state("networkidle")
-            time.sleep(3)  # انتظار إضافي لاستقرار الأكواد البرمجية للموقع
+            time.sleep(3) 
             
-            # 🔥 التكتيك السحري: الإدخال الأعمى بالـ Tab وقهر فخ الـ Timeout
-            # الضغط على الصفحة أولاً لضمان التركيز
-            page.click("body")
+            # 🔥 التكتيك المطور لضمان التركيز: البحث عن أول حقل إدخال نصي لاسم المستخدم والضغط عليه
+            first_input = page.locator("input[type='text'], input[type='email']").first
+            first_input.wait_for(state="visible", timeout=15000)
+            first_input.click()
             time.sleep(1)
             
-            # محاكاة الكتابة البشرية المتسلسلة للخانات دون البحث عن أسمائها
+            # محاكاة الكتابة المتسلسلة المستقرة بنظام الـ Tab والأدخل الأعمى
             page.keyboard.type(cfg["agent_user"], delay=100)
             page.keyboard.press("Tab")
             time.sleep(0.5)
@@ -109,39 +113,54 @@ def browser_create_player(username, password):
             time.sleep(0.5)
             page.keyboard.press("Enter")
             
-            # انتظار الانتقال للوحة الداخلية بعد تسجيل الدخول
+            # انتظار معالجة الدخول والانتقال للوحة
             page.wait_for_load_state("networkidle")
-            time.sleep(4)
+            time.sleep(5) 
             
             # 2. التوجه لصفحة إنشاء اللاعب
             CREATE_PAGE = PANEL_URL + "/#/player/create"
             page.goto(CREATE_PAGE, timeout=60000)
             page.wait_for_load_state("networkidle")
-            time.sleep(2)
+            time.sleep(3)
             
-            # ملء بيانات اللاعب الجديد في الخانات الأربعة بالاعتماد على الترتيب الافتراضي المتوقع
-            page.keyboard.press("Tab") # التنقل لخانة اسم المستخدم لللاعب
+            # تركيز صريح على أول خانة في صفحة الإنشاء (اسم المستخدم للاعب الجديد)
+            player_first_input = page.locator("input[type='text']").first
+            player_first_input.wait_for(state="visible", timeout=15000)
+            player_first_input.click()
+            time.sleep(1)
+            
+            # ملء بيانات اللاعب الجديد بالترتيب الافتراضي
             page.keyboard.type(username, delay=100)
-            page.keyboard.press("Tab") # خانة الإيميل
+            page.keyboard.press("Tab") 
+            time.sleep(0.5)
+            
             random_email = generate_random_email()
             page.keyboard.type(random_email, delay=100)
-            page.keyboard.press("Tab") # خانة الباسورد
+            page.keyboard.press("Tab") 
+            time.sleep(0.5)
+            
             page.keyboard.type(password, delay=100)
             time.sleep(1)
             
             # النقر واختيار الـ Parent الخاص بك
-            page.click("input[placeholder*='Parent'], .v-select, .dropdown-toggle, input[role='combobox']")
-            time.sleep(1)
-            page.click("text='2688288-bero@yahoo.com'")
+            page.click("input[placeholder*='Parent'], .v-select, .dropdown-toggle, input[role='combobox']", timeout=15000)
+            time.sleep(1.5)
+            page.click("text='2688288-bero@yahoo.com'", timeout=15000)
             time.sleep(1)
             
             # الضغط على زر الحفظ النهائي Register
             page.keyboard.press("Enter")
-            time.sleep(3)
+            time.sleep(4)
             
             browser.close()
             return True, "نجاح"
+            
     except Exception as e:
+        if 'browser' in locals():
+            try:
+                browser.close()
+            except:
+                pass
         return False, str(e)
 
 def get_main_keyboard(user_id):
@@ -190,13 +209,11 @@ def core_menu(message):
             markup = telebot.types.InlineKeyboardMarkup()
             markup.add(telebot.types.InlineKeyboardButton("👤 إنشاء حساب جديد", callback_data="start_reg"))
             global_bot.send_message(chat_id, "⚠️ لا يوجد حساب مرتبط بك حالياً. اضغط على الزر لإنشاء حساب فوراً.", reply_markup=markup)
-
+            
     elif message.text == "📥 إيداع / شحن رصيد":
         global_bot.send_message(chat_id, "📥 خيارات الشحن (سيرياتيل كاش / شام كاش) قيد التفعيل التلقائي الآن.")
-
     elif message.text == "📩 سحب رصيد":
         global_bot.send_message(chat_id, "📩 خيارات السحب قيد التفعيل التلقائي الآن.")
-
     elif message.text == "📞 الدعم الفني":
         global_bot.send_message(chat_id, "📞 فريق الدعم متواجد لخدمتكم، تفضل بطرح استفسارك وسيصل للإدارة.")
 
@@ -218,20 +235,8 @@ def reg_step_password(message):
     if uid not in user_steps:
         global_bot.send_message(message.chat.id, "⚠️ حدث خطأ، يرجى البدء من جديد.")
         return
-    
+        
     username = user_steps[uid]["username"]
     global_bot.send_message(message.chat.id, "⏳ جارٍ إطلاق المحاكي الذكي لإنشاء حسابك وتأكيده مع اللوحة تلقائياً...")
-
+    
     def run_safe_browser_task():
-        success, detail = browser_create_player(username, password)
-        if success:
-            with open(DB_FILE, "a", encoding="utf-8") as f:
-                f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
-            success_msg = (
-                f"✅ **تم إنشاء حسابك بنجاح وتأكيده حياً!**\n\n"
-                f"👤 اسم المستخدم: `{username}`\n"
-                f"🔑 كلمة المرور: `{password}`\n\n"
-                f"يمكنك تسجيل الدخول الآن في الموقع مباشرة والاستمتاع باللعب! 🎉"
-            )
-            global_bot.send_message(message.chat.id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
-        else:
