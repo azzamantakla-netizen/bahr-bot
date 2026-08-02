@@ -162,6 +162,21 @@ def start_cmd(message):
     uid = message.from_user.id
     global_bot.send_message(message.chat.id, config["welcome_msg"], reply_markup=get_main_keyboard(uid))
 
+def find_player_in_db(uid):
+    if not os.path.exists(DB_FILE):
+        return None
+    with open(DB_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                data = json.loads(line.strip())
+                if data.get("tg_id") == uid:
+                    return data
+            except:
+                continue
+    return None
+
 @global_bot.message_handler(func=lambda message: True)
 def core_menu(message):
     uid = message.from_user.id
@@ -169,29 +184,28 @@ def core_menu(message):
     text = message.text
     
     if text == "👤 حسابي":
-        player_found = None
-        if os.path.exists(DB_FILE):
-            with open(DB_FILE, "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.strip():
-                        data = json.loads(line.strip())
-                        if data["tg_id"] == uid:
-                            player_found = data
-                            break
+        player_found = find_player_in_db(uid)
         if player_found:
             info_msg = f"ℹ️ **معلومات الحساب الخاص بك:**\n\n👤 اسم المستخدم: `{player_found['login']}`\n🔑 كلمة المرور: `{player_found['password']}`\n\n💰 لرؤية رصيدك وتعبئته، تفضل بالاختيار من القائمة."
             global_bot.send_message(chat_id, info_msg, parse_mode="Markdown")
-        else:
-            markup = telebot.types.InlineKeyboardMarkup()
-            markup.add(telebot.types.InlineKeyboardButton("👤 إنشاء حساب جديد", callback_data="start_reg"))
-            global_bot.send_message(chat_id, "⚠️ لا يوجد حساب مرتبط بك حالياً. اضغط على الزر لإنشاء حساب فوراً.", reply_markup=markup)
+            return
+        
+        markup = telebot.types.InlineKeyboardMarkup()
+        markup.add(telebot.types.InlineKeyboardButton("👤 إنشاء حساب جديد", callback_data="start_reg"))
+        global_bot.send_message(chat_id, "⚠️ لا يوجد حساب مرتبط بك حالياً. اضغط على الزر لإنشاء حساب فوراً.", reply_markup=markup)
+        return
             
-    elif text == "📥 إيداع / شحن رصيد":
+    if text == "📥 إيداع / شحن رصيد":
         global_bot.send_message(chat_id, "📥 خيارات الشحن (سيرياتيل كاش / شام كاش) قيد التفعيل التلقائي الآن.")
-    elif text == "📩 سحب رصيد":
+        return
+        
+    if text == "📩 سحب رصيد":
         global_bot.send_message(chat_id, "📩 خيارات السحب قيد التفعيل التلقائي الآن.")
-    elif text == "📞 الدعم الفني":
+        return
+        
+    if text == "📞 الدعم الفني":
         global_bot.send_message(chat_id, "📞 فريق الدعم متواجد لخدمتكم، تفضل بطرح استفسارك وسيصل للإدارة.")
+        return
 
 @global_bot.callback_query_handler(func=lambda call: call.data == "start_reg")
 def start_registration(call):
@@ -221,5 +235,3 @@ def run_safe_browser_task(chat_id, uid, username, password):
         with open(DB_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
         success_msg = f"✅ **تم إنشاء حسابك بنجاح وتأكيده!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`\n\nيمكنك تسجيل الدخول الآن في الموقع مباشرة والاستمتاع باللعب! 🎉"
-        global_bot.send_message(chat_id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
-    else:
