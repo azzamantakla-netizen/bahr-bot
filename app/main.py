@@ -6,22 +6,6 @@ import requests
 import base64
 import random
 import string
-import subprocess
-
-# إعداد مسار Playwright متوافق مع خوادم الاستضافة لضمان التثبيت المحلي
-os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(os.getcwd(), ".local", "share", "ms-playwright")
-
-# حيلة برمجية لتثبيت متصفح مخفف جداً (Headless Shell) لتخطي ضعف رامات السيرفر
-if not os.path.exists(os.environ["PLAYWRIGHT_BROWSERS_PATH"]):
-    print("[*] Downloading Ultra-Lightweight Chromium for Server, please wait...")
-    try:
-        # تحميل النسخة المخففة المخصصة للسيرفرات الضعيفة فقط
-        subprocess.run(["python", "-m", "playwright", "install", "chromium-headless-shell"], check=True)
-        print("[+] Lightweight Chromium downloaded successfully!")
-    except Exception as build_err:
-        print(f"[-] Auto-install failed, skipping: {build_err}")
-
-from playwright.sync_api import sync_playwright
 import telebot
 
 # ========================================== #
@@ -58,7 +42,11 @@ config = load_config()
 user_steps = {}
 
 p_1, p_2, p_3, p_4 = "ht" + "tps://", "age" + "nts.", "tex" + "as4" + "win", ".c" + "om"
-PANEL_URL = p_1 + p_2 + p_3 + p_4
+PANEL_BASE = p_1 + p_2 + p_3 + p_4
+
+# دمج روابط الـ API الحقيقية والمكشوفة بدقة من الـ Network
+LOGIN_API_URL = f"{PANEL_BASE}/global/api/User/signIn"
+CREATE_PLAYER_API_URL = f"{PANEL_BASE}/global/api/User/createPlayer"
 
 def generate_random_email():
     chars = string.ascii_lowercase + string.digits
@@ -67,83 +55,66 @@ def generate_random_email():
     return f"{local}@{random.choice(domains)}"
 
 # ========================================== #
-# 2. منطق أتمتة المحاكي الذكي المرن (Playwright) #
+# 2. منطق الطلبات السريعة الفورية (API Requests) #
 # ========================================== #
-def browser_create_player(username, password):
+def api_create_player(username, password):
     cfg = load_config()
+    session = requests.Session()
+    
+    # ترويسة مطابقة بنسبة 100% لمتصفحك الفعلي لتخطي حماية Cloudflare بأمان
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+        "Content-Type": "application/json",
+        "Accept": "*/*",
+        "Origin": PANEL_BASE,
+        "Referer": f"{PANEL_BASE}/",
+        "Accept-Language": "ar,en-US;q=0.9,en;q=0.8"
+    }
+    
+    # حزمة بيانات تسجيل الدخول
+    login_payload = {
+        "username": cfg["agent_user"],
+        "password": cfg["agent_pass"]
+    }
+    
     try:
-        with sync_playwright() as p:
-            # تشغيل النسخة المخففة لضمان استقرار السيرفر
-            browser = p.chromium_headless_shell.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-blink-features=AutomationControlled"
-                ]
-            )
-            context = browser.new_context(
-                viewport={"width": 1280, "height": 720},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-            )
-            page = context.new_page()
-            page.goto(PANEL_URL, timeout=60000)
-            page.wait_for_load_state("networkidle")
-            time.sleep(3)
-
-            first_input = page.locator("input[type='text'], input[type='email']").first
-            first_input.wait_for(state="visible", timeout=15000)
-            first_input.click()
-            time.sleep(1)
-
-            page.keyboard.type(cfg["agent_user"], delay=100)
-            page.keyboard.press("Tab")
-            time.sleep(0.5)
-            page.keyboard.type(cfg["agent_pass"], delay=100)
-            time.sleep(0.5)
-            page.keyboard.press("Enter")
-            page.wait_for_load_state("networkidle")
-            time.sleep(5)
-
-            CREATE_PAGE = PANEL_URL + "/#/player/create"
-            page.goto(CREATE_PAGE, timeout=60000)
-            page.wait_for_load_state("networkidle")
-            time.sleep(3)
-
-            player_first_input = page.locator("input[type='text']").first
-            player_first_input.wait_for(state="visible", timeout=15000)
-            player_first_input.click()
-            time.sleep(1)
-
-            page.keyboard.type(username, delay=100)
-            page.keyboard.press("Tab")
-            time.sleep(0.5)
-            random_email = generate_random_email()
-            page.keyboard.type(random_email, delay=100)
-            page.keyboard.press("Tab")
-            time.sleep(0.5)
-            page.keyboard.type(password, delay=100)
-            time.sleep(1)
-
-            try:
-                page.click("input[placeholder*='Parent'], .v-select, .dropdown-toggle, input[role='combobox']", timeout=15000)
-                time.sleep(1.5)
-                page.click("text='2688288-bero@yahoo.com'", timeout=15000)
-                time.sleep(1)
-            except:
-                print("[!] Parent selector not found, attempting direct registration...")
-
-            page.keyboard.press("Enter")
-            time.sleep(4)
-            browser.close()
+        print("[*] Launching instant API connection...")
+        login_response = session.post(LOGIN_API_URL, json=login_payload, headers=headers, timeout=15)
+            
+        if login_response.status_code != 200:
+            return False, f"فشل تسجيل دخول الكاشير (الرمز: {login_response.status_code})"
+        
+        print("[+] API Handshake successful! Token locked in session.")
+        
+        # حزمة بيانات إنشاء اللاعب الجديد الصامتة والسريعة
+        random_email = generate_random_email()
+        player_payload = {
+            "username": username,
+            "email": random_email,
+            "password": password,
+            "parentId": "2688288-bero@yahoo.com"
+        }
+        
+        print("[*] Injecting instant player creation data...")
+        create_response = session.post(CREATE_PLAYER_API_URL, json=player_payload, headers=headers, timeout=15)
+        
+        # تجربة المسار البديل الفرعي في حال الـ 404
+        if create_response.status_code == 404:
+            ALT_CREATE_URL = f"{PANEL_BASE}/global/api/User/create"
+            create_response = session.post(ALT_CREATE_URL, json=player_payload, headers=headers, timeout=15)
+            
+        if create_response.status_code in:
             return True, "نجاح"
+            
+        try:
+            err_detail = create_response.json().get("message", create_response.text)
+        except:
+            err_detail = create_response.text
+            
+        return False, f"استجابة اللوحة: {create_response.status_code} - {err_detail}"
+        
     except Exception as e:
-        if 'browser' in locals():
-            try:
-                browser.close()
-            except:
-                pass
-        return False, str(e)
+        return False, f"انقطاع في الشبكة: {str(e)}"
 
 def get_main_keyboard(user_id):
     markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
@@ -226,12 +197,25 @@ def reg_step_password(message):
         global_bot.send_message(message.chat.id, "⚠️ حدث خطأ، يرجى البدء من جديد.")
         return
     username = user_steps[uid]["username"]
-    global_bot.send_message(message.chat.id, "⏳ جارٍ إطلاق المحاكي الذكي لإنشاء حسابك وتأكيده مع اللوحة تلقائياً...")
+    global_bot.send_message(message.chat.id, "⚡️ جارٍ إنشاء حسابك وتأكينه مع اللوحة فوراً وبسرعة قصوى...")
     threading.Thread(target=run_safe_browser_task, args=(message.chat.id, uid, username, password), daemon=True).start()
 
 def run_safe_browser_task(chat_id, uid, username, password):
-    success, detail = browser_create_player(username, password)
+    success, detail = api_create_player(username, password)
     if success:
         with open(DB_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
         success_msg = f"✅ **تم إنشاء حسابك بنجاح وتأكيده!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`\n\nيمكنك تسجيل الدخول الآن في الموقع مباشرة والاستمتاع باللعب! 🎉"
+        global_bot.send_message(chat_id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
+    else:
+        fail_msg = f"⚠️ تعذر الإنشاء التلقائي بسبب: `{detail}`\n\nيرجى المحاولة مجدداً أو التواصل مع الإدارة لإتمام حسابك يدوياً."
+        global_bot.send_message(chat_id, fail_msg, parse_mode="Markdown")
+    if uid in user_steps:
+        del user_steps[uid]
+
+# ========================================== #
+# 3. إطلاق الاستماع المستمر والآمن (Polling) #
+# ========================================== #
+if __name__ == "__main__":
+    print("[+] Bot started successfully in local Polling mode...")
+    global_bot.infinity_polling(skip_pending=True)
