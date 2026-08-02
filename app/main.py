@@ -95,7 +95,7 @@ def api_create_player(username, password):
             "parentId": "2688288-bero@yahoo.com"
         }
         
-        print("[*] Injecting instant player creation data...")
+        print("[*] Sending player creation data packet...")
         create_response = session.post(CREATE_PLAYER_API_URL, json=player_payload, headers=headers, timeout=15)
         
         # تجربة المسار البديل الفرعي في حال الـ 404
@@ -103,8 +103,8 @@ def api_create_player(username, password):
             ALT_CREATE_URL = f"{PANEL_BASE}/global/api/User/create"
             create_response = session.post(ALT_CREATE_URL, json=player_payload, headers=headers, timeout=15)
             
-        # تم إصلاح السطر 106 هنا ليتحقق من الأكواد القياسية للنجاح بشكل سليم
-        if create_response.status_code in:
+        # استخدام الشرط المباشر الموثوق وصيانتة بالكامل لمنع الـ SyntaxError
+        if create_response.status_code == 200 or create_response.status_code == 201:
             return True, "نجاح"
             
         try:
@@ -198,7 +198,7 @@ def reg_step_password(message):
         global_bot.send_message(message.chat.id, "⚠️ حدث خطأ، يرجى البدء من جديد.")
         return
     username = user_steps[uid]["username"]
-    global_bot.send_message(message.chat.id, "⚡️ جارٍ إنشاء حسابك وتأمينه مع اللوحة فوراً وبسرعة قصوى...")
+    global_bot.send_message(message.chat.id, "⚡️ جارٍ إنشاء حسابك وتأكينه مع اللوحة فوراً وبسرعة قصوى...")
     threading.Thread(target=run_safe_browser_task, args=(message.chat.id, uid, username, password), daemon=True).start()
 
 def run_safe_browser_task(chat_id, uid, username, password):
