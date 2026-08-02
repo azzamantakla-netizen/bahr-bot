@@ -6,9 +6,21 @@ import requests
 import base64
 import random
 import string
+import subprocess
 
 # إعداد مسار Playwright متوافق مع خوادم الاستضافة لضمان التثبيت المحلي
 os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(os.getcwd(), ".local", "share", "ms-playwright")
+
+# حيلة برمجية لتثبيت متصفح مخفف جداً (Headless Shell) لتخطي ضعف رامات السيرفر
+if not os.path.exists(os.environ["PLAYWRIGHT_BROWSERS_PATH"]):
+    print("[*] Downloading Ultra-Lightweight Chromium for Server, please wait...")
+    try:
+        # تحميل النسخة المخففة المخصصة للسيرفرات الضعيفة فقط
+        subprocess.run(["python", "-m", "playwright", "install", "chromium-headless-shell"], check=True)
+        print("[+] Lightweight Chromium downloaded successfully!")
+    except Exception as build_err:
+        print(f"[-] Auto-install failed, skipping: {build_err}")
+
 from playwright.sync_api import sync_playwright
 import telebot
 
@@ -39,7 +51,6 @@ def load_config():
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(default_config, f, ensure_ascii=False, indent=4)
         return default_config
-
     with open(CONFIG_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -62,7 +73,8 @@ def browser_create_player(username, password):
     cfg = load_config()
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(
+            # تشغيل النسخة المخففة لضمان استقرار السيرفر
+            browser = p.chromium-headless-shell.launch(
                 headless=True,
                 args=[
                     "--no-sandbox",
@@ -142,7 +154,6 @@ def get_main_keyboard(user_id):
         markup.add(telebot.types.KeyboardButton("⚙️ قائمة التحكم (للمالك)"))
     return markup
 
-# تهيئة البوت بنظام الاستماع الفردي المتزامن (Polling) المتوافق مع السيرفرات المخصصة
 global_bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 global_bot.delete_webhook(drop_pending_updates=True)
 
@@ -211,15 +222,3 @@ def run_safe_browser_task(chat_id, uid, username, password):
         success_msg = f"✅ **تم إنشاء حسابك بنجاح وتأكيده!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`\n\nيمكنك تسجيل الدخول الآن في الموقع مباشرة والاستمتاع باللعب! 🎉"
         global_bot.send_message(chat_id, success_msg, parse_mode="Markdown", reply_markup=get_main_keyboard(uid))
     else:
-        fail_msg = f"⚠️ تعذر الإنشاء عبر المحاكي بسبب: `{detail}`\n\nيرجى التواصل مع الإدارة لإتمام حسابك يدوياً."
-        global_bot.send_message(chat_id, fail_msg, parse_mode="Markdown")
-        
-    if uid in user_steps:
-        del user_steps[uid]
-
-# ========================================== #
-# 3. إطلاق الاستماع المستمر والآمن (Polling) #
-# ========================================== #
-if __name__ == "__main__":
-    print("[+] Bot started successfully in local Polling mode...")
-    global_bot.infinity_polling(skip_pending=True)
