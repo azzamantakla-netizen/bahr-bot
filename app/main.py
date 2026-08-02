@@ -166,8 +166,9 @@ def start_cmd(message):
 def core_menu(message):
     uid = message.from_user.id
     chat_id = message.chat.id
+    text = message.text
     
-    if message.text == "👤 حسابي":
+    if text == "👤 حسابي":
         player_found = None
         if os.path.exists(DB_FILE):
             with open(DB_FILE, "r", encoding="utf-8") as f:
@@ -185,11 +186,11 @@ def core_menu(message):
             markup.add(telebot.types.InlineKeyboardButton("👤 إنشاء حساب جديد", callback_data="start_reg"))
             global_bot.send_message(chat_id, "⚠️ لا يوجد حساب مرتبط بك حالياً. اضغط على الزر لإنشاء حساب فوراً.", reply_markup=markup)
             
-    elif message.text == "📥 إيداع / شحن رصيد":
+    elif text == "📥 إيداع / شحن رصيد":
         global_bot.send_message(chat_id, "📥 خيارات الشحن (سيرياتيل كاش / شام كاش) قيد التفعيل التلقائي الآن.")
-    elif message.text == "📩 سحب رصيد":
+    elif text == "📩 سحب رصيد":
         global_bot.send_message(chat_id, "📩 خيارات السحب قيد التفعيل التلقائي الآن.")
-    elif message.text == "📞 الدعم الفني":
+    elif text == "📞 الدعم الفني":
         global_bot.send_message(chat_id, "📞 فريق الدعم متواجد لخدمتكم، تفضل بطرح استفسارك وسيصل للإدارة.")
 
 @global_bot.callback_query_handler(func=lambda call: call.data == "start_reg")
