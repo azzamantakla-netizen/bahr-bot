@@ -74,7 +74,7 @@ def browser_create_player(username, password):
     try:
         with sync_playwright() as p:
             # تشغيل النسخة المخففة لضمان استقرار السيرفر
-            browser = p.chromium-headless-shell.launch(
+            browser = p.chromium_headless_shell.launch(
                 headless=True,
                 args=[
                     "--no-sandbox",
