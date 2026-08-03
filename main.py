@@ -18,13 +18,13 @@ def home():
     return "🚀 BOT IS LIVE AND RUNNING 24/7"
 
 def run_flask():
-    # Render يفرض قراءة المنفذ ديناميكياً عبر المتغير PORT
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
 # ========================================== #
 # 2. إعداد مفاتيح وبوابات الـ API الموثقة    #
 # ========================================== #
+# 🌟 حقن التوكن الجديد الصافي والمطهر كلياً لعام 2026
 BOT_TOKEN = "8624354425:AAEsyz52w-VgqDhEeLiitYFrCae81A3DFzs"
 OWNER_ID = 6693251012
 CONFIG_FILE = "config.json"
@@ -82,13 +82,12 @@ def token_refresher_loop():
     time.sleep(5)
     agent_sign_in()
     while True:
-        time.sleep(2700) # التحديث التلقائي الصامت كل 45 دقيقة
+        time.sleep(2700)
         agent_refresh_token()
 
 def api_register_player(username, password):
     global access_token
     if not access_token: agent_sign_in()
-    # حقن ترويسات أمان معتمدة وعالمية تمر عبر جدران الحماية كالسهم
     headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     time.sleep(random.uniform(1.5, 3.5))
     email = "".join(random.choices(string.ascii_lowercase + string.digits, k=10)) + "@gmail.com"
@@ -183,7 +182,6 @@ def run_safe_api_task(chat_id, uid, username, password):
     if uid in user_steps: del user_steps[uid]
 
 if __name__ == "__main__":
-    # تشغيل خادم ويب Flask في خيط مستقل لإرضاء متطلبات Render والمنع من النوم
     threading.Thread(target=run_flask, daemon=True).start()
     print("[+] إطلاق نظام الأتمتة السحابي والـ Web Service على سيرفر Render...", flush=True)
     threading.Thread(target=token_refresher_loop, daemon=True).start()
