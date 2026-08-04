@@ -21,7 +21,7 @@ REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
 RENDER_URL = "https://onrender.com"
 
-# 🌟 حساب الوكيل الخاص بك مدمج وموثق للأتمتة الذاتية
+# حساب الوكيل الخاص بك مدمج وموثق للأتمتة الذاتية
 AGENT_USERNAME = "Bero@yahoo.com"
 AGENT_PASSWORD = "Aazzam@318"
 
@@ -114,7 +114,7 @@ def api_register_player(username, password, retry=True):
 
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Origin": PANEL_BASE,
             "Referer": f"{PANEL_BASE}/global/agent/User/index",
             "Accept": "application/json, text/plain, */*",
