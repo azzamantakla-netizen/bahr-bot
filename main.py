@@ -15,7 +15,6 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    # كسر صمت ريندر فوراً وإرسال الرمز 200 لتخطي الدائرة التي تدور حياً
     return "🚀 BOT IS LIVE AND RUNNING 24/7"
 
 def run_flask():
@@ -25,7 +24,8 @@ def run_flask():
 # ========================================== #
 # 2. إعداد مفاتيح وبوابات الـ API الموثقة    #
 # ========================================== #
-BOT_TOKEN = "8624354425:AAEsyz52w-VgqDhEeLiitYFrCae81A3DFzs"
+# 🌟 حقن التوكن الجديد والبكر الصافي تماماً لمنع الـ 409
+BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
 DB_FILE = "players_db.txt"
 
@@ -133,7 +133,7 @@ def core_menu(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text
     if text == "👤 حسابي": check_my_account(chat_id, uid); return
     if text == "📥 إيداع / شحن رصيد": global_bot.send_message(chat_id, "📥 خيارات الشحن التلقائي قيد التفعيل بالـ API."); return
-    if text == "📩 سحب رصيد": global_bot.send_message(chat_id, "📩 خيارات السحب التلقائي قيد التفعيل بالـ API."); return
+    if text == "📩 سحب رصيد": global_bot.send_message(chat_id, "📩 خيارات السحب قيد التفعيل بالـ API."); return
     if text == "📞 الدعم الفني": global_bot.send_message(chat_id, "📞 فريق الدعم متواجد لخدمتكم دائماً."); return
 
 @global_bot.callback_query_handler(func=lambda call: True)
@@ -166,15 +166,11 @@ def run_safe_api_task(chat_id, uid, username, password):
     if uid in user_steps: del user_steps[uid]
 
 def run_bot_polling():
-    # تشغيل محرك تليجرام في قناة خلفية مستقلة تماماً لمنع قفل السيرفر
     print("[+] إطلاق قناة الاستماع الحية للبوت بالخلفية...", flush=True)
     global_bot.infinity_polling(skip_pending=True)
 
 if __name__ == "__main__":
     print("[+] إطلاق نظام الأتمتة السحابي والـ Web Service على سيرفر Render...", flush=True)
-    # 1. إقلاع محرك التجديد الصامت للتوكنات
     threading.Thread(target=token_refresher_loop, daemon=True).start()
-    # 2. إقلاع محرك تليجرام في خيط مستقل بالخلفية لعدم خنق المعالج
     threading.Thread(target=run_bot_polling, daemon=True).start()
-    # 3. تشغيل الـ Flask بالخيط الرئيسي ليرد فوراً على سيرفر ريندر بالرمز 200 وسحق الدائرة
     run_flask()
