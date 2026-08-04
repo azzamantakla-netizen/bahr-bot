@@ -10,8 +10,8 @@ import requests
 
 BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
+DB_FILE = "players_db.txt"
 
-# بوابات الـ API الرسمية والموثقة بحسب صفحات ملف الـ PDF
 PANEL_BASE = "https://texas4win.com"
 SIGNIN_API_URL = f"{PANEL_BASE}/global/api/UserApi/signIn"
 REFRESH_TOKEN_API_URL = f"{PANEL_BASE}/global/api/UserApi/refreshToken"
@@ -19,11 +19,9 @@ REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
 RENDER_URL = "https://onrender.com"
 
-# حساب الوكيل الرسمي الخاص بك
 AGENT_USERNAME = "Bero@yahoo.com"
 AGENT_PASSWORD = "Aazzam@318"
 
-# ذاكرة حفظ الرموز والخطوات الديناميكية
 access_token = ""
 refresh_token = ""
 user_steps = {}
@@ -31,7 +29,6 @@ user_steps = {}
 global_bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
 
-# --- دالة تسجيل الدخول الرسمي عبر الـ API لجلب الـ Tokens (صورة 10) ---
 def api_agent_signin():
     global access_token, refresh_token
     print("[🔄] جاري طلب تسجيل دخول الوكيل الرسمي عبر بوابة الـ API...", flush=True)
@@ -47,19 +44,17 @@ def api_agent_signin():
                 refresh_token = res_data["result"].get("refreshToken")
                 print("[✅] نجاح تسجيل الدخول الرسمي واستلام مفاتيح العبور السحابية!", flush=True)
                 return True
-        print(f"[❌] فشل الدخول عبر الـ API، الرمز: {res.status_code} - الرد: {res.text[:100]}", flush=True)
+        print(f"[❌] فشل الدخول عبر الـ API، الرمز: {res.status_code}", flush=True)
         return False
     except Exception as e:
         print(f"[❌] خطأ أثناء الاتصال ببوابة تسجيل الدخول: {e}", flush=True)
         return False
 
-# --- دالة تحديث الرموز تلقائياً عند انتهاء صلاحيتها بعد ساعة (صورة 2) ---
 def api_refresh_access_token():
     global access_token, refresh_token
-    print("[🔄] جاري تحديث الرمز المؤقت تلقائياً باستخدام Refresh Token...", flush=True)
+    print("[🔄] جاري تحديث الرمز المؤقت تلقائياً...", flush=True)
     if not refresh_token:
         return api_agent_signin()
-        
     try:
         headers = {"Content-Type": "application/json"}
         payload = {"refreshToken": refresh_token}
@@ -70,15 +65,13 @@ def api_refresh_access_token():
             if res_data.get("status") is True and "result" in res_data:
                 access_token = res_data["result"].get("accessToken")
                 refresh_token = res_data["result"].get("refreshToken")
-                print("[✅] تم تدوير وتحديث رموز الأمان بنجاح قطعي!", flush=True)
+                print("[✅] تم تدوير وتحديث رموز الأمان بنجاح!", flush=True)
                 return True
-        print("[⚠️] الـ Refresh Token انتهت صلاحيته (7 أيام)، جاري تجديد الجلسة بالكامل...", flush=True)
         return api_agent_signin()
     except Exception as e:
         print(f"[❌] خطأ أثناء تحديث الرمز: {e}", flush=True)
         return False
 
-# --- مسار استقبال الرسائل الآمن عبر توكن البوت لـ Render ---
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
@@ -92,47 +85,34 @@ def webhook():
 def home():
     return "🚀 BOT IS LIVE AND RUNNING 24/7 (OFFICIAL API MODE)"
 
-# --- دالة إنشاء حساب اللاعب الرسمي باستخدام الـ Bearer Token ---
 def api_register_player(username, password, retry=True):
     global access_token
     if not access_token:
         api_agent_signin()
-        
     try:
-        # بناء الهيدرز الرسمي الموثق بحمل المفتاح المشفر
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {access_token}"
         }
-
         email = "".join(random.choices(string.ascii_lowercase + string.digits, k=10)) + "@gmail.com"
         payload = {"player": {"email": email, "password": password, "parentId": "2627036", "login": username}}
 
         print(f"[🚀] قذف طلب إنشاء اللاعب عبر الـ API الرسمي: {username}", flush=True)
         res = requests.post(REGISTER_PLAYER_API_URL, json=payload, headers=headers, timeout=15)
         
-        # 🌟 معالجة انتهاء الرمز التلقائي (إذا انتهت الساعة يجدد آلياً ويعيد المحاولة) بحسب الصفحة 10
         if res.status_code == 200:
             res_data = res.json()
             if res_data.get("result") == "ex" and retry:
-                print("[⚠️] تم كشف انتهاء صلاحية الـ Access Token، جاري التحديث الفوري...", flush=True)
                 if api_refresh_access_token():
                     return api_register_player(username, password, retry=False)
-                    
             if res_data.get("status") is True and (res_data.get("result") == 1 or res_data.get("result") is True):
                 return True, "نجاح"
-                
-            # جلب محتوى رسالة الخطأ الرسمية المرجعة من نظام اللوحة
-            msg = res_data.get("notification", {}).get("content", "خطأ غير معروف في البيانات")
+            msg = res_data.get("notification", {}).get("content", "خطأ في بيانات الإنشاء")
             return False, msg
-            
         return False, f"استجابة سيرفر اللوحة بالرمز: {res.status_code}"
     except Exception as e:
         return False, str(e)
 
-# ========================================== #
-# 3. محرك تليجرام وقوائم التحكم والحالات #
-# ========================================== #
 @global_bot.message_handler(commands=['start'])
 def start_cmd(message):
     uid = message.from_user.id
@@ -141,9 +121,8 @@ def start_cmd(message):
     markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     markup.add(telebot.types.KeyboardButton("👤 حسابي"))
     markup.add(telebot.types.KeyboardButton("📩 سحب رصيد"), telebot.types.KeyboardButton("📥 إيداع / شحن رصيد"))
+    markup.add(telebot.types.KeyboardButton("⚙️ تجديد مفاتيح الـ API (للمالك)"))
     markup.add(telebot.types.KeyboardButton("📞 الدعم الفني"))
-    if uid == OWNER_ID:
-        markup.add(telebot.types.KeyboardButton("⚙️ تجديد مفاتيح الـ API (للمالك)"))
     global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية الرسمية المحدثة بالملي! 🎉", reply_markup=markup)
 
 @global_bot.callback_query_handler(func=lambda call: True)
@@ -169,7 +148,6 @@ def core_menu_and_states(message):
             del user_steps[uid]
             global_bot.send_message(chat_id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة عبر البوابة الرسمية...")
             
-            # تنفيذ فوري ومستقر على الخيط الرئيسي لمنع التجميد كلياً
             success, detail = api_register_player(username, password)
             if success:
                 try:
@@ -214,6 +192,9 @@ def start_webhook_setup():
         time.sleep(1)
         webhook_url = f"{RENDER_URL}/{BOT_TOKEN}"
         global_bot.set_webhook(url=webhook_url, drop_pending_updates=True)
-        print("[✅] تم تهيئة واستقرار النظام بالملي مع تليجرام وبدء محرك الـ API الرسمي!", flush=True)
-        
-        # تشغيل أول اتصال رسمي آلي لجلب التوكن عند الإقلاع
+        print("[✅] تم تهيئة واستقرار النظام بالملي مع تليجرام!", flush=True)
+        threading.Thread(target=api_agent_signin, daemon=True).start()
+    except Exception as e:
+        print(f"[❌] فشل تهيئة الـ Webhook: {e}", flush=True)
+
+threading.Thread(target=start_webhook_setup, daemon=True).start()
