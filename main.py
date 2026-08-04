@@ -37,13 +37,11 @@ app = Flask(__name__)
 def refresh_agent_session():
     global user_cookies
     print("[🔄] جاري تجديد جلسة الوكيل وتوليد كوكيز جديدة تلقائياً...", flush=True)
-    
     try:
         session = tls_client.Session(
             client_identifier="chrome112",
             random_tls_extension_order=True
         )
-        
         # خطوة 1: محاكاة زيارة صفحة الدخول أولاً كمتصفح حقيقي لجلب رموز الأمان المبدئية
         init_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -62,21 +60,17 @@ def refresh_agent_session():
             "Accept": "application/json, text/plain, */*",
             "X-Requested-With": "XMLHttpRequest"
         }
-        
         payload = {"login": AGENT_USERNAME, "password": AGENT_PASSWORD, "languageCode": "ar"}
         res = session.post(LOGIN_API_URL, json=payload, headers=headers, timeout_seconds=15)
-        
         print(f"[🔬] رد اللوحة المباشر على تسجيل الدخول: الرمز {res.status_code}", flush=True)
         
         if res.status_code == 200:
             cookies_list = []
             for key, val in res.cookies.items():
                 cookies_list.append(f"{key}={val}")
-            
             if "languageCode" not in res.cookies:
                 cookies_list.append("languageCode=ar")
                 cookies_list.append("language=ar")
-                
             user_cookies = "; ".join(cookies_list)
             print(f"[✅] تم استخراج وتحديث كوكيز الجلسة بنجاح: {user_cookies[:35]}...", flush=True)
             return True
@@ -104,16 +98,13 @@ def home():
 # --- دالة الاتصال باللوحة عبر محاكي المتصفح الكاسر للـ 403 ---
 def api_register_player(username, password, retry=True):
     global user_cookies
-    
     if not user_cookies:
         refresh_agent_session()
-        
     try:
         session = tls_client.Session(
             client_identifier="chrome112",
             random_tls_extension_order=True
         )
-        
         cookie_dict = {}
         if user_cookies:
             for item in user_cookies.split(";"):
@@ -151,7 +142,6 @@ def api_register_player(username, password, retry=True):
                 return False, res_data.get("notification", {}).get("content", "فشل")
             except:
                 return False, "فشل فك حزمة الـ JSON العكسية."
-                
         return False, f"رمز خطأ الاستجابة {res.status_code} - تفاصيل: {res.text[:50]}"
     except Exception as e:
         return False, str(e)
@@ -164,7 +154,6 @@ def start_cmd(message):
     uid = message.from_user.id
     if uid in user_steps:
         del user_steps[uid]
-        
     markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     markup.add(telebot.types.KeyboardButton("👤 حسابي"))
     markup.add(telebot.types.KeyboardButton("📩 سحب رصيد"), telebot.types.KeyboardButton("📥 إيداع / شحن رصيد"))
@@ -224,5 +213,5 @@ def core_menu_and_states(message):
 def run_safe_api_task(chat_id, uid, username, password):
     success, detail = api_register_player(username, password)
     if success:
-        # 🌟 تم إصلاح وضبط المسافات البادئة لكتلة الـ with open وما بعدها بالملي هنا لمنع الخطأ
-        with open(DB_FILE, "a", encoding="utf-8") as f:
+        # 🌟 إصلاح قطعي ومقاوم للمسافات البادئة: الكتابة المباشرة المكونة من سطرين مستقلين تماماً لمنع تعليق معالج ريندر
+        log_line = json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n"
