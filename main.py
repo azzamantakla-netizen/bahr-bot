@@ -22,7 +22,6 @@ RENDER_URL = "https://onrender.com"
 AGENT_USERNAME = "Bero@yahoo.com"
 AGENT_PASSWORD = "Aazzam@318"
 
-# سطر الكوكيز الافتراضي
 user_cookies = "languageCode=ar; language=ar"
 user_steps = {}
 
@@ -82,7 +81,6 @@ def home():
 def api_register_player(username, password, retry=True):
     global user_cookies
     try:
-        # ترقية جيل البصمة لتوافق الهيدرز بالملي وتخطي تجميد Cloudflare
         session = tls_client.Session(client_identifier="chrome_120", random_tls_extension_order=True)
         cookie_dict = {}
         if user_cookies:
@@ -104,13 +102,10 @@ def api_register_player(username, password, retry=True):
         payload = {"player": {"email": email, "password": password, "parentId": "2627036", "login": username}}
 
         print(f"[🚀] قذف حزمة إنشاء اللاعب: {username}", flush=True)
-        
-        # 🌟 تقليص زمن الانتظار لـ 8 ثوانٍ فقط لمنع الوقوف نهائياً والكسر التلقائي إذا علق الطلب في جدار الحماية
         res = session.post(REGISTER_PLAYER_API_URL, json=payload, headers=headers, cookies=cookie_dict, timeout_seconds=8)
         print(f"[🔬] رد لوحة إنشاء الحساب العكسي: الرمز {res.status_code}", flush=True)
 
         if res.status_code == 403 and retry:
-            print("[⚠️] الكوكيز بحاجة لتحديث، جاري محاولة التجديد التلقائي لمرة واحدة...", flush=True)
             if refresh_agent_session():
                 return api_register_player(username, password, retry=False)
         
@@ -125,8 +120,7 @@ def api_register_player(username, password, retry=True):
                 
         return False, f"رد اللوحة بالرمز {res.status_code}"
     except Exception as e:
-        # إذا حدث كسر للاتصال بسبب انتهاء الـ 8 ثوانٍ سيعود الخطأ هنا فوراً للبوت بدون تعليق
-        return False, f"انتهت مهلة الاتصال باللوحة (جدار حماية Cloudflare معلق أو كوكيز تالفة). تفاصيل: {str(e)}"
+        return False, f"انتهت مهلة الاتصال باللوحة أو الكوكيز منتهية. تفاصيل: {str(e)}"
 
 @global_bot.message_handler(commands=['start'])
 def start_cmd(message):
@@ -163,8 +157,22 @@ def core_menu_and_states(message):
             password = text
             del user_steps[uid]
             global_bot.send_message(chat_id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة...")
-            threading.Thread(target=run_safe_api_task, args=(chat_id, username, password), daemon=True).start()
+            
+            # 🌟 تم إلغاء الـ Threading هنا وتشغيل المهمة مباشرة لكسر التعليق وضمان تدفق الرد الفوري لتليجرام!
+            success, detail = api_register_player(username, password)
+            if success:
+                try:
+                    log_line = json.dumps({"login": username, "password": password}, ensure_ascii=False) + "\n"
+                    f = open(DB_FILE, "a", encoding="utf-8")
+                    f.write(log_line)
+                    f.close()
+                except:
+                    pass
+                global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
+            else:
+                global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء الآلي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
             return
+            
         if current_state == "WAITING_COOKIES" and uid == OWNER_ID:
             global user_cookies
             user_cookies = text
@@ -192,20 +200,6 @@ def core_menu_and_states(message):
         global_bot.send_message(chat_id, "📞 فريق الدعم متواجد لخدمتكم دائماً.")
         return
 
-def run_safe_api_task(chat_id, username, password):
-    success, detail = api_register_player(username, password)
-    if success:
-        try:
-            log_line = json.dumps({"login": username, "password": password}, ensure_ascii=False) + "\n"
-            f = open(DB_FILE, "a", encoding="utf-8")
-            f.write(log_line)
-            f.close()
-        except:
-            pass
-        global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
-    else:
-        global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء الآلي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
-
 def start_webhook_setup():
     time.sleep(3)  
     try:
@@ -218,3 +212,4 @@ def start_webhook_setup():
     except Exception as e:
         print(f"[❌] فشل تهيئة الـ Webhook: {e}", flush=True)
 
+threading.Thread(target=start_webhook_setup, daemon=True).start()
