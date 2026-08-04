@@ -24,17 +24,17 @@ def run_flask():
 # ========================================== #
 # 2. إعداد مفاتيح وبوابات الـ API الموثقة    #
 # ========================================== #
-# 🌟 حقن التوكن الجديد والبكر الصافي تماماً لمنع الـ 409
 BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
 DB_FILE = "players_db.txt"
 
-PANEL_BASE = "https://texas4win.com"
+# 🌟 تعديل مسار السيرفر الأساسي وضبط النطاق الداخلي الحقيقي للوحة عُمير
+PANEL_BASE = "https://springbuilder.org"
 SIGNIN_API_URL = f"{PANEL_BASE}/global/api/UserApi/signIn"
 REFRESH_API_URL = f"{PANEL_BASE}/global/api/UserApi/refreshToken"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-AGENT_USER = "Bero@yahoo.com"
+AGENT_USER = "bero@yahoo.com"
 AGENT_PASS = "Aazzam@318"
 
 access_token = None
@@ -45,19 +45,23 @@ user_steps = {}
 def agent_sign_in():
     global access_token, refresh_token
     payload = {"username": AGENT_USER, "password": AGENT_PASS}
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
     try:
-        print("[*] ضرب بوابة تسجيل الدخول الرسمية عبر سيرفر ريندر الموثق...", flush=True)
-        res = requests.post(SIGNIN_API_URL, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+        print("[*] ضرب البوابة الحقيقية والداخلية للسيرفر الخلفي الموثق...", flush=True)
+        res = requests.post(SIGNIN_API_URL, json=payload, headers=headers, timeout=15)
         if res.status_code == 200 and res.json().get("status") is True:
             with token_lock:
                 access_token = res.json()["result"].get("accessToken")
                 refresh_token = res.json()["result"].get("refreshToken")
-            print("[✅] تم انتزاع التوكن بنجاح وسحق جدار الحماية الخارجي!", flush=True)
+            print("[✅] تم انتزاع التوكن بنجاح خارق من السيرفر الداخلي للوحة!", flush=True)
             return True
-        print(f"[❌] رفض السيرفر الخلفي للوحة الدخول، الرمز: {res.status_code}", flush=True)
+        print(f"[❌] الرد من النطاق الحقيقي: الرمز {res.status_code} - المحتوى: {res.text[:100]}", flush=True)
         return False
     except Exception as e:
-        print(f"[❌] عطل اتصال بين ريندر واللوحة: {e}", flush=True)
+        print(f"[❌] عطل اتصال بالسيرفر الداخلي: {e}", flush=True)
         return False
 
 def agent_refresh_token():
@@ -108,7 +112,7 @@ def start_cmd(message):
     markup.add(telebot.types.KeyboardButton("👤 حسابي"))
     markup.add(telebot.types.KeyboardButton("📩 سحب رصيد"), telebot.types.KeyboardButton("📥 إيداع / شحن رصيد"))
     markup.add(telebot.types.KeyboardButton("📞 الدعم الفني"))
-    global_bot.send_message(message.chat.id, "👋 مرحباً بك في عائلتنا الموثقة عبر السحاب بالـ API الرسمي! 🎉\n\nتفضل بالاختيار من القائمة أدناه بحسب طلبك:", reply_markup=markup)
+    global_bot.send_message(message.chat.id, "👋 مرحباً بك في عائلتنا الموثقة عبر السحاب بالـ API الرسمي والداخلي! 🎉\n\nتفضل بالاختيار من القائمة أدناه بحسب طلبك:", reply_markup=markup)
 
 def check_my_account(chat_id, uid):
     if not os.path.exists(DB_FILE):
@@ -160,7 +164,7 @@ def run_safe_api_task(chat_id, uid, username, password):
     success, detail = api_register_player(username, password)
     if success:
         with open(DB_FILE, "a", encoding="utf-8") as f: f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
-        global_bot.send_message(chat_id, f"✅ **تم إنشاء حسابك بنجاح وبصلاحية المطورين!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
+        global_bot.send_message(chat_id, f"✅ **تم إنشاء حسابك بنجاح وبصلاحية المطورين الداعمة!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
     else:
         global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء التلقائي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
     if uid in user_steps: del user_steps[uid]
