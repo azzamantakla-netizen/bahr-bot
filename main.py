@@ -81,13 +81,17 @@ def refresh_agent_session():
         print(f"[❌] خطأ أثناء تجديد الجلسة: {e}", flush=True)
         return False
 
-# --- مسار استقبال الرسائل الآمن عبر توكن البوت ---
+# --- مسار استقبال الرسائل الآمن عبر توكن البوت (تعديل جذري لفك تجميد المعالجة) ---
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
-        global_bot.process_new_updates([update])
+        
+        # 🌟 الاستدعاء داخل حلقة المعالجة الآمنة لـ Flask لمنع التجميد وصمت الأزرار
+        with app.app_context():
+            global_bot.process_new_updates([update])
+            
         return 'OK', 200
     return 'Forbidden', 403
 
@@ -213,5 +217,4 @@ def core_menu_and_states(message):
 def run_safe_api_task(chat_id, uid, username, password):
     success, detail = api_register_player(username, password)
     if success:
-        # 🌟 إصلاح قطعي ومقاوم للمسافات البادئة: الكتابة المباشرة المكونة من سطرين مستقلين تماماً لمنع تعليق معالج ريندر
         log_line = json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n"
