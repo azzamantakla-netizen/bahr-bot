@@ -24,8 +24,10 @@ def run_flask():
 # ========================================== #
 # 2. إعداد مفاتيح وبوابات الـ API الموثقة    #
 # ========================================== #
+# 🌟 حقن التوكن الجديد الصافي والمطهر كلياً لعام 2026
 BOT_TOKEN = "8624354425:AAEsyz52w-VgqDhEeLiitYFrCae81A3DFzs"
 OWNER_ID = 6693251012
+CONFIG_FILE = "config.json"
 DB_FILE = "players_db.txt"
 
 PANEL_BASE = "https://texas4win.com"
@@ -33,29 +35,31 @@ SIGNIN_API_URL = f"{PANEL_BASE}/global/api/UserApi/signIn"
 REFRESH_API_URL = f"{PANEL_BASE}/global/api/UserApi/refreshToken"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-# 🌟 صب المتة بروقان وتأكد بالملي من صحة هذه الحسابات الرسمية لعمير حياً باللوحة:
-AGENT_USER = "Bero@yahoo.com"
-AGENT_PASS = "Aazzam@318"
-
 access_token = None
 refresh_token = None
 token_lock = threading.Lock()
 user_steps = {}
 
+def load_config():
+    if not os.path.exists(CONFIG_FILE):
+        cfg = {"agent_user": "Bero@yahoo.com", "agent_pass": "Aazzam@318", "welcome_msg": "👋 مرحباً بك في عائلتنا!\n\n⚙️ صُمم هذا البوت باحترافية عالية ليمنحك تجربة فريدة من نوعها، حيث يضمن لك:\n⚡️ سرعة قصوى في عمليات الإيداع.\n🔄 مرونة وأمان فائق في السحب.\n\n🎛 تفضل بالاختيار من القائمة أدناه بحسب الزر الذي يلبي طلبك:", "is_active": True}
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f: json.dump(cfg, f, ensure_ascii=False, indent=4)
+        return cfg
+    with open(CONFIG_FILE, "r", encoding="utf-8") as f: return json.load(f)
+
 def agent_sign_in():
     global access_token, refresh_token
-    # حقن صارم ومباشر بدون قراءة ملفات قديمة ميتة من السيرفر
-    payload = {"username": AGENT_USER, "password": AGENT_PASS}
+    cfg = load_config()
     try:
         print("[*] ضرب بوابة تسجيل الدخول الرسمية عبر سيرفر ريندر الموثق...", flush=True)
-        res = requests.post(SIGNIN_API_URL, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+        res = requests.post(SIGNIN_API_URL, json={"username": cfg["agent_user"], "password": cfg["agent_pass"]}, headers={"Content-Type": "application/json"}, timeout=15)
         if res.status_code == 200 and res.json().get("status") is True:
             with token_lock:
                 access_token = res.json()["result"].get("accessToken")
                 refresh_token = res.json()["result"].get("refreshToken")
             print("[✅] تم انتزاع التوكن بنجاح وسحق جدار الحماية الخارجي!", flush=True)
             return True
-        print(f"[❌] رفض السيرفر الخلفي للوحة الدخول، الرمز: {res.status_code} - الرد: {res.text[:100]}", flush=True)
+        print(f"[❌] رفض السيرفر الخلفي للوحة الدخول، الرمز: {res.status_code}", flush=True)
         return False
     except Exception as e:
         print(f"[❌] عطل اتصال بين ريندر واللوحة: {e}", flush=True)
@@ -110,7 +114,7 @@ def start_cmd(message):
     markup.add(telebot.types.KeyboardButton("📩 سحب رصيد"), telebot.types.KeyboardButton("📥 إيداع / شحن رصيد"))
     markup.add(telebot.types.KeyboardButton("📞 الدعم الفني"))
     if message.from_user.id == OWNER_ID: markup.add(telebot.types.KeyboardButton("⚙️ قائمة التحكم (للمالك)"))
-    global_bot.send_message(message.chat.id, "👋 مرحباً بك في عائلتنا الموثقة عبر السحاب بالـ API الرسمي! 🎉\n\nتفضل بالاختيار من القائمة أدناه بحسب طلبك:", reply_markup=markup)
+    global_bot.send_message(message.chat.id, load_config()["welcome_msg"], reply_markup=markup)
 
 def check_my_account(chat_id, uid):
     if not os.path.exists(DB_FILE):
@@ -134,13 +138,14 @@ def check_my_account(chat_id, uid):
 def core_menu(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text
     if text == "⚙️ قائمة التحكم (للمالك)" and uid == OWNER_ID:
+        cfg = load_config()
         markup = telebot.types.InlineKeyboardMarkup(row_width=1)
         markup.add(telebot.types.InlineKeyboardButton("🔄 تجديد التوكن فوراً حياً", callback_data="adm_force_token"))
-        global_bot.send_message(chat_id, f"⚙️ **لوحة المالك الحية الصارمة:**\n\n👤 كاشير: `{AGENT_USER}`\n🔑 باسورد: `{AGENT_PASS}`", parse_mode="Markdown", reply_markup=markup)
+        global_bot.send_message(chat_id, f"⚙️ **لوحة المالك الحية:**\n\n👤 كاشير: `{cfg['agent_user']}`\n🔑 باسورد: `{cfg['agent_pass']}`", parse_mode="Markdown", reply_markup=markup)
         return
     if text == "👤 حسابي": check_my_account(chat_id, uid); return
     if text == "📥 إيداع / شحن رصيد": global_bot.send_message(chat_id, "📥 خيارات الشحن التلقائي قيد التفعيل بالـ API."); return
-    if text == "📩 سحب رصيد": global_bot.send_message(chat_id, "📩 خيارات السحب التلقائي قيد التفعيل بالـ API."); return
+    if text == "📩 سحب رصيد": global_bot.send_message(chat_id, "📩 خيارات السحب قيد التفعيل بالـ API."); return
     if text == "📞 الدعم الفني": global_bot.send_message(chat_id, "📞 فريق الدعم متواجد لخدمتكم دائماً."); return
 
 @global_bot.callback_query_handler(func=lambda call: True)
@@ -148,7 +153,7 @@ def callback_handler(call):
     chat_id = call.message.chat.id
     if call.data == "adm_force_token":
         global_bot.answer_callback_query(call.id, "🔄 جاري التجديد حياً...")
-        global_bot.send_message(chat_id, "✅ تم تحديث وتوليد توكنات أمان جديدة بنجاح!" if agent_refresh_token() else "❌ فشل التجديد الفوري بسبب الـ 403، راجع يوزر وباسورد الداشبورد الفعلي.")
+        global_bot.send_message(chat_id, "✅ تم تحديث وتوليد توكنات أمان جديدة بنجاح!" if agent_refresh_token() else "❌ فشل التجديد الفوري.")
         return
     if call.data == "start_reg":
         global_bot.send_message(chat_id, "👤 يرجى إرسال اسم المستخدم المطلوب للحساب الجديد:")
