@@ -2,3 +2,4 @@ pyTelegramBotAPI==4.26.0
 requests
 Flask
 tls-client
+typing-extensions
