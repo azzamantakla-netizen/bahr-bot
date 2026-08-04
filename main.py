@@ -9,17 +9,18 @@ import telebot
 from flask import Flask
 
 # ========================================== #
-# 1. إعداد خادم الويب والمنافذ لمنصة Render  #
+# 1. إعداد خادم الويب لمنصة Render (الإقلاع)  #
 # ========================================== #
 app = Flask(__name__)
 
 @app.route('/')
 def home():
+    # كسر صمت ريندر فوراً وإرسال الرمز 200 لتخطي الدائرة التي تدور حياً
     return "🚀 BOT IS LIVE AND RUNNING 24/7"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 # ========================================== #
 # 2. إعداد مفاتيح وبوابات الـ API الموثقة    #
@@ -33,7 +34,6 @@ SIGNIN_API_URL = f"{PANEL_BASE}/global/api/UserApi/signIn"
 REFRESH_API_URL = f"{PANEL_BASE}/global/api/UserApi/refreshToken"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-# 🌟 صب المتة بروقان وتأكد بالملي من صحة هذه الحسابات الرسمية لعمير حياً باللوحة:
 AGENT_USER = "Bero@yahoo.com"
 AGENT_PASS = "Aazzam@318"
 
@@ -44,7 +44,6 @@ user_steps = {}
 
 def agent_sign_in():
     global access_token, refresh_token
-    # حقن صارم ومباشر بدون قراءة ملفات قديمة ميتة من السيرفر
     payload = {"username": AGENT_USER, "password": AGENT_PASS}
     try:
         print("[*] ضرب بوابة تسجيل الدخول الرسمية عبر سيرفر ريندر الموثق...", flush=True)
@@ -55,7 +54,7 @@ def agent_sign_in():
                 refresh_token = res.json()["result"].get("refreshToken")
             print("[✅] تم انتزاع التوكن بنجاح وسحق جدار الحماية الخارجي!", flush=True)
             return True
-        print(f"[❌] رفض السيرفر الخلفي للوحة الدخول، الرمز: {res.status_code} - الرد: {res.text[:100]}", flush=True)
+        print(f"[❌] رفض السيرفر الخلفي للوحة الدخول، الرمز: {res.status_code}", flush=True)
         return False
     except Exception as e:
         print(f"[❌] عطل اتصال بين ريندر واللوحة: {e}", flush=True)
@@ -75,7 +74,7 @@ def agent_refresh_token():
     except: return agent_sign_in()
 
 def token_refresher_loop():
-    time.sleep(5)
+    time.sleep(10)
     agent_sign_in()
     while True:
         time.sleep(2700)
@@ -84,7 +83,7 @@ def token_refresher_loop():
 def api_register_player(username, password):
     global access_token
     if not access_token: agent_sign_in()
-    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     time.sleep(random.uniform(1.5, 3.5))
     email = "".join(random.choices(string.ascii_lowercase + string.digits, k=10)) + "@gmail.com"
     try:
@@ -98,7 +97,7 @@ def api_register_player(username, password):
     except Exception as e: return False, str(e)
 
 # ========================================== #
-# 3. إعداد محرك تليجرام والقوائم الذكية       #
+# 3. إعداد محرك تليجرام المستقل بالخلفية     #
 # ========================================== #
 global_bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 global_bot.delete_webhook(drop_pending_updates=True)
@@ -109,7 +108,6 @@ def start_cmd(message):
     markup.add(telebot.types.KeyboardButton("👤 حسابي"))
     markup.add(telebot.types.KeyboardButton("📩 سحب رصيد"), telebot.types.KeyboardButton("📥 إيداع / شحن رصيد"))
     markup.add(telebot.types.KeyboardButton("📞 الدعم الفني"))
-    if message.from_user.id == OWNER_ID: markup.add(telebot.types.KeyboardButton("⚙️ قائمة التحكم (للمالك)"))
     global_bot.send_message(message.chat.id, "👋 مرحباً بك في عائلتنا الموثقة عبر السحاب بالـ API الرسمي! 🎉\n\nتفضل بالاختيار من القائمة أدناه بحسب طلبك:", reply_markup=markup)
 
 def check_my_account(chat_id, uid):
@@ -133,11 +131,6 @@ def check_my_account(chat_id, uid):
 @global_bot.message_handler(func=lambda message: True)
 def core_menu(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text
-    if text == "⚙️ قائمة التحكم (للمالك)" and uid == OWNER_ID:
-        markup = telebot.types.InlineKeyboardMarkup(row_width=1)
-        markup.add(telebot.types.InlineKeyboardButton("🔄 تجديد التوكن فوراً حياً", callback_data="adm_force_token"))
-        global_bot.send_message(chat_id, f"⚙️ **لوحة المالك الحية الصارمة:**\n\n👤 كاشير: `{AGENT_USER}`\n🔑 باسورد: `{AGENT_PASS}`", parse_mode="Markdown", reply_markup=markup)
-        return
     if text == "👤 حسابي": check_my_account(chat_id, uid); return
     if text == "📥 إيداع / شحن رصيد": global_bot.send_message(chat_id, "📥 خيارات الشحن التلقائي قيد التفعيل بالـ API."); return
     if text == "📩 سحب رصيد": global_bot.send_message(chat_id, "📩 خيارات السحب التلقائي قيد التفعيل بالـ API."); return
@@ -146,10 +139,6 @@ def core_menu(message):
 @global_bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
     chat_id = call.message.chat.id
-    if call.data == "adm_force_token":
-        global_bot.answer_callback_query(call.id, "🔄 جاري التجديد حياً...")
-        global_bot.send_message(chat_id, "✅ تم تحديث وتوليد توكنات أمان جديدة بنجاح!" if agent_refresh_token() else "❌ فشل التجديد الفوري بسبب الـ 403، راجع يوزر وباسورد الداشبورد الفعلي.")
-        return
     if call.data == "start_reg":
         global_bot.send_message(chat_id, "👤 يرجى إرسال اسم المستخدم المطلوب للحساب الجديد:")
         global_bot.register_next_step_handler(call.message, reg_step_username)
@@ -176,8 +165,16 @@ def run_safe_api_task(chat_id, uid, username, password):
         global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء التلقائي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
     if uid in user_steps: del user_steps[uid]
 
-if __name__ == "__main__":
-    threading.Thread(target=run_flask, daemon=True).start()
-    print("[+] إطلاق نظام الأتمتة السحابي والـ Web Service على سيرفر Render...", flush=True)
-    threading.Thread(target=token_refresher_loop, daemon=True).start()
+def run_bot_polling():
+    # تشغيل محرك تليجرام في قناة خلفية مستقلة تماماً لمنع قفل السيرفر
+    print("[+] إطلاق قناة الاستماع الحية للبوت بالخلفية...", flush=True)
     global_bot.infinity_polling(skip_pending=True)
+
+if __name__ == "__main__":
+    print("[+] إطلاق نظام الأتمتة السحابي والـ Web Service على سيرفر Render...", flush=True)
+    # 1. إقلاع محرك التجديد الصامت للتوكنات
+    threading.Thread(target=token_refresher_loop, daemon=True).start()
+    # 2. إقلاع محرك تليجرام في خيط مستقل بالخلفية لعدم خنق المعالج
+    threading.Thread(target=run_bot_polling, daemon=True).start()
+    # 3. تشغيل الـ Flask بالخيط الرئيسي ليرد فوراً على سيرفر ريندر بالرمز 200 وسحق الدائرة
+    run_flask()
