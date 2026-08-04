@@ -24,95 +24,55 @@ def run_flask():
 # ========================================== #
 # 2. إعداد مفاتيح وبوابات الـ API الموثقة    #
 # ========================================== #
-# 🌟 التوكن الجديد الصافي والمحدث بالكامل
 BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
 DB_FILE = "players_db.txt"
 
-# ضبط الروابط وفق معايير خوادم SpringBuilder الخلفية الرسمية لعمير
+# العودة للنطاق الرسمي الصحيح الموثق بصورتك
 PANEL_BASE = "https://texas4win.com"
-SIGNIN_API_URL = f"{PANEL_BASE}/global/api/UserApi/signIn"
-REFRESH_API_URL = f"{PANEL_BASE}/global/api/UserApi/refreshToken"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-AGENT_USER = "bero@yahoo.com"
-AGENT_PASS = "Aazzam@318"
-
-access_token = None
-refresh_token = None
-token_lock = threading.Lock()
+# 🌟 متغير التوكن السحري الذي سيمرره المالك يدوياً للبوت لسحق الـ 403 للأبد
+access_token = "eyJ0eXAiOiJKV1QiLC...pDdyQxfKUY" # سيتم تحديثه حياً عبر التليجرام
 user_steps = {}
-
-def agent_sign_in():
-    global access_token, refresh_token
-    payload = {"username": AGENT_USER, "password": AGENT_PASS}
-    # حقن ترويسات بشرية كاملة وخداع ذكي لعبور السيرفر فوراً
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Origin": PANEL_BASE,
-        "Referer": f"{PANEL_BASE}/"
-    }
-    try:
-        print("[*] ضرب البوابة الرسمية عبر ترويسات العبور المتقدمة...", flush=True)
-        res = requests.post(SIGNIN_API_URL, json=payload, headers=headers, timeout=15)
-        if res.status_code == 200:
-            res_json = res.json()
-            res_result = res_json.get("result", {})
-            with token_lock:
-                if isinstance(res_result, dict):
-                    access_token = res_result.get("accessToken")
-                    refresh_token = res_result.get("refreshToken")
-                else:
-                    access_token = res_json.get("accessToken") or res_json.get("token")
-            if access_token:
-                print("[✅] تم انتزاع التوكن بنجاح وسحق الحظر كلياً!", flush=True)
-                return True
-        print(f"[❌] الرد من السيرفر: الرمز {res.status_code} - المحتوى: {res.text[:100]}", flush=True)
-        return False
-    except Exception as e:
-        print(f"[❌] عطل اتصال بالسيرفر: {e}", flush=True)
-        return False
-
-def agent_refresh_token():
-    global access_token, refresh_token
-    if not refresh_token: return agent_sign_in()
-    try:
-        res = requests.post(REFRESH_API_URL, json={"refreshToken": refresh_token}, headers={"Content-Type": "application/json"}, timeout=15)
-        if res.status_code == 200 and res.json().get("status") is True:
-            with token_lock:
-                access_token = res.json()["result"].get("accessToken")
-                refresh_token = res.json()["result"].get("refreshToken")
-            return True
-        return agent_sign_in()
-    except: return agent_sign_in()
-
-def token_refresher_loop():
-    time.sleep(10)
-    agent_sign_in()
-    while True:
-        time.sleep(2700)
-        agent_refresh_token()
 
 def api_register_player(username, password):
     global access_token
-    if not access_token: agent_sign_in()
-    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    
+    # الترويسات الرسمية المطابقة تماماً لملف عُمير صفحة 11 وصفحة 3
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json", 
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Origin": PANEL_BASE,
+        "Referer": f"{PANEL_BASE}/"
+    }
+    
     time.sleep(random.uniform(1.5, 3.5))
     email = "".join(random.choices(string.ascii_lowercase + string.digits, k=10)) + "@gmail.com"
+    payload = {"player": {"email": email, "password": password, "parentId": "2627036", "login": username}}
+    
     try:
-        res = requests.post(REGISTER_PLAYER_API_URL, json={"player": {"email": email, "password": password, "parentId": "2627036", "login": username}}, headers=headers, timeout=20)
+        print(f"[🚀] قذف حزمة الإنشاء للاعب الجديد: {username} عبر التوكن النشط", flush=True)
+        res = requests.post(REGISTER_PLAYER_API_URL, json=payload, headers=headers, timeout=20)
+        print(f"[🔬] رد اللوحة على حركة الإنشاء: الرمز {res.status_code} - المحتوى: {res.text[:150]}", flush=True)
+        
         if res.status_code == 200:
-            if res.json().get("result") == 1 or res.json().get("status") is True: return True, "نجاح"
-            try: msg = res.json()["notification"]["content"]
-            except: msg = res.json().get("html", res.text)
+            res_data = res.json()
+            if res_data.get("result") == 1 or res_data.get("status") is True: 
+                return True, "نجاح"
+            if res_data.get("result") == "ex":
+                return False, "التوكن ميت أو منتهي الصلاحية، يرجى تزويد البوت بتوكن جديد حياً."
+            try: msg = res_data["notification"]["content"]
+            except: msg = res_data.get("html", res.text)
             return False, msg
+            
         return False, f"استجابة اللوحة: {res.status_code}"
-    except Exception as e: return False, str(e)
+    except Exception as e: 
+        return False, str(e)
 
 # ========================================== #
-# 3. إعداد محرك تليجرام المستقل بالخلفية     #
+# 3. إعداد محرك تليجرام وقوائم التحكم الحية   #
 # ========================================== #
 global_bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 global_bot.delete_webhook(drop_pending_updates=True)
@@ -123,33 +83,36 @@ def start_cmd(message):
     markup.add(telebot.types.KeyboardButton("👤 حسابي"))
     markup.add(telebot.types.KeyboardButton("📩 سحب رصيد"), telebot.types.KeyboardButton("📥 إيداع / شحن رصيد"))
     markup.add(telebot.types.KeyboardButton("📞 الدعم الفني"))
-    global_bot.send_message(message.chat.id, "👋 مرحباً بك في عائلتنا الموثقة عبر السحاب بالـ API الرسمي! 🎉\n\nتفضل بالاختيار من القائمة أدناه بحسب طلبك:", reply_markup=markup)
-
-def check_my_account(chat_id, uid):
-    if not os.path.exists(DB_FILE):
-        markup = telebot.types.InlineKeyboardMarkup()
-        markup.add(telebot.types.InlineKeyboardButton("👤 إنشاء حساب جديد", callback_data="start_reg"))
-        global_bot.send_message(chat_id, "⚠️ لا يوجد حساب مرتبط بك. اضغط للإنشاء فوراً.", reply_markup=markup)
-        return
-    p_found = None
-    with open(DB_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            if line.strip() and json.loads(line.strip()).get("tg_id") == uid:
-                p_found = json.loads(line.strip()); break
-    if p_found:
-        global_bot.send_message(chat_id, f"ℹ️ **معلومات حسابك:**\n\n👤 يوزر: `{p_found['login']}`\n🔑 باسورد: `{p_found['password']}`", parse_mode="Markdown")
-    else:
-        markup = telebot.types.InlineKeyboardMarkup()
-        markup.add(telebot.types.InlineKeyboardButton("👤 إنشاء حساب جديد", callback_data="start_reg"))
-        global_bot.send_message(chat_id, "⚠️ لا يوجد حساب مرتبط بك. اضغط للإنشاء فوراً.", reply_markup=markup)
+    if message.from_user.id == OWNER_ID: 
+        markup.add(telebot.types.KeyboardButton("⚙️ تحديث التوكن (للمالك)"))
+    global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية الموثقة بالـ API! 🎉\n\nتفضل بالاختيار من القائمة أدناه بحسب طلبك:", reply_markup=markup)
 
 @global_bot.message_handler(func=lambda message: True)
 def core_menu(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text
-    if text == "👤 حسابي": check_my_account(chat_id, uid); return
+    
+    if text == "⚙️ تحديث التوكن (للمالك)" and uid == OWNER_ID:
+        global_bot.send_message(chat_id, f"🔑 **حالة التوكن الحالي بالذاكرة:**\n`{str(access_token)[:30]}...`\n\nتفضل بإرسال الـ AccessToken الجديد الصافي والمستخرج من متصفحك حياً لتنشيط البوت فوراً وبدون ريستارت:")
+        global_bot.register_next_step_handler(message, save_live_token)
+        return
+        
+    if text == "👤 حسابي":
+        markup = telebot.types.InlineKeyboardMarkup()
+        markup.add(telebot.types.InlineKeyboardButton("👤 إنشاء حساب جديد", callback_data="start_reg"))
+        global_bot.send_message(chat_id, "⚠️ اضغط على الزر لإنشاء حساب لاعب فوراً.", reply_markup=markup)
+        return
+        
     if text == "📥 إيداع / شحن رصيد": global_bot.send_message(chat_id, "📥 خيارات الشحن التلقائي قيد التفعيل بالـ API."); return
-    if text == "📩 سحب رصيد": global_bot.send_message(chat_id, "📩 خيارات السحب قيد التفعيل بالـ API."); return
+    if text == "📩 سحب رصيد": global_bot.send_message(chat_id, "📩 خيارات السحب التلقائي قيد التفعيل بالـ API."); return
     if text == "📞 الدعم الفني": global_bot.send_message(chat_id, "📞 فريق الدعم متواجد لخدمتكم دائماً."); return
+
+def save_live_token(message):
+    global access_token
+    token_input = message.text.strip()
+    if "Bearer " in token_input:
+        token_input = token_input.replace("Bearer ", "")
+    access_token = token_input
+    global_bot.send_message(message.chat.id, "✅ **تم حقن وتنشيط التوكن الحي بنجاح باهر بداخل ذاكرة السيرفر!**\n\nالبوت مستعد الآن لإنشاء الحسابات كالسهم وتخطي الـ 403 كلياً للأبد!")
 
 @global_bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
@@ -175,7 +138,7 @@ def run_safe_api_task(chat_id, uid, username, password):
     success, detail = api_register_player(username, password)
     if success:
         with open(DB_FILE, "a", encoding="utf-8") as f: f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
-        global_bot.send_message(chat_id, f"✅ **تم إنشاء حسابك بنجاح وبصلاحية المطورين!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
+        global_bot.send_message(chat_id, f"✅ **تم إنشاء حسابك بنجاح وبصلاحية المطورين المعتمدة!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
     else:
         global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء التلقائي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
     if uid in user_steps: del user_steps[uid]
@@ -186,6 +149,5 @@ def run_bot_polling():
 
 if __name__ == "__main__":
     print("[+] إطلاق نظام الأتمتة السحابي والـ Web Service على سيرفر Render...", flush=True)
-    threading.Thread(target=token_refresher_loop, daemon=True).start()
     threading.Thread(target=run_bot_polling, daemon=True).start()
     run_flask()
