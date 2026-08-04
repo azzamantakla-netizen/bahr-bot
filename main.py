@@ -16,11 +16,11 @@ DB_FILE = "players_db.txt"
 
 # النطاقات والمسارات الرسمية للوحة
 PANEL_BASE = "https://texas4win.com"
-LOGIN_PAGE_URL = f"{PANEL_BASE}/global/agent/login/index" # صفحة الدخول المبدئية
+LOGIN_PAGE_URL = f"{PANEL_BASE}/global/agent/login/index"
 LOGIN_API_URL = f"{PANEL_BASE}/global/api/UserApi/login"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-RENDER_URL = "https://bahr-bot-c3ac.onrender.com"
+RENDER_URL = "https://onrender.com"
 
 # حساب الوكيل الخاص بك مدمج وموثق للأتمتة الذاتية
 AGENT_USERNAME = "Bero@yahoo.com"
@@ -39,22 +39,21 @@ def refresh_agent_session():
     print("[🔄] جاري تجديد جلسة الوكيل وتوليد كوكيز جديدة تلقائياً...", flush=True)
     
     try:
-        # إنشاء عميل اتصال موثق ببصمة كروم مستقرة
         session = tls_client.Session(
             client_identifier="chrome112",
             random_tls_extension_order=True
         )
         
-        # 🌟 خطوة 1: محاكاة زيارة صفحة الدخول أولاً كمتصفح حقيقي لجلب رموز الأمان المبدئية
+        # خطوة 1: محاكاة زيارة صفحة الدخول أولاً كمتصفح حقيقي لجلب رموز الأمان المبدئية
         init_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
             "Accept-Language": "ar,en-US;q=0.9,en;q=0.8"
         }
         session.get(LOGIN_PAGE_URL, headers=init_headers, timeout_seconds=15)
-        time.sleep(random.uniform(1.0, 2.0)) # تأخير طبيعي لمحاكاة حركة الإنسان
+        time.sleep(random.uniform(1.0, 2.0))
 
-        # 🌟 خطوة 2: بناء الهيدرز الصارم والمطابق لإرسال حزمة الدخول العكسي
+        # خطوة 2: بناء الهيدرز الصارم والمطابق لإرسال حزمة الدخول العكسي
         headers = {
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -225,4 +224,5 @@ def core_menu_and_states(message):
 def run_safe_api_task(chat_id, uid, username, password):
     success, detail = api_register_player(username, password)
     if success:
+        # 🌟 تم إصلاح وضبط المسافات البادئة لكتلة الـ with open وما بعدها بالملي هنا لمنع الخطأ
         with open(DB_FILE, "a", encoding="utf-8") as f:
