@@ -21,7 +21,7 @@ REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
 RENDER_URL = "https://onrender.com"
 
-# 🌟 تم دمج وحقن بيانات حساب الوكيل بنجاح تام للأتمتة الذاتية
+# 🌟 دمج حساب الوكيل الخاص بك بدقة متناهية للأتمتة الذاتية
 AGENT_USERNAME = "Bero@yahoo.com"
 AGENT_PASSWORD = "Aazzam@318"
 
@@ -36,6 +36,12 @@ app = Flask(__name__)
 def refresh_agent_session():
     global user_cookies
     print("[🔄] جاري تجديد جلسة الوكيل وتوليد كوكيز جديدة تلقائياً...", flush=True)
+    
+    # حماية من البيانات الافتراضية
+    if "اكتب_هنا" in AGENT_USERNAME or not AGENT_USERNAME:
+        print("[⚠️] حظر الإقلاع: لم يتم تعيين حساب الوكيل الفعلي داخل الكود حتى الآن.", flush=True)
+        return False
+        
     try:
         session = tls_client.Session(
             client_identifier="chrome112",
@@ -55,12 +61,10 @@ def refresh_agent_session():
         res = session.post(LOGIN_API_URL, json=payload, headers=headers, timeout_seconds=15)
         
         if res.status_code == 200:
-            # استخراج الكوكيز الجديدة وحفظها في الذاكرة
             cookies_list = []
             for key, val in res.cookies.items():
                 cookies_list.append(f"{key}={val}")
             
-            # إضافة قيم اللغة الافتراضية للوحة كضمان مطابقة
             if "languageCode" not in res.cookies:
                 cookies_list.append("languageCode=ar")
                 cookies_list.append("language=ar")
@@ -93,7 +97,6 @@ def home():
 def api_register_player(username, password, retry=True):
     global user_cookies
     
-    # إذا كانت الكوكيز فارغة بالبداية، يجددها آلياً قبل إرسال الطلب
     if not user_cookies:
         refresh_agent_session()
         
@@ -127,7 +130,6 @@ def api_register_player(username, password, retry=True):
         res = session.post(REGISTER_PLAYER_API_URL, json=payload, headers=headers, cookies=cookie_dict, timeout_seconds=15)
         print(f"[🔬] استجابة اللوحة العكسية: الرمز {res.status_code}", flush=True)
         
-        # 🌟 إذا انتهت الصلاحية (403)، يقوم البوت بتسجيل الدخول فوراً ويعيد المحاولة بالجلسة الجديدة تلقائياً لمرة واحدة!
         if res.status_code == 403 and retry:
             print("[⚠️] تم كشف انتهاء الجلسة (403)، جاري تجديدها آلياً وإعادة المحاولة...", flush=True)
             if refresh_agent_session():
@@ -194,7 +196,6 @@ def core_menu_and_states(message):
             threading.Thread(target=run_safe_api_task, args=(chat_id, uid, username, password), daemon=True).start()
             return
 
-    # زر المالك لتنشيط فحص الاتصال وتوليد الجلسة فورياً
     if (text == "⚙️ تجديد الجلسة آلياً (للمالك)" or "تجديد الجلسة" in text) and uid == OWNER_ID:
         global_bot.send_message(chat_id, "🔄 جاري فحص بيانات الوكيل والاتصال باللوحة لتوليد جلسة طازجة...")
         if refresh_agent_session():
@@ -223,3 +224,5 @@ def run_safe_api_task(chat_id, uid, username, password):
     if success:
         with open(DB_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
+        global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح سحابي كاسح ومطابق 100%!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
+    else:
