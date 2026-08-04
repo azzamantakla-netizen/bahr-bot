@@ -7,7 +7,7 @@ import threading
 import telebot
 from flask import Flask, request
 
-# 💡 حل مشكلة الـ 403: استخدام مكتبة متطورة لتخطي بصمة السيرفرات وأنظمة الحماية
+# 💡 تخطي حظر الـ 403 باستخدام محاكي بصمة المتصفح الموثق
 import tls_client  
 
 # ========================================== #
@@ -15,14 +15,13 @@ import tls_client
 # ========================================== #
 app = Flask(__name__)
 
-# الرابط الرئيسي الممنوح لك من منصة Render
-RENDER_URL = "https://bahr-bot-c3ac.onrender.com"
+# الرابط السحابي الخاص بك على منصة Render
+RENDER_URL = "https://onrender.com"
 
 @app.route('/')
 def home():
-    return "🚀 BOT IS LIVE AND RUNNING 24/7 (WEBHOOK MODE)"
+    return "🚀 BOT IS LIVE AND RUNNING 24/7 (WEBHOOK STABLE MODE)"
 
-# المسار السري لاستقبال تحديثات تليجرام فورياً ومنع التعارض 409 نهائياً
 @app.route('/webhook', methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
@@ -43,15 +42,14 @@ DB_FILE = "players_db.txt"
 PANEL_BASE = "https://texas4win.com"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-# متغير الكوكيز
 user_cookies = "PHPSESSID=488a394c83f1f914e66ca4b00759bfa0d8497f6a3eb0036d5912048678335557; languageCode=ar; language=ar"
+
+# هيكل حفظ الخطوات والحالات الصارم البديل لـ next_step_handler لضمان استقرار الـ Webhook
 user_steps = {}
 
 def api_register_player(username, password):
     global user_cookies
-    
     try:
-        # محاكي متصفح من إصدار مستقر جداً لتفادي تجميد الاتصال السحابي
         session = tls_client.Session(
             client_identifier="chrome112",
             random_tls_extensions_order=True
@@ -74,21 +72,13 @@ def api_register_player(username, password):
             "X-Requested-With": "XMLHttpRequest"
         }
 
-        time.sleep(random.uniform(0.5, 1.5))
+        time.sleep(random.uniform(0.5, 1.2))
         email = "".join(random.choices(string.ascii_lowercase + string.digits, k=10)) + "@gmail.com"
         payload = {"player": {"email": email, "password": password, "parentId": "2627036", "login": username}}
 
-        print(f"[🚀] إرسال حزمة الإنشاء الفورية للاعب: {username}", flush=True)
-        
-        res = session.post(
-            REGISTER_PLAYER_API_URL, 
-            json=payload, 
-            headers=headers, 
-            cookies=cookie_dict,
-            timeout_seconds=15
-        )
-        
-        print(f"[🔬] استجابة اللوحة الفورية: الرمز {res.status_code}", flush=True)
+        print(f"[🚀] قذف حزمة الإنشاء المشفرة للاعب الجديد: {username}", flush=True)
+        res = session.post(REGISTER_PLAYER_API_URL, json=payload, headers=headers, cookies=cookie_dict, timeout_seconds=15)
+        print(f"[🔬] استجابة اللوحة: الرمز {res.status_code}", flush=True)
         
         if res.status_code == 200:
             try:
@@ -100,37 +90,75 @@ def api_register_player(username, password):
                 except:
                     msg = res_data.get("html", res.text[:100])
                 return False, msg
-            except Exception as json_err:
-                return False, f"فشل قراءة الرد (JSON Error): {str(json_err)}"
-                
-        return False, f"استجابة اللوحة برمز خطأ: {res.status_code}"
-        
+            except:
+                return False, "فشل فك حزمة الـ JSON العكسية من اللوحة."
+        return False, f"رمز خطأ الاستجابة {res.status_code}"
     except Exception as e:
-        print(f"[❌] خطأ داخلي في دالة الاتصال: {e}", flush=True)
-        return False, f"خطأ في الاتصال: {str(e)}"
+        return False, str(e)
 
 # ========================================== #
-# 3. إعداد محرك تليجرام وقوائم التحكم الحية #
+# 3. محرك تليجرام وقوائم المعالجة والحالات #
 # ========================================== #
 global_bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
 @global_bot.message_handler(commands=['start'])
 def start_cmd(message):
+    uid = message.from_user.id
+    if uid in user_steps:
+        del user_steps[uid]  # تصفير أي عمليات معلقة
+        
     markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     markup.add(telebot.types.KeyboardButton("👤 حسابي"))
     markup.add(telebot.types.KeyboardButton("📩 سحب رصيد"), telebot.types.KeyboardButton("📥 إيداع / شحن رصيد"))
     markup.add(telebot.types.KeyboardButton("📞 الدعم الفني"))
-    if message.from_user.id == OWNER_ID:
+    if uid == OWNER_ID:
         markup.add(telebot.types.KeyboardButton("⚙️ تحديث الكوكيز (للمالك)"))
     global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية المحدثة بالملي! 🎉\n\nتفضل بالاختيار من القائمة أدناه بحسب طلبك:", reply_markup=markup)
 
+@global_bot.callback_query_handler(func=lambda call: True)
+def callback_handler(call):
+    chat_id = call.message.chat.id
+    uid = call.from_user.id
+    if call.data == "start_reg":
+        # تفعيل حالة انتظار اسم المستخدم بشكل صارم ومضمون مع الـ Webhook
+        user_steps[uid] = {"state": "WAITING_USERNAME"}
+        global_bot.send_message(chat_id, "👤 يرجى إرسال اسم المستخدم المطلوب للحساب الجديد:")
+
 @global_bot.message_handler(func=lambda message: True)
-def core_menu(message):
-    uid, chat_id, text = message.from_user.id, message.chat.id, message.text
+def core_menu_and_states(message):
+    uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     
+    # 🌟 أولاً: فحص ما إذا كان المستخدم في حالة إدخال بيانات (تخطي مشاكل تجميد الـ Webhook)
+    if uid in user_steps:
+        current_state = user_steps[uid].get("state")
+        
+        if current_state == "WAITING_USERNAME":
+            user_steps[uid]["username"] = text
+            user_steps[uid]["state"] = "WAITING_PASSWORD"
+            global_bot.send_message(chat_id, "🔑 يرجى إرسال كلمة المرور للحساب الجديد:")
+            return
+            
+        elif current_state == "WAITING_PASSWORD":
+            username = user_steps[uid].get("username")
+            password = text
+            # إزالة الحالة فوراً لمنع التكرار والتجميد
+            del user_steps[uid]
+            
+            global_bot.send_message(chat_id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة عبر الكوكيز الموثقة...")
+            threading.Thread(target=run_safe_api_task, args=(chat_id, uid, username, password), daemon=True).start()
+            return
+            
+        elif current_state == "WAITING_COOKIES" and uid == OWNER_ID:
+            global user_cookies
+            user_cookies = text
+            del user_steps[uid]
+            global_bot.send_message(chat_id, "✅ **تم حقن الكوكيز الموزونة والمطابقة بنجاح!**")
+            return
+
+    # 🌟 ثانياً: معالجة قوائم الأزرار العادية
     if (text == "⚙️ تحديث الكوكيز (للمالك)" or "تحديث الكوكيز" in text) and uid == OWNER_ID:
+        user_steps[uid] = {"state": "WAITING_COOKIES"}
         global_bot.send_message(chat_id, f"🔑 **حالة الكوكيز الحالية بالذاكرة:**\n`{str(user_cookies)[:40]}...`\n\nتفضل بلصق وإرسال سطر الـ Cookies الكامل المستخرج حياً لتنشيط البوت:")
-        global_bot.register_next_step_handler(message, save_live_cookies)
         return
         
     if text == "👤 حسابي":
@@ -151,36 +179,6 @@ def core_menu(message):
         global_bot.send_message(chat_id, "📞 فريق الدعم متواجد لخدمتكم دائماً.")
         return
 
-def save_live_cookies(message):
-    global user_cookies
-    user_cookies = message.text.strip()
-    global_bot.send_message(message.chat.id, "✅ **تم حقن الكوكيز الموزونة والمطابقة بنجاح!**")
-
-@global_bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
-    chat_id = call.message.chat.id
-    if call.data == "start_reg":
-        global_bot.send_message(chat_id, "👤 يرجى إرسال اسم المستخدم المطلوب للحساب الجديد:")
-        global_bot.register_next_step_handler(call.message, reg_step_username)
-
-def reg_step_username(message):
-    user_steps[message.from_user.id] = {"username": message.text.strip()}
-    global_bot.send_message(message.chat.id, "🔑 يرجى إرسال كلمة المرور للحساب الجديد:")
-    global_bot.register_next_step_handler(message, reg_step_password)
-
-def reg_step_password(message):
-    uid = message.from_user.id
-    if uid not in user_steps:
-        return
-    password = message.text.strip()
-    username = user_steps[uid]["username"]
-    
-    global_bot.send_message(message.chat.id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة عبر الكوكيز الموثقة...")
-    
-    t = threading.Thread(target=run_safe_api_task, args=(message.chat.id, uid, username, password))
-    t.daemon = True
-    t.start()
-
 def run_safe_api_task(chat_id, uid, username, password):
     success, detail = api_register_player(username, password)
     if success:
@@ -189,27 +187,20 @@ def run_safe_api_task(chat_id, uid, username, password):
         global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح سحابي كاسح ومطابق 100%!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
     else:
         global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء التلقائي بسبب رد اللوحة العكسي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
-        
-    if uid in user_steps:
-        del user_steps[uid]
 
-# دالة ربط البوت بالـ Webhook تلقائياً عند الإقلاع وتصفير الـ Polling نهائياً
 def init_webhook():
     try:
-        print("[🔄] جاري حذف أي اتصالات Polling أو قنوات معلقة في تليجرام...", flush=True)
+        print("[🔄] جاري تصفير أي قنوات قديمة لتأمين نظام الحالات الجديد...", flush=True)
         global_bot.remove_webhook()
         time.sleep(1.5)
-        print(f"[🌐] جاري ربط البوت بـ Webhook الموحد لمنصة Render: {RENDER_URL}/webhook", flush=True)
         global_bot.set_webhook(url=f"{RENDER_URL}/webhook", drop_pending_updates=True)
-        print("[✅] تم تفعيل نظام الـ Webhook بنجاح مذهل واستقرار 100%!", flush=True)
+        print("[✅] تم تفعيل نظام الـ Webhook الصارم ومحرك الحالات بنجاح!", flush=True)
     except Exception as e:
         print(f"[❌] فشل تهيئة الـ Webhook: {e}", flush=True)
 
 if __name__ == "__main__":
     print("[+] إطلاق نظام الأتمتة السحابي والـ Web Service على سيرفر Render...", flush=True)
-    # تشغيل أمر الربط التلقائي في خيط مستقل عند بداية التشغيل
     threading.Thread(target=init_webhook, daemon=True).start()
     
-    # تشغيل خادم ويب Flask لاستقبال الرسائل
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
