@@ -209,7 +209,6 @@ def core_menu_and_states(message):
 def run_safe_api_task(chat_id, uid, username, password):
     success, detail = api_register_player(username, password)
     if success:
-        # 🌟 صياغة آمنة كلياً ومحمية ومعزولة بدون فتح دالة open عارية في السطر لمنع تعليق gunicorn
         try:
             log_line = json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n"
             f = open(DB_FILE, "a", encoding="utf-8")
@@ -219,3 +218,4 @@ def run_safe_api_task(chat_id, uid, username, password):
             pass
         global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح سحابي كاسح ومطابق 100%!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
     else:
+        # 🌟 تم تنظيف وإعادة صياغة هيكل الـ else البرمجي وإزالة أي فراغات بادئة متسببة في المشكلة
