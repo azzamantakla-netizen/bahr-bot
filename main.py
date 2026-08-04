@@ -18,8 +18,8 @@ DB_FILE = "players_db.txt"
 PANEL_BASE = "https://texas4win.com"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-# الرابط السحابي الخاص بك على منصة Render
-RENDER_URL = "https://onrender.com"
+# 🌟 الرابط السحابي الكامل والخاص بك على منصة Render لإصلاح التوجيه التلقائي
+RENDER_URL = "https://bahr-bot-c3ac.onrender.com"
 
 # متغير الكوكيز الافتراضي
 user_cookies = "PHPSESSID=488a394c83f1f914e66ca4b00759bfa0d8497f6a3eb0036d5912048678335557; languageCode=ar; language=ar"
@@ -117,7 +117,6 @@ def callback_handler(call):
     chat_id = call.message.chat.id
     uid = call.from_user.id
     if call.data == "start_reg":
-        # تفعيل حالة انتظار اسم المستخدم بشكل صارم ومضمون مع الـ Webhook
         user_steps[uid] = {"state": "WAITING_USERNAME"}
         global_bot.send_message(chat_id, "👤 يرجى إرسال اسم المستخدم المطلوب للحساب الجديد:")
 
@@ -125,7 +124,6 @@ def callback_handler(call):
 def core_menu_and_states(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
     
-    # 🌟 أولاً: فحص ما إذا كان المستخدم في حالة إدخال بيانات (تخطي مشاكل تجميد الـ Webhook)
     if uid in user_steps:
         current_state = user_steps[uid].get("state")
         
@@ -138,7 +136,6 @@ def core_menu_and_states(message):
         elif current_state == "WAITING_PASSWORD":
             username = user_steps[uid].get("username")
             password = text
-            # إزالة الحالة فوراً لمنع التكرار والتجميد
             del user_steps[uid]
             
             global_bot.send_message(chat_id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة عبر الكوكيز الموثقة...")
@@ -152,7 +149,6 @@ def core_menu_and_states(message):
             global_bot.send_message(chat_id, "✅ **تم حقن الكوكيز الموزونة والمطابقة بنجاح!**")
             return
 
-    # 🌟 ثانياً: معالجة قوائم الأزرار العادية والأصلية بالكامل
     if (text == "⚙️ تحديث الكوكيز (للمالك)" or "تحديث الكوكيز" in text) and uid == OWNER_ID:
         user_steps[uid] = {"state": "WAITING_COOKIES"}
         global_bot.send_message(chat_id, f"🔑 **حالة الكوكيز الحالية بالذاكرة:**\n`{str(user_cookies)[:40]}...`\n\nتفضل بلصق وإرسال سطر الـ Cookies الكامل المستخرج حياً لتنشيط البوت:")
@@ -185,23 +181,22 @@ def run_safe_api_task(chat_id, uid, username, password):
     else:
         global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء التلقائي بسبب رد اللوحة العكسي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
 
-# دالة التشغيل الذكية للـ Webhook مع إضافة تأخير لضمان استقرار السيرفر
 def start_webhook_setup():
-    time.sleep(3)  # انتظار استقرار سيرفر Flask لبدء توجيه تليجرام
+    time.sleep(2)  
     try:
         print("[🔄] جاري تصفير اتصالات تليجرام السابقة...", flush=True)
         global_bot.remove_webhook()
         time.sleep(1)
+        # 🌟 إصلاح الدمج البرمجي المباشر ليعود الرابط كاملاً بالتوكن الخاص بك
         webhook_url = f"{RENDER_URL}/{BOT_TOKEN}"
-        print(f"[🌐] ربط الـ Webhook بالمسار الآمن: {webhook_url}", flush=True)
+        print(f"[🌐] ربط الـ Webhook بالمسار الآمن الجديد: {webhook_url}", flush=True)
         global_bot.set_webhook(url=webhook_url, drop_pending_updates=True)
-        print("[✅] تم تهيئة واستقرار النظام بالملي!", flush=True)
+        print("[✅] تم تهيئة واستقرار النظام بالملي مع تليجرام!", flush=True)
     except Exception as e:
         print(f"[❌] فشل تهيئة الـ Webhook: {e}", flush=True)
 
 if __name__ == "__main__":
     print("[+] إطلاق نظام الأتمتة السحابي والـ Web Service على سيرفر Render...", flush=True)
-    # تشغيل أمر الربط التلقائي الآمن بالخلفية
     threading.Thread(target=start_webhook_setup, daemon=True).start()
     
     port = int(os.environ.get("PORT", 10000))
