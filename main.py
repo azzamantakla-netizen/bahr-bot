@@ -7,26 +7,73 @@ import threading
 import telebot
 from flask import Flask, request
 
-# 💡 تخطي حظر الـ 403 باستخدام محاكي بصمة المتصفح الموثق
+# 💡 تخطي حظر الـ 403 وأتمتة الكوكيز الآلية للأبد
 import tls_client  
 
 BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
 DB_FILE = "players_db.txt"
 
-# النطاق الرسمي للوحة
+# النطاقات والمسارات الرسمية للوحة
 PANEL_BASE = "https://texas4win.com"
+LOGIN_API_URL = f"{PANEL_BASE}/global/api/UserApi/login"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-# متغير الكوكيز الافتراضي
-user_cookies = "PHPSESSID=488a394c83f1f914e66ca4b00759bfa0d8497f6a3eb0036d5912048678335557; languageCode=ar; language=ar"
+RENDER_URL = "https://onrender.com"
 
-# هيكل حفظ الخطوات والحالات الصارم البديل لـ next_step_handler لضمان استقرار الـ Webhook
+# 🌟 تم دمج وحقن بيانات حساب الوكيل بنجاح تام للأتمتة الذاتية
+AGENT_USERNAME = "Bero@yahoo.com"
+AGENT_PASSWORD = "Aazzam@318"
+
+# متغير الذاكرة المؤقتة للكوكيز (سيقوم البوت بتجديدها برمجياً للأبد عند انتهاء صلاحيتها)
+user_cookies = ""
 user_steps = {}
 
-# تهيئة البوت (تعطيل الـ Threaded لضمان ثبات التوجيه عبر Flask)
 global_bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
+
+# --- دالة أتمتة تسجيل الدخول وجلب الكوكيز تلقائياً بدون تدخل بشري ---
+def refresh_agent_session():
+    global user_cookies
+    print("[🔄] جاري تجديد جلسة الوكيل وتوليد كوكيز جديدة تلقائياً...", flush=True)
+    try:
+        session = tls_client.Session(
+            client_identifier="chrome112",
+            random_tls_extension_order=True
+        )
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Origin": PANEL_BASE,
+            "Referer": f"{PANEL_BASE}/global/agent/login/index",
+            "Accept": "application/json, text/plain, */*",
+            "X-Requested-With": "XMLHttpRequest"
+        }
+        # حزمة تسجيل دخول حساب الوكيل الرسمي
+        payload = {"login": AGENT_USERNAME, "password": AGENT_PASSWORD, "languageCode": "ar"}
+        
+        res = session.post(LOGIN_API_URL, json=payload, headers=headers, timeout_seconds=15)
+        
+        if res.status_code == 200:
+            # استخراج الكوكيز الجديدة وحفظها في الذاكرة
+            cookies_list = []
+            for key, val in res.cookies.items():
+                cookies_list.append(f"{key}={val}")
+            
+            # إضافة قيم اللغة الافتراضية للوحة كضمان مطابقة
+            if "languageCode" not in res.cookies:
+                cookies_list.append("languageCode=ar")
+                cookies_list.append("language=ar")
+                
+            user_cookies = "; ".join(cookies_list)
+            print(f"[✅] تم استخراج وتحديث كوكيز الجلسة بنجاح: {user_cookies[:35]}...", flush=True)
+            return True
+        else:
+            print(f"[❌] فشل تسجيل الدخول العكسي، الرمز: {res.status_code}", flush=True)
+            return False
+    except Exception as e:
+        print(f"[❌] خطأ أثناء تجديد الجلسة: {e}", flush=True)
+        return False
 
 # --- مسار استقبال الرسائل الآمن عبر توكن البوت ---
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
@@ -40,13 +87,17 @@ def webhook():
 
 @app.route('/')
 def home():
-    return "🚀 BOT IS LIVE AND RUNNING 24/7 (WEBHOOK STABLE MODE)"
+    return "🚀 BOT IS LIVE AND RUNNING 24/7 (AUTO-COOKIE MODE)"
 
-# --- دالة الاتصال باللوحة عبر محاكي المتصفح لتخطي الـ 403 ---
-def api_register_player(username, password):
+# --- دالة الاتصال باللوحة عبر محاكي المتصفح الكاسر للـ 403 ---
+def api_register_player(username, password, retry=True):
     global user_cookies
+    
+    # إذا كانت الكوكيز فارغة بالبداية، يجددها آلياً قبل إرسال الطلب
+    if not user_cookies:
+        refresh_agent_session()
+        
     try:
-        # ضبط محاكي المتصفح بالتهيئة الصحيحة المطلوبة والمصححة إملائياً
         session = tls_client.Session(
             client_identifier="chrome112",
             random_tls_extension_order=True
@@ -54,11 +105,10 @@ def api_register_player(username, password):
         
         cookie_dict = {}
         if user_cookies:
-            for cookie in user_cookies.split(";"):
-                if "=" in cookie:
-                    parts = cookie.strip().split("=", 1)
-                    if len(parts) == 2:
-                        cookie_dict[parts[0].strip()] = parts[1].strip()
+            for item in user_cookies.split(";"):
+                if "=" in item:
+                    k, v = item.split("=", 1)
+                    cookie_dict[k.strip()] = v.strip()
 
         headers = {
             "Content-Type": "application/json",
@@ -73,9 +123,15 @@ def api_register_player(username, password):
         email = "".join(random.choices(string.ascii_lowercase + string.digits, k=10)) + "@gmail.com"
         payload = {"player": {"email": email, "password": password, "parentId": "2627036", "login": username}}
 
-        print(f"[🚀] قذف حزمة الإنشاء المشفرة للاعب الجديد: {username}", flush=True)
+        print(f"[🚀] قذف حزمة الإنشاء للاعب الجديد: {username}", flush=True)
         res = session.post(REGISTER_PLAYER_API_URL, json=payload, headers=headers, cookies=cookie_dict, timeout_seconds=15)
-        print(f"[🔬] استجابة اللوحة: الرمز {res.status_code}", flush=True)
+        print(f"[🔬] استجابة اللوحة العكسية: الرمز {res.status_code}", flush=True)
+        
+        # 🌟 إذا انتهت الصلاحية (403)، يقوم البوت بتسجيل الدخول فوراً ويعيد المحاولة بالجلسة الجديدة تلقائياً لمرة واحدة!
+        if res.status_code == 403 and retry:
+            print("[⚠️] تم كشف انتهاء الجلسة (403)، جاري تجديدها آلياً وإعادة المحاولة...", flush=True)
+            if refresh_agent_session():
+                return api_register_player(username, password, retry=False)
         
         if res.status_code == 200:
             try:
@@ -89,26 +145,27 @@ def api_register_player(username, password):
                 return False, msg
             except:
                 return False, "فشل فك حزمة الـ JSON العكسية من اللوحة."
-        return False, f"رمز خطأ الاستجابة {res.status_code}"
+                
+        return False, f"رمز خطأ الاستجابة {res.status_code} - تفاصيل: {res.text[:50]}"
     except Exception as e:
         return False, str(e)
 
 # ========================================== #
-# 3. محرك تليجرام وقوائم المعالجة والحالات #
+# 3. محرك تليجرام وقوائم التحكم والحالات #
 # ========================================== #
 @global_bot.message_handler(commands=['start'])
 def start_cmd(message):
     uid = message.from_user.id
     if uid in user_steps:
-        del user_steps[uid]  # تصفير أي عمليات معلقة بالكامل
+        del user_steps[uid]
         
     markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     markup.add(telebot.types.KeyboardButton("👤 حسابي"))
     markup.add(telebot.types.KeyboardButton("📩 سحب رصيد"), telebot.types.KeyboardButton("📥 إيداع / شحن رصيد"))
     markup.add(telebot.types.KeyboardButton("📞 الدعم الفني"))
     if uid == OWNER_ID:
-        markup.add(telebot.types.KeyboardButton("⚙️ تحديث الكوكيز (للمالك)"))
-    global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية المحدثة بالملي! 🎉\n\nتفضل بالاختيار من القائمة أدناه بحسب طلبك:", reply_markup=markup)
+        markup.add(telebot.types.KeyboardButton("⚙️ تجديد الجلسة آلياً (للمالك)"))
+    global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية ذاتية التحديث بالملي! 🎉\n\nتفضل بالاختيار من القائمة أدناه بحسب طلبك:", reply_markup=markup)
 
 @global_bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
@@ -124,32 +181,26 @@ def core_menu_and_states(message):
     
     if uid in user_steps:
         current_state = user_steps[uid].get("state")
-        
         if current_state == "WAITING_USERNAME":
             user_steps[uid]["username"] = text
             user_steps[uid]["state"] = "WAITING_PASSWORD"
             global_bot.send_message(chat_id, "🔑 يرجى إرسال كلمة المرور للحساب الجديد:")
             return
-            
         elif current_state == "WAITING_PASSWORD":
             username = user_steps[uid].get("username")
             password = text
             del user_steps[uid]
-            
-            global_bot.send_message(chat_id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة عبر الكوكيز الموثقة...")
+            global_bot.send_message(chat_id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة عبر الجلسة الذكية آلياً...")
             threading.Thread(target=run_safe_api_task, args=(chat_id, uid, username, password), daemon=True).start()
             return
-            
-        elif current_state == "WAITING_COOKIES" and uid == OWNER_ID:
-            global user_cookies
-            user_cookies = text
-            del user_steps[uid]
-            global_bot.send_message(chat_id, "✅ **تم حقن الكوكيز الموزونة والمطابقة بنجاح!**")
-            return
 
-    if (text == "⚙️ تحديث الكوكيز (للمالك)" or "تحديث الكوكيز" in text) and uid == OWNER_ID:
-        user_steps[uid] = {"state": "WAITING_COOKIES"}
-        global_bot.send_message(chat_id, f"🔑 **حالة الكوكيز الحالية بالذاكرة:**\n`{str(user_cookies)[:40]}...`\n\nتفضل بلصق وإرسال سطر الـ Cookies الكامل المستخرج حياً لتنشيط البوت:")
+    # زر المالك لتنشيط فحص الاتصال وتوليد الجلسة فورياً
+    if (text == "⚙️ تجديد الجلسة آلياً (للمالك)" or "تجديد الجلسة" in text) and uid == OWNER_ID:
+        global_bot.send_message(chat_id, "🔄 جاري فحص بيانات الوكيل والاتصال باللوحة لتوليد جلسة طازجة...")
+        if refresh_agent_session():
+            global_bot.send_message(chat_id, f"✅ **تم تحديث الجلسة وسحب الكوكيز بنجاح قطعي!**\n\n`{user_cookies[:50]}...`")
+        else:
+            global_bot.send_message(chat_id, "❌ **فشل التحديث الآلي!** تأكد من صحة البيانات داخل كود السكربت.")
         return
         
     if text == "👤 حسابي":
@@ -157,15 +208,12 @@ def core_menu_and_states(message):
         markup.add(telebot.types.InlineKeyboardButton("👤 إنشاء حساب جديد", callback_data="start_reg"))
         global_bot.send_message(chat_id, "⚠️ اضغط على الزر لإنشاء حساب لاعب فوراً.", reply_markup=markup)
         return
-        
     if text == "📥 إيداع / شحن رصيد":
         global_bot.send_message(chat_id, "📥 خيارات الشحن التلقائي قيد التفعيل بالـ API.")
         return
-        
     if text == "📩 سحب رصيد":
         global_bot.send_message(chat_id, "📩 خيارات السحب قيد التفعيل بالـ API.")
         return
-        
     if text == "📞 الدعم الفني":
         global_bot.send_message(chat_id, "📞 فريق الدعم متواجد لخدمتكم دائماً.")
         return
@@ -175,28 +223,3 @@ def run_safe_api_task(chat_id, uid, username, password):
     if success:
         with open(DB_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
-        global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح سحابي كاسح ومطابق 100%!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
-    else:
-        global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء التلقائي بسبب رد اللوحة العكسي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
-
-def start_webhook_setup():
-    time.sleep(2)  
-    try:
-        print("[🔄] جاري تصفير اتصالات تليجرام السابقة...", flush=True)
-        global_bot.remove_webhook()
-        time.sleep(1)
-        
-        # 🌟 استخراج الرابط الصحيح والمطابق ديناميكياً لتجنب إرساله لنطاق خاطئ
-        webhook_url = f"https://bahr-bot-c3ac.onrender.com/{BOT_TOKEN}"
-        print(f"[🌐] ربط الـ Webhook بالمسار الآمن والديناميكي الجديد: {webhook_url}", flush=True)
-        global_bot.set_webhook(url=webhook_url, drop_pending_updates=True)
-        print("[✅] تم تهيئة واستقرار النظام بالملي مع تليجرام!", flush=True)
-    except Exception as e:
-        print(f"[❌] فشل تهيئة الـ Webhook: {e}", flush=True)
-
-if __name__ == "__main__":
-    print("[+] إطلاق نظام الأتمتة السحابي والـ Web Service على سيرفر Render...", flush=True)
-    threading.Thread(target=start_webhook_setup, daemon=True).start()
-    
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
