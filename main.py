@@ -30,6 +30,7 @@ AGENT_PASSWORD = "Aazzam@318"
 user_cookies = ""
 user_steps = {}
 
+# ضبط تهيئة صارمة ومستقرة للبوت
 global_bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
 
@@ -42,7 +43,6 @@ def refresh_agent_session():
             client_identifier="chrome112",
             random_tls_extension_order=True
         )
-        # خطوة 1: محاكاة زيارة صفحة الدخول أولاً كمتصفح حقيقي لجلب رموز الأمان المبدئية
         init_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
@@ -51,7 +51,6 @@ def refresh_agent_session():
         session.get(LOGIN_PAGE_URL, headers=init_headers, timeout_seconds=15)
         time.sleep(random.uniform(1.0, 2.0))
 
-        # خطوة 2: بناء الهيدرز الصارم والمطابق لإرسال حزمة الدخول العكسي
         headers = {
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -75,23 +74,21 @@ def refresh_agent_session():
             print(f"[✅] تم استخراج وتحديث كوكيز الجلسة بنجاح: {user_cookies[:35]}...", flush=True)
             return True
         else:
-            print(f"[❌] فشل تسجيل الدخول العكسي، الرمز: {res.status_code} - نص الرد: {res.text[:100]}", flush=True)
+            print(f"[❌] فشل تسجيل الدخول العكسي، الرمز: {res.status_code}", flush=True)
             return False
     except Exception as e:
         print(f"[❌] خطأ أثناء تجديد الجلسة: {e}", flush=True)
         return False
 
-# --- مسار استقبال الرسائل الآمن عبر توكن البوت (تعديل جذري لفك تجميد المعالجة) ---
+# --- مسار استقبال الرسائل الآمن عبر توكن البوت ---
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
         
-        # 🌟 الاستدعاء داخل حلقة المعالجة الآمنة لـ Flask لمنع التجميد وصمت الأزرار
-        with app.app_context():
-            global_bot.process_new_updates([update])
-            
+        # 🌟 المعالجة الآمنة والمباشرة لضمان تدفق رسائل تليجرام فوراً
+        global_bot.process_new_updates([update])
         return 'OK', 200
     return 'Forbidden', 403
 
@@ -131,10 +128,8 @@ def api_register_player(username, password, retry=True):
 
         print(f"[🚀] قذف حزمة الإنشاء للاعب الجديد: {username}", flush=True)
         res = session.post(REGISTER_PLAYER_API_URL, json=payload, headers=headers, cookies=cookie_dict, timeout_seconds=15)
-        print(f"[🔬] استجابة اللوحة العكسية: الرمز {res.status_code}", flush=True)
         
         if res.status_code == 403 and retry:
-            print("[⚠️] تم كشف انتهاء الجلسة (403)، جاري تجديدها آلياً وإعادة المحاولة...", flush=True)
             if refresh_agent_session():
                 return api_register_player(username, password, retry=False)
         
@@ -146,7 +141,7 @@ def api_register_player(username, password, retry=True):
                 return False, res_data.get("notification", {}).get("content", "فشل")
             except:
                 return False, "فشل فك حزمة الـ JSON العكسية."
-        return False, f"رمز خطأ الاستجابة {res.status_code} - تفاصيل: {res.text[:50]}"
+        return False, f"رمز خطأ الاستجابة {res.status_code}"
     except Exception as e:
         return False, str(e)
 
@@ -200,6 +195,7 @@ def core_menu_and_states(message):
         return
         
     if text == "👤 حسابي":
+        markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
         markup = telebot.types.InlineKeyboardMarkup()
         markup.add(telebot.types.InlineKeyboardButton("👤 إنشاء حساب جديد", callback_data="start_reg"))
         global_bot.send_message(chat_id, "⚠️ اضغط على الزر لإنشاء حساب لاعب فوراً.", reply_markup=markup)
@@ -218,3 +214,6 @@ def run_safe_api_task(chat_id, uid, username, password):
     success, detail = api_register_player(username, password)
     if success:
         log_line = json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n"
+        open(DB_FILE, "a", encoding="utf-8").write(log_line)
+        global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح سحابي كاسح ومطابق 100%!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
+    else:
