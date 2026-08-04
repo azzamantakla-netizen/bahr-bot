@@ -18,9 +18,6 @@ DB_FILE = "players_db.txt"
 PANEL_BASE = "https://texas4win.com"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-# الرابط السحابي الكامل والخاص بك على منصة Render لإصلاح التوجيه التلقائي
-RENDER_URL = "https://onrender.com"
-
 # متغير الكوكيز الافتراضي
 user_cookies = "PHPSESSID=488a394c83f1f914e66ca4b00759bfa0d8497f6a3eb0036d5912048678335557; languageCode=ar; language=ar"
 
@@ -49,7 +46,7 @@ def home():
 def api_register_player(username, password):
     global user_cookies
     try:
-        # 🌟 تم إصلاح الغلطة المطبعية هنا وحذف حرف الـ s الزائد بنجاح تام
+        # ضبط محاكي المتصفح بالتهيئة الصحيحة المطلوبة والمصححة إملائياً
         session = tls_client.Session(
             client_identifier="chrome112",
             random_tls_extension_order=True
@@ -188,8 +185,10 @@ def start_webhook_setup():
         print("[🔄] جاري تصفير اتصالات تليجرام السابقة...", flush=True)
         global_bot.remove_webhook()
         time.sleep(1)
-        webhook_url = f"{RENDER_URL}/{BOT_TOKEN}"
-        print(f"[🌐] ربط الـ Webhook بالمسار الآمن الجديد: {webhook_url}", flush=True)
+        
+        # 🌟 استخراج الرابط الصحيح والمطابق ديناميكياً لتجنب إرساله لنطاق خاطئ
+        webhook_url = f"https://bahr-bot-c3ac.onrender.com/{BOT_TOKEN}"
+        print(f"[🌐] ربط الـ Webhook بالمسار الآمن والديناميكي الجديد: {webhook_url}", flush=True)
         global_bot.set_webhook(url=webhook_url, drop_pending_updates=True)
         print("[✅] تم تهيئة واستقرار النظام بالملي مع تليجرام!", flush=True)
     except Exception as e:
