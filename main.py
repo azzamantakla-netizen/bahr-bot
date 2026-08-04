@@ -24,29 +24,29 @@ def run_flask():
 # ========================================== #
 # 2. إعداد مفاتيح وبوابات الـ API الموثقة    #
 # ========================================== #
-# 🌟 التوكن الجديد الصافي والمطهر تماماً لمنع الـ 409
 BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
 DB_FILE = "players_db.txt"
 
-# النطاق الرسمي الأساسي الموثق لحساب كاشير عُمير لعام 2026
 PANEL_BASE = "https://texas4win.com"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-# متغير التوكن السحري الذي سيمرره المالك يدوياً للبوت لسحق الـ 403 للأبد
-access_token = "eyJ0eXAiOiJKV1QiLC...pDdyQxfKUY"
+# 🌟 متغير الكوكيز السحري الموثق الذي يمرره المالك حياً عبر التليجرام
+user_cookies = "PHPSESSID=488a394c83f1f914e66ca4b00759bfa0d8497f6a3eb0036d5912048678335557; languageCode=ar; language=ar"
 user_steps = {}
 
 def api_register_player(username, password):
-    global access_token
+    global user_cookies
     
-    # الترويسات الرسمية المطابقة تماماً لملف عُمير صفحة 11 وصفحة 3
+    # حقن كوكيز هويتك البشرية الموثقة مع ترويسات متكاملة لعبور Cloudflare كالسهم
     headers = {
-        "Authorization": f"Bearer {access_token}",
+        "Cookie": user_cookies,
         "Content-Type": "application/json", 
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Origin": PANEL_BASE,
-        "Referer": f"{PANEL_BASE}/"
+        "Referer": f"{PANEL_BASE}/",
+        "Accept": "application/json, text/plain, */*",
+        "X-Requested-With": "XMLHttpRequest"
     }
     
     time.sleep(random.uniform(1.5, 3.5))
@@ -54,7 +54,7 @@ def api_register_player(username, password):
     payload = {"player": {"email": email, "password": password, "parentId": "2627036", "login": username}}
     
     try:
-        print(f"[🚀] قذف حزمة الإنشاء للاعب الجديد: {username} عبر التوكن النشط", flush=True)
+        print(f"[🚀] قذف حزمة الإنشاء للاعب الجديد: {username} عبر الكوكيز الموثقة حياً", flush=True)
         res = requests.post(REGISTER_PLAYER_API_URL, json=payload, headers=headers, timeout=20)
         print(f"[🔬] رد اللوحة على حركة الإنشاء: الرمز {res.status_code} - المحتوى: {res.text[:150]}", flush=True)
         
@@ -62,8 +62,6 @@ def api_register_player(username, password):
             res_data = res.json()
             if res_data.get("result") == 1 or res_data.get("status") is True: 
                 return True, "نجاح"
-            if res_data.get("result") == "ex":
-                return False, "التوكن ميت أو منتهي الصلاحية، يرجى تزويد البوت بتوكن جديد حياً."
             try: msg = res_data["notification"]["content"]
             except: msg = res_data.get("html", res.text)
             return False, msg
@@ -85,16 +83,16 @@ def start_cmd(message):
     markup.add(telebot.types.KeyboardButton("📩 سحب رصيد"), telebot.types.KeyboardButton("📥 إيداع / شحن رصيد"))
     markup.add(telebot.types.KeyboardButton("📞 الدعم الفني"))
     if message.from_user.id == OWNER_ID: 
-        markup.add(telebot.types.KeyboardButton("⚙️ تحديث التوكن (للمالك)"))
-    global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية الموثقة بالـ API المباشر! 🎉\n\nتفضل بالاختيار من القائمة أدناه بحسب طلبك:", reply_markup=markup)
+        markup.add(telebot.types.KeyboardButton("⚙️ تحديث الكوكيز (للمالك)"))
+    global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية الموثقة بالـ Cookies الحية! 🎉\n\nتفضل بالاختيار من القائمة أدناه بحسب طلبك:", reply_markup=markup)
 
 @global_bot.message_handler(func=lambda message: True)
 def core_menu(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text
     
-    if text == "⚙️ تحديث التوكن (للمالك)" and uid == OWNER_ID:
-        global_bot.send_message(chat_id, f"🔑 **حالة التوكن الحالي بالذاكرة:**\n`{str(access_token)[:30]}...`\n\nتفضل بإرسال الـ AccessToken الجديد الصافي والمستخرج من متصفحك حياً لتنشيط البوت فوراً وبدون ريستارت:")
-        global_bot.register_next_step_handler(message, save_live_token)
+    if text == "⚙️ تحديث الكوكيز (للمالك)" and uid == OWNER_ID:
+        global_bot.send_message(chat_id, f"🔑 **حالة الكوكيز الحالية بالذاكرة:**\n`{str(user_cookies)[:40]}...`\n\nتفضل بلصق وإرسال سطر الـ Cookies الجديد المستخرج من متصفحك حياً لتنشيط البوت فوراً وبدون ريستارت:")
+        global_bot.register_next_step_handler(message, save_live_cookies)
         return
         
     if text == "👤 حسابي":
@@ -107,13 +105,10 @@ def core_menu(message):
     if text == "📩 سحب رصيد": global_bot.send_message(chat_id, "📩 خيارات السحب قيد التفعيل بالـ API."); return
     if text == "📞 الدعم الفني": global_bot.send_message(chat_id, "📞 فريق الدعم متواجد لخدمتكم دائماً."); return
 
-def save_live_token(message):
-    global access_token
-    token_input = message.text.strip()
-    if "Bearer " in token_input:
-        token_input = token_input.replace("Bearer ", "")
-    access_token = token_input
-    global_bot.send_message(message.chat.id, "✅ **تم حقن وتنشيط التوكن الحي بنجاح باهر بداخل ذاكرة السيرفر!**\n\nالبوت مستعد الآن لإنشاء الحسابات كالسهم وتخطي الـ 403 كلياً للأبد!")
+def save_live_cookies(message):
+    global user_cookies
+    user_cookies = message.text.strip()
+    global_bot.send_message(message.chat.id, "✅ **تم حقن وتنشيط الكوكيز الموثقة بنجاح باهر بداخل ذاكرة السيرفر السحابي!**\n\nالبوت مستعد الآن لإنشاء الحسابات كالسهم وتخطي الـ 403 كلياً للأبد!")
 
 @global_bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
@@ -132,16 +127,16 @@ def reg_step_password(message):
     if uid not in user_steps: return
     password = message.text.strip()
     username = user_steps[uid]["username"]
-    global_bot.send_message(message.chat.id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة عبر بوابة المطورين...")
+    global_bot.send_message(message.chat.id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة عبر الكوكيز الموثقة...")
     threading.Thread(target=run_safe_api_task, args=(message.chat.id, uid, username, password), daemon=True).start()
 
 def run_safe_api_task(chat_id, uid, username, password):
     success, detail = api_register_player(username, password)
     if success:
         with open(DB_FILE, "a", encoding="utf-8") as f: f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
-        global_bot.send_message(chat_id, f"✅ **تم إنشاء حسابك بنجاح وبصلاحية المطورين المعتمدة!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
+        global_bot.send_message(chat_id, f"✅ **تم إنشاء حسابك بنجاح وبصلاحية هويتك البشرية الموثقة!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
     else:
-        global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء التلقائي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
+        global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء التلقائي بسبب رد اللوحة العكسي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
     if uid in user_steps: del user_steps[uid]
 
 def run_bot_polling():
@@ -155,9 +150,7 @@ def run_bot_polling():
 
 if __name__ == "__main__":
     print("[+] إطلاق نظام الأتمتة السحابي والـ Web Service على سيرفر Render...", flush=True)
-    # 1. إقلاع محرك تليجرام في خيط مستقل بالخلفية بنظام الحماية الجديد لمنع قفل السيرفر
     t = threading.Thread(target=run_bot_polling)
     t.daemon = True
     t.start()
-    # 2. تشغيل الـ Flask بالخيط الرئيسي ليرد فوراً على سيرفر ريندر بالرمز 200 وسحق الدائرة
     run_flask()
