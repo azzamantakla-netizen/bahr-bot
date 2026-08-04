@@ -14,8 +14,9 @@ DB_FILE = "players_db.txt"
 
 PANEL_BASE = "https://texas4win.com"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
+RENDER_URL = "https://onrender.com"
 
-# 🌟 الرمز السحري الموثق والمطابق لصورتك بالملي لتشغيل الأتمتة الفورية
+# ذاكرة الكوكيز الديناميكية (يمكنك تحديثها من البوت حياً في أي ثانية)
 user_cookies = "language=ar; PHPSESSID=488a394c83f1f914e66ca4b00759bfa0d8497f6a3eb0036d5912048678335557"
 user_steps = {}
 
@@ -59,7 +60,9 @@ def api_register_player(username, password):
         payload = {"player": {"email": email, "password": password, "parentId": "2627036", "login": username}}
 
         print(f"[🚀] قذف حزمة إنشاء اللاعب البشري: {username}", flush=True)
-        res = session.post(REGISTER_PLAYER_API_URL, json=payload, headers=headers, cookies=cookie_dict, timeout_seconds=10)
+        
+        # 🌟 كسر التعليق اللانهائي: تحديد 4 ثوانٍ فقط كحد أقصى للانتظار حتى لا يقف البوت أبداً
+        res = session.post(REGISTER_PLAYER_API_URL, json=payload, headers=headers, cookies=cookie_dict, timeout_seconds=4)
         print(f"[🔬] رد لوحة إنشاء الحساب العكسي: الرمز {res.status_code}", flush=True)
         
         if res.status_code == 200:
@@ -70,9 +73,9 @@ def api_register_player(username, password):
                 return False, res_data.get("notification", {}).get("content", "خطأ في بيانات المدخلات باللوحة")
             except:
                 return False, "فشل فك تشفير حزمة الرد الفعلي للوحة."
-        return False, f"رد اللوحة بـ الرمز {res.status_code}"
+        return False, f"رد اللوحة بـ الرمز {res.status_code} (جلسة الكوكيز الحالية تالفة أو انتهت)"
     except Exception as e:
-        return False, f"انتهت مهلة الاتصال باللوحة. تفاصيل: {str(e)}"
+        return False, f"انتهت مهلة الاتصال الفوري (جدار حماية Cloudflare قام بحجز الطلب بسبب انتهاء صلاحية الكوكيز بالذاكرة)."
 
 @global_bot.message_handler(commands=['start'])
 def start_cmd(message):
@@ -120,18 +123,18 @@ def core_menu_and_states(message):
                     pass
                 global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح سحابي كاسح ومطابق 100%!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
             else:
-                global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء الآلي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
+                global_bot.send_message(chat_id, f"⚠️ {str(detail)[:150]}", parse_mode="Markdown")
             return
         if current_state == "WAITING_COOKIES" and uid == OWNER_ID:
             global user_cookies
             user_cookies = text
             del user_steps[uid]
-            global_bot.send_message(chat_id, "✅ **تم حقن الكوكيز اليدوية بنجاح وبدء تفعيل الإنشاء الفوري!**")
+            global_bot.send_message(chat_id, "✅ **تم حقن الكوكيز الطازجة بنجاح وجاري تمرير طلب الإنشاء فوراً!**")
             return
 
     if text == "⚙️ تحديث الكوكيز يدوياً (للمالك)" and uid == OWNER_ID:
         user_steps[uid] = {"state": "WAITING_COOKIES"}
-        global_bot.send_message(chat_id, f"🔑 **الكوكيز بالذاكرة حالياً:**\n`{str(user_cookies)[:40]}...`\n\nتفضل بلصق وإرسال سطر الـ Cookies الكامل المستخرج حياً من متصفحك لتنشيط الحساب فوراً:")
+        global_bot.send_message(chat_id, f"🔑 **الكوكيز بالذاكرة حالياً:**\n`{str(user_cookies)[:40]}...`\n\nتفضل بفتح المتصفح، وسجل الدخول مجدداً للوحتك طازجاً، ثم انسخ قيمة الـ Cookies الحية المستخرجة الآن (تأكد من تحديث الجلسة) وأرسلها هنا:")
         return
         
     if text == "👤 حسابي":
@@ -152,14 +155,9 @@ def core_menu_and_states(message):
 def start_webhook_setup():
     time.sleep(3)  
     try:
-        print("[🔄] جاري تصفير وإبادة جلسات تليجرام الميتة العالقة...", flush=True)
         global_bot.remove_webhook()
         time.sleep(1.5)
-        
-        # 🌟 الاستخراج الديناميكي الموحد والحاسم للرابط السحابي الكامل لبوتك لمنع النطاقات الناقصة نهائياً
-        webhook_url = "https://bahr-bot-c3ac.onrender.com/" + BOT_TOKEN
-        print(f"[🌐] ربط الـ Webhook بالمسار الآمن والديناميكي النهائي: {webhook_url}", flush=True)
-        
+        webhook_url = "https://onrender.com/" + BOT_TOKEN
         global_bot.set_webhook(url=webhook_url, drop_pending_updates=True)
         print("[✅] تم تهيئة واستقرار نظام الاستجابة السريعة الشامل بنجاح مذهل!", flush=True)
     except Exception as e:
