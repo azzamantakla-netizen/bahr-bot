@@ -17,12 +17,12 @@ LOGIN_PAGE_URL = f"{PANEL_BASE}/global/agent/login/index"
 LOGIN_API_URL = f"{PANEL_BASE}/global/api/UserApi/login"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-RENDER_URL = "https://bahr-bot-c3ac.onrender.com"
+RENDER_URL = "https://onrender.com"
 
 AGENT_USERNAME = "Bero@yahoo.com"
 AGENT_PASSWORD = "Aazzam@318"
 
-# وضعنا كوكيز افتراضية كبداية، ويمكنك تحديثها من البوت مباشرة
+# سطر الكوكيز الافتراضي
 user_cookies = "languageCode=ar; language=ar"
 user_steps = {}
 
@@ -33,13 +33,13 @@ def refresh_agent_session():
     global user_cookies
     print("[🔄] جاري محاولة تجديد الجلسة آلياً...", flush=True)
     try:
-        session = tls_client.Session(client_identifier="chrome112", random_tls_extension_order=True)
+        session = tls_client.Session(client_identifier="chrome_120", random_tls_extension_order=True)
         init_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
         }
-        session.get(LOGIN_PAGE_URL, headers=init_headers, timeout_seconds=15)
-        time.sleep(1.5)
+        session.get(LOGIN_PAGE_URL, headers=init_headers, timeout_seconds=10)
+        time.sleep(1.0)
 
         headers = {
             "Content-Type": "application/json",
@@ -50,7 +50,7 @@ def refresh_agent_session():
             "X-Requested-With": "XMLHttpRequest"
         }
         payload = {"login": AGENT_USERNAME, "password": AGENT_PASSWORD, "languageCode": "ar"}
-        res = session.post(LOGIN_API_URL, json=payload, headers=headers, timeout_seconds=15)
+        res = session.post(LOGIN_API_URL, json=payload, headers=headers, timeout_seconds=10)
         
         if res.status_code == 200:
             cookies_list = [f"{k}={v}" for k, v in res.cookies.items()]
@@ -60,8 +60,7 @@ def refresh_agent_session():
             user_cookies = "; ".join(cookies_list)
             print("[✅] تم تجديد الكوكيز آلياً بنجاح!", flush=True)
             return True
-        # هنا سيطبع تفاصيل الـ 403 لنكشف كود الحماية المستقبلي
-        print(f"[❌] اللوحة رفضت الدخول الآلي بالرمز: {res.status_code} - نص الرد: {res.text[:120]}", flush=True)
+        print(f"[❌] اللوحة رفضت الدخول الآلي بالرمز: {res.status_code}", flush=True)
         return False
     except Exception as e:
         print(f"[❌] خطأ شبكي أثناء تجديد الجلسة: {e}", flush=True)
@@ -83,7 +82,8 @@ def home():
 def api_register_player(username, password, retry=True):
     global user_cookies
     try:
-        session = tls_client.Session(client_identifier="chrome112", random_tls_extension_order=True)
+        # ترقية جيل البصمة لتوافق الهيدرز بالملي وتخطي تجميد Cloudflare
+        session = tls_client.Session(client_identifier="chrome_120", random_tls_extension_order=True)
         cookie_dict = {}
         if user_cookies:
             for item in user_cookies.split(";"):
@@ -104,11 +104,13 @@ def api_register_player(username, password, retry=True):
         payload = {"player": {"email": email, "password": password, "parentId": "2627036", "login": username}}
 
         print(f"[🚀] قذف حزمة إنشاء اللاعب: {username}", flush=True)
-        res = session.post(REGISTER_PLAYER_API_URL, json=payload, headers=headers, cookies=cookie_dict, timeout_seconds=15)
-        print(f"[🔬] رد لوحة إنشاء الحساب: الرمز {res.status_code}", flush=True)
+        
+        # 🌟 تقليص زمن الانتظار لـ 8 ثوانٍ فقط لمنع الوقوف نهائياً والكسر التلقائي إذا علق الطلب في جدار الحماية
+        res = session.post(REGISTER_PLAYER_API_URL, json=payload, headers=headers, cookies=cookie_dict, timeout_seconds=8)
+        print(f"[🔬] رد لوحة إنشاء الحساب العكسي: الرمز {res.status_code}", flush=True)
 
         if res.status_code == 403 and retry:
-            print("[⚠️] الكوكيز الحالية منتهية، جاري محاولة التجديد آلياً...", flush=True)
+            print("[⚠️] الكوكيز بحاجة لتحديث، جاري محاولة التجديد التلقائي لمرة واحدة...", flush=True)
             if refresh_agent_session():
                 return api_register_player(username, password, retry=False)
         
@@ -117,12 +119,14 @@ def api_register_player(username, password, retry=True):
                 res_data = res.json()
                 if res_data.get("result") == 1 or res_data.get("status") is True:
                     return True, "نجاح"
-                return False, res_data.get("notification", {}).get("content", "خطأ في بيانات الإنشاء باللوحة")
+                return False, res_data.get("notification", {}).get("content", "خطأ في بيانات اللوحة العكسية")
             except:
-                return False, "فشل قراءة رد اللوحة بنجاح"
-        return False, f"رد اللوحة بـ: {res.status_code} - التفاصيل: {res.text[:80]}"
+                return False, "فشل فك تشفير حزمة رد اللوحة."
+                
+        return False, f"رد اللوحة بالرمز {res.status_code}"
     except Exception as e:
-        return False, str(e)
+        # إذا حدث كسر للاتصال بسبب انتهاء الـ 8 ثوانٍ سيعود الخطأ هنا فوراً للبوت بدون تعليق
+        return False, f"انتهت مهلة الاتصال باللوحة (جدار حماية Cloudflare معلق أو كوكيز تالفة). تفاصيل: {str(e)}"
 
 @global_bot.message_handler(commands=['start'])
 def start_cmd(message):
@@ -134,7 +138,7 @@ def start_cmd(message):
     markup.add(telebot.types.KeyboardButton("📩 سحب رصيد"), telebot.types.KeyboardButton("📥 إيداع / شحن رصيد"))
     markup.add(telebot.types.KeyboardButton("📞 الدعم الفني"))
     if uid == OWNER_ID:
-        markup.add(telebot.types.KeyboardButton("⚙️ تحديث الكوكيز يدوياً (للمالك)"))
+        markup.add(telebot.types.KeyboardButton("⚙️ تحديت الكوكيز يدوياً (للمالك)"))
     global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية المحدثة! 🎉", reply_markup=markup)
 
 @global_bot.callback_query_handler(func=lambda call: True)
@@ -168,9 +172,9 @@ def core_menu_and_states(message):
             global_bot.send_message(chat_id, "✅ **تم حقن الكوكيز اليدوية بنجاح وبدء تفعيل الإنشاء الفوري!**")
             return
 
-    if text == "⚙️ تحديث الكوكيز يدوياً (للمالك)" and uid == OWNER_ID:
+    if text == "⚙️ تحديت الكوكيز يدوياً (للمالك)" and uid == OWNER_ID:
         user_steps[uid] = {"state": "WAITING_COOKIES"}
-        global_bot.send_message(chat_id, f"🔑 **الكوكيز بالذاكرة حالياً:**\n`{str(user_cookies)[:40]}...`\n\nتفضل بلصق وإرسال سطر الـ Cookies الكامل المستخرج حياً من متصفحك (الذي سجلت به الدخول للوحة) لتنشيط الحساب فوراً:")
+        global_bot.send_message(chat_id, f"🔑 **الكوكيز بالذاكرة حالياً:**\n`{str(user_cookies)[:40]}...`\n\nتفضل بلصق وإرسال سطر الـ Cookies الكامل المستخرج حياً من متصفحك لتنشيط الحساب فوراً:")
         return
         
     if text == "👤 حسابي":
@@ -214,4 +218,3 @@ def start_webhook_setup():
     except Exception as e:
         print(f"[❌] فشل تهيئة الـ Webhook: {e}", flush=True)
 
-threading.Thread(target=start_webhook_setup, daemon=True).start()
