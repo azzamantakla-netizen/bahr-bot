@@ -28,36 +28,36 @@ BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
 DB_FILE = "players_db.txt"
 
-# 🌟 الاستهداف المباشر لنطاق البوابة الخلفية المفتوحة bcapps المستخرجة من صورتك
+# 🌟 النطاق الرسمي والموحد بالملي بحسب الصفحة 4 من ملف الـ PDF لعمير
 PANEL_BASE = "https://texas4win.com"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-# 🌟 متغير الكوكيز السحري الموثق والمحقن بالدروع الكاملة المستخرجة من صورتك
+# متغير الكوكيز السحري الموثق
 user_cookies = "PHPSESSID=488a394c83f1f914e66ca4b00759bfa0d8497f6a3eb0036d5912048678335557; languageCode=ar; language=ar"
 user_steps = {}
 
 def api_register_player(username, password):
     global user_cookies
     
-    # ترويسات العبور المتقدمة والكاملة لمحاكاة بصمة متصفحك البشري 100% من السحاب
+    # 🌟 درع المطابقة الصارم المذكور بالملف لمنع الـ 403 الخلفي نهائياً
     headers = {
         "Cookie": user_cookies,
         "Content-Type": "application/json", 
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Origin": PANEL_BASE,
-        "Referer": f"{PANEL_BASE}/",
+        "Referer": f"{PANEL_BASE}/global/agent/User/index",
         "Accept": "application/json, text/plain, */*",
         "X-Requested-With": "XMLHttpRequest"
     }
     
-    time.sleep(random.uniform(1.5, 3.5))
+    time.sleep(random.uniform(1.5, 3.0))
     email = "".join(random.choices(string.ascii_lowercase + string.digits, k=10)) + "@gmail.com"
     payload = {"player": {"email": email, "password": password, "parentId": "2627036", "login": username}}
     
     try:
-        print(f"[🚀] قذف حزمة الإنشاء للاعب الجديد: {username} عبر درع كوكيز bcapps حياً", flush=True)
+        print(f"[🚀] قذف حزمة الإنشاء الموحدة للاعب الجديد: {username}", flush=True)
         res = requests.post(REGISTER_PLAYER_API_URL, json=payload, headers=headers, timeout=20)
-        print(f"[🔬] رد اللوحة على حركة الإنشاء: الرمز {res.status_code} - المحتوى: {res.text[:150]}", flush=True)
+        print(f"[🔬] رد اللوحة الرسمي: الرمز {res.status_code} - المحتوى: {res.text[:150]}", flush=True)
         
         if res.status_code == 200:
             res_data = res.json()
@@ -85,14 +85,14 @@ def start_cmd(message):
     markup.add(telebot.types.KeyboardButton("📞 الدعم الفني"))
     if message.from_user.id == OWNER_ID: 
         markup.add(telebot.types.KeyboardButton("⚙️ تحديث الكوكيز (للمالك)"))
-    global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية الموثقة بآلية المطورين! 🎉\n\nتفضل بالاختيار من القائمة أدناه بحسب طلبك:", reply_markup=markup)
+    global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية المحدثة بالملي! 🎉\n\nتفضل بالاختيار من القائمة أدناه بحسب طلبك:", reply_markup=markup)
 
 @global_bot.message_handler(func=lambda message: True)
 def core_menu(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text
     
     if text == "⚙️ تحديث الكوكيز (للمالك)" and uid == OWNER_ID:
-        global_bot.send_message(chat_id, f"🔑 **حالة الكوكيز الحالية بالذاكرة:**\n`{str(user_cookies)[:40]}...`\n\nتفضل بلصق وإرسال سطر الـ Cookies الكامل الجديد المستخرج من متصفحك حياً لتنشيط البوت فوراً:")
+        global_bot.send_message(chat_id, f"🔑 **حالة الكوكيز الحالية بالذاكرة:**\n`{str(user_cookies)[:40]}...`\n\nتفضل بلصق وإرسال سطر الـ Cookies الكامل المستخرج حياً لتنشيط البوت:")
         global_bot.register_next_step_handler(message, save_live_cookies)
         return
         
@@ -109,7 +109,7 @@ def core_menu(message):
 def save_live_cookies(message):
     global user_cookies
     user_cookies = message.text.strip()
-    global_bot.send_message(message.chat.id, "✅ **تم حقن وتنشيط الكوكيز الموثقة بنجاح باهر بداخل ذاكرة السيرفر السحابي!**\n\nالبوت مستعد الآن لإنشاء الحسابات كالسهم وتخطي الـ 403 كلياً للأبد!")
+    global_bot.send_message(message.chat.id, "✅ **تم حقن الكوكيز الموزونة والمطابقة لملف عمير بنجاح!**")
 
 @global_bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
@@ -135,7 +135,7 @@ def run_safe_api_task(chat_id, uid, username, password):
     success, detail = api_register_player(username, password)
     if success:
         with open(DB_FILE, "a", encoding="utf-8") as f: f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
-        global_bot.send_message(chat_id, f"✅ **تم إنشاء حسابك بنجاح وبصلاحية هويتك البشرية الموثقة!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
+        global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح سحابي كاسح ومطابق 100%!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
     else:
         global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء التلقائي بسبب رد اللوحة العكسي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
     if uid in user_steps: del user_steps[uid]
