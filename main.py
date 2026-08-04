@@ -6,15 +6,12 @@ import random
 import threading
 import telebot
 from flask import Flask, request
-
-# 💡 تخطي حظر الـ 403 وأتمتة الكوكيز الآلية للأبد
 import tls_client  
 
 BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
 DB_FILE = "players_db.txt"
 
-# النطاقات والمسارات الرسمية للوحة
 PANEL_BASE = "https://texas4win.com"
 LOGIN_PAGE_URL = f"{PANEL_BASE}/global/agent/login/index"
 LOGIN_API_URL = f"{PANEL_BASE}/global/api/UserApi/login"
@@ -22,18 +19,15 @@ REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
 RENDER_URL = "https://onrender.com"
 
-# حساب الوكيل الخاص بك مدمج وموثق للأتمتة الذاتية
 AGENT_USERNAME = "Bero@yahoo.com"
 AGENT_PASSWORD = "Aazzam@318"
 
-# متغير الذاكرة المؤقتة للكوكيز
 user_cookies = ""
 user_steps = {}
 
 global_bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
 
-# --- دالة أتمتة تسجيل الدخول الذكي وجلب الكوكيز عبر الزيارة التمهيدية لمنع الـ 403 ---
 def refresh_agent_session():
     global user_cookies
     print("[🔄] جاري تجديد جلسة الوكيل وتوليد كوكيز جديدة تلقائياً...", flush=True)
@@ -79,7 +73,6 @@ def refresh_agent_session():
         print(f"[❌] خطأ أثناء تجديد الجلسة: {e}", flush=True)
         return False
 
-# --- مسار استقبال الرسائل الآمن عبر توكن البوت ---
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
@@ -93,7 +86,6 @@ def webhook():
 def home():
     return "🚀 BOT IS LIVE AND RUNNING 24/7 (AUTO-COOKIE MODE)"
 
-# --- دالة الاتصال باللوحة عبر محاكي المتصفح الكاسر للـ 403 ---
 def api_register_player(username, password, retry=True):
     global user_cookies
     if not user_cookies:
@@ -142,9 +134,6 @@ def api_register_player(username, password, retry=True):
     except Exception as e:
         return False, str(e)
 
-# ========================================== #
-# 3. محرك تليجرام وقوائم التحكم والحالات #
-# ========================================== #
 @global_bot.message_handler(commands=['start'])
 def start_cmd(message):
     uid = message.from_user.id
@@ -218,4 +207,18 @@ def run_safe_api_task(chat_id, uid, username, password):
             pass
         global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح سحابي كاسح ومطابق 100%!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
     else:
-        # 🌟 تم تنظيف وإعادة صياغة هيكل الـ else البرمجي وإزالة أي فراغات بادئة متسببة في المشكلة
+        global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء التلقائي بسبب رد اللوحة العكسي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
+
+def start_webhook_setup():
+    time.sleep(3)  
+    try:
+        global_bot.remove_webhook()
+        time.sleep(1)
+        webhook_url = f"{RENDER_URL}/{BOT_TOKEN}"
+        global_bot.set_webhook(url=webhook_url, drop_pending_updates=True)
+        print("[✅] تم تهيئة واستقرار النظام بالملي مع تليجرام!", flush=True)
+        threading.Thread(target=refresh_agent_session, daemon=True).start()
+    except Exception as e:
+        print(f"[❌] فشل تهيئة الـ Webhook: {e}", flush=True)
+
+threading.Thread(target=start_webhook_setup, daemon=True).start()
