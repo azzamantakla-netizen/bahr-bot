@@ -17,7 +17,7 @@ LOGIN_PAGE_URL = f"{PANEL_BASE}/global/agent/login/index"
 LOGIN_API_URL = f"{PANEL_BASE}/global/api/UserApi/login"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-RENDER_URL = "https://bahr-bot-c3ac.onrender.com"
+RENDER_URL = "https://onrender.com"
 
 AGENT_USERNAME = "Bero@yahoo.com"
 AGENT_PASSWORD = "Aazzam@318"
@@ -42,15 +42,15 @@ def refresh_agent_session():
             "Accept-Language": "ar,en-US;q=0.9,en;q=0.8"
         }
         
-        # 🌟 زيارة تمهيدية لقشط كود الحماية
         html_res = session.get(LOGIN_PAGE_URL, headers=init_headers, timeout_seconds=15)
         csrf_token = ""
         
-        # استخراج رمز الـ CSRF ذكياً من النصوص المخفية للصفحة إن وجد
         if 'name="_csrf"' in html_res.text:
             try:
-                csrf_token = html_res.text.split('name="_csrf" value="')[1].split('"')[0]
-                print(f"[🔑] تم قشط رمز حماية اللوحة المشفر: {csrf_token[:15]}...", flush=True)
+                parts = html_res.text.split('name="_csrf" value="')
+                if len(parts) > 1:
+                    csrf_token = parts[1].split('"')[0]
+                    print(f"[🔑] تم قشط رمز حماية اللوحة: {csrf_token[:15]}...", flush=True)
             except:
                 pass
 
@@ -65,13 +65,10 @@ def refresh_agent_session():
             "X-Requested-With": "XMLHttpRequest"
         }
         
-        # إذا تم العثور على رمز الـ CSRF نقوم بحقنه في الحزمة والـ Headers فوراً لتخطي الـ 403
         if csrf_token:
             headers["X-CSRF-TOKEN"] = csrf_token
 
         payload = {"login": AGENT_USERNAME, "password": AGENT_PASSWORD, "languageCode": "ar"}
-        
-        # تفعيل حزمة المطابقة في الإرسال
         res = session.post(LOGIN_API_URL, json=payload, headers=headers, timeout_seconds=15)
         print(f"[🔬] رد اللوحة المباشر على تسجيل الدخول: الرمز {res.status_code}", flush=True)
         
@@ -226,3 +223,8 @@ def run_safe_api_task(chat_id, uid, username, password):
             pass
         global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح سحابي كاسح ومطابق 100%!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
     else:
+        global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء التلقائي بسبب رد اللوحة العكسي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
+
+def start_webhook_setup():
+    time.sleep(3)  
+    try:
