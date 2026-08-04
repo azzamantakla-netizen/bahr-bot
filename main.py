@@ -5,23 +5,33 @@ import string
 import random
 import threading
 import telebot
-from flask import Flask
+from flask import Flask, request
 
-# 💡 حل مشكلة الـ 403 والتجميد: تهيئة متطورة ومضمونة لمحاكي المتصفح المشفر
+# 💡 حل مشكلة الـ 403: استخدام مكتبة متطورة لتخطي بصمة السيرفرات وأنظمة الحماية
 import tls_client  
 
 # ========================================== #
-# 1. إعداد خادم الويب لمنصة Render (الإقلاع) #
+# 1. إعداد خادم الويب ومنفذ الـ Webhook لـ Render #
 # ========================================== #
 app = Flask(__name__)
 
+# الرابط الرئيسي الممنوح لك من منصة Render
+RENDER_URL = "https://bahr-bot-c3ac.onrender.com"
+
 @app.route('/')
 def home():
-    return "🚀 BOT IS LIVE AND RUNNING 24/7"
+    return "🚀 BOT IS LIVE AND RUNNING 24/7 (WEBHOOK MODE)"
 
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+# المسار السري لاستقبال تحديثات تليجرام فورياً ومنع التعارض 409 نهائياً
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        global_bot.process_new_updates([update])
+        return '', 200
+    else:
+        return 'Invalid Request', 403
 
 # ========================================== #
 # 2. إعداد مفاتيح وبوابات الـ API الموثقة #
@@ -33,7 +43,7 @@ DB_FILE = "players_db.txt"
 PANEL_BASE = "https://texas4win.com"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-# متغير الكوكيز الافتراضي
+# متغير الكوكيز
 user_cookies = "PHPSESSID=488a394c83f1f914e66ca4b00759bfa0d8497f6a3eb0036d5912048678335557; languageCode=ar; language=ar"
 user_steps = {}
 
@@ -41,13 +51,12 @@ def api_register_player(username, password):
     global user_cookies
     
     try:
-        # 🌟 محاكي متصفح من إصدار مستقر جداً لتفادي تجميد الاتصال السحابي
+        # محاكي متصفح من إصدار مستقر جداً لتفادي تجميد الاتصال السحابي
         session = tls_client.Session(
             client_identifier="chrome112",
             random_tls_extensions_order=True
         )
         
-        # تفكيك الكوكيز بطريقة آمنة وصارمة لمنع تجميد المكتبة
         cookie_dict = {}
         if user_cookies:
             for cookie in user_cookies.split(";"):
@@ -65,14 +74,12 @@ def api_register_player(username, password):
             "X-Requested-With": "XMLHttpRequest"
         }
 
-        # تقليص وقت الانتظار العشوائي لسرعة الاستجابة ومنع تجميد الخيط السحابي
         time.sleep(random.uniform(0.5, 1.5))
         email = "".join(random.choices(string.ascii_lowercase + string.digits, k=10)) + "@gmail.com"
         payload = {"player": {"email": email, "password": password, "parentId": "2627036", "login": username}}
 
         print(f"[🚀] إرسال حزمة الإنشاء الفورية للاعب: {username}", flush=True)
         
-        # 🌟 تعديل الـ Timeout وتمريره بشكل صحيح لمنع الوقوف لانهائياً وضمان كسر الاتصال إذا تأخرت اللوحة
         res = session.post(
             REGISTER_PLAYER_API_URL, 
             json=payload, 
@@ -170,7 +177,6 @@ def reg_step_password(message):
     
     global_bot.send_message(message.chat.id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة عبر الكوكيز الموثقة...")
     
-    # حماية الخيط الخلفي من التجمد عبر تفعيل نظام الإغلاق الذاتي والـ Daemon المستقر
     t = threading.Thread(target=run_safe_api_task, args=(message.chat.id, uid, username, password))
     t.daemon = True
     t.start()
@@ -187,26 +193,23 @@ def run_safe_api_task(chat_id, uid, username, password):
     if uid in user_steps:
         del user_steps[uid]
 
-def run_bot_polling():
-    print("[+] إطلاق قناة الاستماع الحية للبوت بالخلفية...", flush=True)
+# دالة ربط البوت بالـ Webhook تلقائياً عند الإقلاع وتصفير الـ Polling نهائياً
+def init_webhook():
     try:
-        global_bot.delete_webhook(drop_pending_updates=True)
-        time.sleep(2)
-    except:
-        pass
-
-    while True:
-        try:
-            global_bot.polling(none_stop=True, timeout=60, long_polling_timeout=30)
-        except Exception as e:
-            if "Conflict" in str(e) or "409" in str(e):
-                time.sleep(5)
-            else:
-                time.sleep(3)
+        print("[🔄] جاري حذف أي اتصالات Polling أو قنوات معلقة في تليجرام...", flush=True)
+        global_bot.remove_webhook()
+        time.sleep(1.5)
+        print(f"[🌐] جاري ربط البوت بـ Webhook الموحد لمنصة Render: {RENDER_URL}/webhook", flush=True)
+        global_bot.set_webhook(url=f"{RENDER_URL}/webhook", drop_pending_updates=True)
+        print("[✅] تم تفعيل نظام الـ Webhook بنجاح مذهل واستقرار 100%!", flush=True)
+    except Exception as e:
+        print(f"[❌] فشل تهيئة الـ Webhook: {e}", flush=True)
 
 if __name__ == "__main__":
     print("[+] إطلاق نظام الأتمتة السحابي والـ Web Service على سيرفر Render...", flush=True)
-    t = threading.Thread(target=run_bot_polling)
-    t.daemon = True
-    t.start()
-    run_flask()
+    # تشغيل أمر الربط التلقائي في خيط مستقل عند بداية التشغيل
+    threading.Thread(target=init_webhook, daemon=True).start()
+    
+    # تشغيل خادم ويب Flask لاستقبال الرسائل
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
