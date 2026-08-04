@@ -24,16 +24,17 @@ def run_flask():
 # ========================================== #
 # 2. إعداد مفاتيح وبوابات الـ API الموثقة    #
 # ========================================== #
+# 🌟 التوكن الجديد الصافي والمطهر تماماً لمنع الـ 409
 BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
 DB_FILE = "players_db.txt"
 
-# العودة للنطاق الرسمي الصحيح الموثق بصورتك
+# النطاق الرسمي الأساسي الموثق لحساب كاشير عُمير لعام 2026
 PANEL_BASE = "https://texas4win.com"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-# 🌟 متغير التوكن السحري الذي سيمرره المالك يدوياً للبوت لسحق الـ 403 للأبد
-access_token = "eyJ0eXAiOiJKV1QiLC...pDdyQxfKUY" # سيتم تحديثه حياً عبر التليجرام
+# متغير التوكن السحري الذي سيمرره المالك يدوياً للبوت لسحق الـ 403 للأبد
+access_token = "eyJ0eXAiOiJKV1QiLC...pDdyQxfKUY"
 user_steps = {}
 
 def api_register_player(username, password):
@@ -85,7 +86,7 @@ def start_cmd(message):
     markup.add(telebot.types.KeyboardButton("📞 الدعم الفني"))
     if message.from_user.id == OWNER_ID: 
         markup.add(telebot.types.KeyboardButton("⚙️ تحديث التوكن (للمالك)"))
-    global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية الموثقة بالـ API! 🎉\n\nتفضل بالاختيار من القائمة أدناه بحسب طلبك:", reply_markup=markup)
+    global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية الموثقة بالـ API المباشر! 🎉\n\nتفضل بالاختيار من القائمة أدناه بحسب طلبك:", reply_markup=markup)
 
 @global_bot.message_handler(func=lambda message: True)
 def core_menu(message):
@@ -103,7 +104,7 @@ def core_menu(message):
         return
         
     if text == "📥 إيداع / شحن رصيد": global_bot.send_message(chat_id, "📥 خيارات الشحن التلقائي قيد التفعيل بالـ API."); return
-    if text == "📩 سحب رصيد": global_bot.send_message(chat_id, "📩 خيارات السحب التلقائي قيد التفعيل بالـ API."); return
+    if text == "📩 سحب رصيد": global_bot.send_message(chat_id, "📩 خيارات السحب قيد التفعيل بالـ API."); return
     if text == "📞 الدعم الفني": global_bot.send_message(chat_id, "📞 فريق الدعم متواجد لخدمتكم دائماً."); return
 
 def save_live_token(message):
@@ -144,10 +145,19 @@ def run_safe_api_task(chat_id, uid, username, password):
     if uid in user_steps: del user_steps[uid]
 
 def run_bot_polling():
-    print("[+] إطلاق قناة الاستماع الحية للبوت بالخلفية...", flush=True)
-    global_bot.infinity_polling(skip_pending=True)
+    print("[+] إطلاق قناة الاستماع الحية للبوت بنظام الإنعاش الآمن بالخلفية...", flush=True)
+    while True:
+        try:
+            global_bot.polling(none_stop=True, timeout=60, long_polling_timeout=30)
+        except Exception as e:
+            print(f"[⚠️] تنبيه شبكي بالخلفية، إعادة اتصال آلي: {e}", flush=True)
+            time.sleep(5)
 
 if __name__ == "__main__":
     print("[+] إطلاق نظام الأتمتة السحابي والـ Web Service على سيرفر Render...", flush=True)
-    threading.Thread(target=run_bot_polling, daemon=True).start()
+    # 1. إقلاع محرك تليجرام في خيط مستقل بالخلفية بنظام الحماية الجديد لمنع قفل السيرفر
+    t = threading.Thread(target=run_bot_polling)
+    t.daemon = True
+    t.start()
+    # 2. تشغيل الـ Flask بالخيط الرئيسي ليرد فوراً على سيرفر ريندر بالرمز 200 وسحق الدائرة
     run_flask()
