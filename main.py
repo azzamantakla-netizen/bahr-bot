@@ -17,11 +17,12 @@ SIGNIN_API_URL = f"{PANEL_BASE}/global/api/UserApi/signIn"
 REFRESH_TOKEN_API_URL = f"{PANEL_BASE}/global/api/UserApi/refreshToken"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-RENDER_URL = "https://onrender.com"
+RENDER_URL = "https://bahr-bot-c3ac.onrender.com"
 
 AGENT_USERNAME = "Bero@yahoo.com"
 AGENT_PASSWORD = "Aazzam@318"
 
+# ذاكرة حفظ الرموز والخطوات الديناميكية (ستعمل فور حقنها بالبوت)
 access_token = ""
 refresh_token = ""
 user_steps = {}
@@ -88,7 +89,8 @@ def home():
 def api_register_player(username, password, retry=True):
     global access_token
     if not access_token:
-        api_agent_signin()
+        return False, "الرجاء تحديث مفاتيح الـ API (Tokens) أولاً من قائمة المالك."
+        
     try:
         headers = {
             "Content-Type": "application/json",
@@ -121,7 +123,7 @@ def start_cmd(message):
     markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     markup.add(telebot.types.KeyboardButton("👤 حسابي"))
     markup.add(telebot.types.KeyboardButton("📩 سحب رصيد"), telebot.types.KeyboardButton("📥 إيداع / شحن رصيد"))
-    markup.add(telebot.types.KeyboardButton("⚙️ تجديد مفاتيح الـ API (للمالك)"))
+    markup.add(telebot.types.KeyboardButton("⚙️ إدخال مفتاح الـ API يدوياً (للمالك)"))
     markup.add(telebot.types.KeyboardButton("📞 الدعم الفني"))
     global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية الرسمية المحدثة بالملي! 🎉", reply_markup=markup)
 
@@ -161,13 +163,21 @@ def core_menu_and_states(message):
             else:
                 global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء عبر الـ API:\n`{str(detail)[:150]}`", parse_mode="Markdown")
             return
+        if current_state == "WAITING_TOKEN" and uid == OWNER_ID:
+            global access_token, refresh_token
+            try:
+                tokens = json.loads(text)
+                access_token = tokens.get("accessToken")
+                refresh_token = tokens.get("refreshToken")
+                del user_steps[uid]
+                global_bot.send_message(chat_id, "✅ **تم حقن التوكنات الرسمية بنجاح! البوت جاهز لإنشاء اللاعبين.**")
+            except:
+                global_bot.send_message(chat_id, "❌ صيغة الـ JSON خاطئة، الرجاء نسخ حزمة الرد الكاملة.")
+            return
 
-    if text == "⚙️ تجديد مفاتيح الـ API (للمالك)" and uid == OWNER_ID:
-        global_bot.send_message(chat_id, "🔄 جاري إرسال طلب تسجيل دخول رسمي لإنتاج رموز توكن جديدة...")
-        if api_agent_signin():
-            global_bot.send_message(chat_id, "✅ **تم جلب وتأكيد رموز الـ Tokens الرسمية بنجاح!**\n\nالبوت مستعد الآن لإنشاء الحسابات كالسهم وبدون كوكيز.")
-        else:
-            global_bot.send_message(chat_id, "❌ **فشل جلب الرموز!** تأكد من إعدادات اللوحة وحساب الوكيل.")
+    if text == "⚙️ إدخال مفتاح الـ API يدوياً (للمالك)" and uid == OWNER_ID:
+        user_steps[uid] = {"state": "WAITING_TOKEN"}
+        global_bot.send_message(chat_id, "🔑 يرجى إرسال حزمة نجاح الـ JSON المستخرجة (Success response example) التي تحتوي على الـ accessToken والـ refreshToken:")
         return
         
     if text == "👤 حسابي":
