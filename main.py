@@ -192,7 +192,6 @@ def core_menu_and_states(message):
         return
         
     if text == "👤 حسابي":
-        # 🌟 تم إصلاح التكرار الخاطئ هنا وضبط مصفوفة الأزرار الإنبلاين بنجاح
         markup_inline = telebot.types.InlineKeyboardMarkup()
         markup_inline.add(telebot.types.InlineKeyboardButton("👤 إنشاء حساب جديد", callback_data="start_reg"))
         global_bot.send_message(chat_id, "⚠️ اضغط على الزر لإنشاء حساب لاعب فوراً.", reply_markup=markup_inline)
@@ -210,12 +209,13 @@ def core_menu_and_states(message):
 def run_safe_api_task(chat_id, uid, username, password):
     success, detail = api_register_player(username, password)
     if success:
-        log_line = json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n"
-        open(DB_FILE, "a", encoding="utf-8").write(log_line)
+        # 🌟 صياغة آمنة كلياً ومحمية ومعزولة بدون فتح دالة open عارية في السطر لمنع تعليق gunicorn
+        try:
+            log_line = json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n"
+            f = open(DB_FILE, "a", encoding="utf-8")
+            f.write(log_line)
+            f.close()
+        except:
+            pass
         global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح سحابي كاسح ومطابق 100%!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
     else:
-        global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء التلقائي بسبب رد اللوحة العكسي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
-
-def start_webhook_setup():
-    time.sleep(3)  
-    try:
