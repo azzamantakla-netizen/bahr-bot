@@ -8,7 +8,7 @@ import telebot
 from flask import Flask
 
 # 💡 حل مشكلة الـ 403: استخدام مكتبة متطورة لتخطي بصمة السيرفرات وأنظمة الحماية
-# تأكد من إضافة tls-client إلى ملف requirements.txt الخاص بمشروعك
+# تأكد من إضافة tls-client و typing-extensions إلى ملف requirements.txt الخاص بمشروعك
 import tls_client  
 
 # ========================================== #
@@ -34,7 +34,7 @@ DB_FILE = "players_db.txt"
 PANEL_BASE = "https://texas4win.com"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-# متغير الكوكيز (سيتم تحديثه تلقائياً عند إرساله من لوحة التحكم للبوت)
+# متغير الكوكيز السحري المحدث بالملي للوحة
 user_cookies = "PHPSESSID=488a394c83f1f914e66ca4b00759bfa0d8497f6a3eb0036d5912048678335557; languageCode=ar; language=ar"
 user_steps = {}
 
@@ -44,7 +44,7 @@ def api_register_player(username, password):
     # 🌟 إنشاء عميل اتصال ذكي يحاكي متصفح كروم حقيقي على نظام ويندوز لتجاوز الـ 403
     session = tls_client.Session(
         client_identifier="chrome_120",
-        random_tls_extension_order=True
+        random_tls_extensions_order=True
     )
     
     # تحويل نص الكوكيز المدمج إلى قاموس (Dictionary) متوافق مع مكتبة العميل الجديدة
@@ -71,7 +71,7 @@ def api_register_player(username, password):
     try:
         print(f"[🚀] قذف حزمة الإنشاء الموحدة للاعب الجديد: {username}", flush=True)
         
-        # إرسال الطلب عبر محاكي المتصفح الموثق
+        # إرسال الطلب عبر محاكي المتصفح الموثق لتجاوز جدار الحماية
         res = session.post(
             REGISTER_PLAYER_API_URL, 
             json=payload, 
@@ -101,7 +101,6 @@ def api_register_player(username, password):
 # 3. إعداد محرك تليجرام وقوائم التحكم الحية #
 # ========================================== #
 global_bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
-global_bot.delete_webhook(drop_pending_updates=True)
 
 @global_bot.message_handler(commands=['start'])
 def start_cmd(message):
@@ -117,7 +116,7 @@ def start_cmd(message):
 def core_menu(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text
     
-    # معالجة نص زر المالك وتنظيف ترميز الرموز التعبيرية المتضررة
+    # معالجة نص زر المالك وتنظيف قراءة الرموز التعبيرية تماماً
     if (text == "⚙️ تحديث الكوكيز (للمالك)" or "تحديث الكوكيز" in text) and uid == OWNER_ID:
         global_bot.send_message(chat_id, f"🔑 **حالة الكوكيز الحالية بالذاكرة:**\n`{str(user_cookies)[:40]}...`\n\nتفضل بلصق وإرسال سطر الـ Cookies الكامل المستخرج حياً لتنشيط البوت:")
         global_bot.register_next_step_handler(message, save_live_cookies)
@@ -167,7 +166,7 @@ def reg_step_password(message):
     
     global_bot.send_message(message.chat.id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة عبر الكوكيز الموثقة...")
     
-    # الحفاظ على سرعة "الصاروخ" عبر معالجة اتصال اللوحة في خيط خلفي مستقل
+    # معالجة اتصال اللوحة العكسية في خيط منفصل للحفاظ على سرعة الصاروخ للبوت واستقراره
     threading.Thread(target=run_safe_api_task, args=(message.chat.id, uid, username, password), daemon=True).start()
 
 def run_safe_api_task(chat_id, uid, username, password):
@@ -184,12 +183,30 @@ def run_safe_api_task(chat_id, uid, username, password):
 
 def run_bot_polling():
     print("[+] إطلاق قناة الاستماع الحية للبوت بالخلفية...", flush=True)
+    
+    # 🌟 حل دفاعي قاطع لمنع الـ 409 (Conflict): طرد أي جلسات قديمة معلقة قبل فتح قناة الاستماع
+    try:
+        print("[🔄] جاري تنظيف وتصفير اتصالات تليجرام المعلقة لبدء البوت بدون تداخل...", flush=True)
+        global_bot.delete_webhook(drop_pending_updates=True)
+        time.sleep(3)  # وقت مستقطع كافٍ لتأكيد الفصل في سيرفرات تليجرام
+    except Exception as e:
+        print(f"[!] تحذير أثناء تنظيف الـ Webhook المبدئي: {e}", flush=True)
+
     while True:
         try:
-            global_bot.polling(none_stop=True, timeout=60, long_polling_timeout=30)
+            global_bot.polling(none_stop=True, timeout=90, long_polling_timeout=40)
         except Exception as e:
-            print(f"[⚠️] تنبيه شبكي بالخلفية، إعادة اتصال آلي: {e}", flush=True)
-            time.sleep(5)
+            # إذا طرأ تعارض 409 أثناء عملية الإقلاع مع السيرفر الاحتياطي لـ Render، يتم إعادة الطرد تلقائياً
+            if "Conflict" in str(e) or "409" in str(e):
+                print("[⚠️] تم رصد تصادم نشط، جاري إعادة الطرد التلقائي للنسخة الموازية...", flush=True)
+                try:
+                    global_bot.delete_webhook(drop_pending_updates=True)
+                except:
+                    pass
+                time.sleep(10)
+            else:
+                print(f"[⚠️] تنبيه شبكي بالخلفية، إعادة اتصال آلي: {e}", flush=True)
+                time.sleep(5)
 
 if __name__ == "__main__":
     print("[+] إطلاق نظام الأتمتة السحابي والـ Web Service على سيرفر Render...", flush=True)
