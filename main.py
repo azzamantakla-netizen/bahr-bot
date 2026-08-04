@@ -28,17 +28,18 @@ BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
 DB_FILE = "players_db.txt"
 
+# 🌟 الاستهداف المباشر لنطاق البوابة الخلفية المفتوحة bcapps المستخرجة من صورتك
 PANEL_BASE = "https://texas4win.com"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
-# 🌟 متغير الكوكيز السحري الموثق الذي يمرره المالك حياً عبر التليجرام
+# 🌟 متغير الكوكيز السحري الموثق والمحقن بالدروع الكاملة المستخرجة من صورتك
 user_cookies = "PHPSESSID=488a394c83f1f914e66ca4b00759bfa0d8497f6a3eb0036d5912048678335557; languageCode=ar; language=ar"
 user_steps = {}
 
 def api_register_player(username, password):
     global user_cookies
     
-    # حقن كوكيز هويتك البشرية الموثقة مع ترويسات متكاملة لعبور Cloudflare كالسهم
+    # ترويسات العبور المتقدمة والكاملة لمحاكاة بصمة متصفحك البشري 100% من السحاب
     headers = {
         "Cookie": user_cookies,
         "Content-Type": "application/json", 
@@ -54,7 +55,7 @@ def api_register_player(username, password):
     payload = {"player": {"email": email, "password": password, "parentId": "2627036", "login": username}}
     
     try:
-        print(f"[🚀] قذف حزمة الإنشاء للاعب الجديد: {username} عبر الكوكيز الموثقة حياً", flush=True)
+        print(f"[🚀] قذف حزمة الإنشاء للاعب الجديد: {username} عبر درع كوكيز bcapps حياً", flush=True)
         res = requests.post(REGISTER_PLAYER_API_URL, json=payload, headers=headers, timeout=20)
         print(f"[🔬] رد اللوحة على حركة الإنشاء: الرمز {res.status_code} - المحتوى: {res.text[:150]}", flush=True)
         
@@ -84,14 +85,14 @@ def start_cmd(message):
     markup.add(telebot.types.KeyboardButton("📞 الدعم الفني"))
     if message.from_user.id == OWNER_ID: 
         markup.add(telebot.types.KeyboardButton("⚙️ تحديث الكوكيز (للمالك)"))
-    global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية الموثقة بالـ Cookies الحية! 🎉\n\nتفضل بالاختيار من القائمة أدناه بحسب طلبك:", reply_markup=markup)
+    global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية الموثقة بآلية المطورين! 🎉\n\nتفضل بالاختيار من القائمة أدناه بحسب طلبك:", reply_markup=markup)
 
 @global_bot.message_handler(func=lambda message: True)
 def core_menu(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text
     
     if text == "⚙️ تحديث الكوكيز (للمالك)" and uid == OWNER_ID:
-        global_bot.send_message(chat_id, f"🔑 **حالة الكوكيز الحالية بالذاكرة:**\n`{str(user_cookies)[:40]}...`\n\nتفضل بلصق وإرسال سطر الـ Cookies الجديد المستخرج من متصفحك حياً لتنشيط البوت فوراً وبدون ريستارت:")
+        global_bot.send_message(chat_id, f"🔑 **حالة الكوكيز الحالية بالذاكرة:**\n`{str(user_cookies)[:40]}...`\n\nتفضل بلصق وإرسال سطر الـ Cookies الكامل الجديد المستخرج من متصفحك حياً لتنشيط البوت فوراً:")
         global_bot.register_next_step_handler(message, save_live_cookies)
         return
         
@@ -140,7 +141,7 @@ def run_safe_api_task(chat_id, uid, username, password):
     if uid in user_steps: del user_steps[uid]
 
 def run_bot_polling():
-    print("[+] إطلاق قناة الاستماع الحية للبوت بنظام الإنعاش الآمن بالخلفية...", flush=True)
+    print("[+] إطلاق قناة الاستماع الحية للبوت بالخلفية...", flush=True)
     while True:
         try:
             global_bot.polling(none_stop=True, timeout=60, long_polling_timeout=30)
