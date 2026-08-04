@@ -6,80 +6,26 @@ import random
 import threading
 import telebot
 from flask import Flask, request
-import requests
+import tls_client
 
 BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
 DB_FILE = "players_db.txt"
 
-# بوابات الـ API الرسمية والموثقة بحسب صفحات ملف الـ PDF
 PANEL_BASE = "https://texas4win.com"
-SIGNIN_API_URL = f"{PANEL_BASE}/global/api/UserApi/signIn"
-REFRESH_TOKEN_API_URL = f"{PANEL_BASE}/global/api/UserApi/refreshToken"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
-
 RENDER_URL = "https://onrender.com"
 
-# 🌟 تم شحن وحقن بيانات حساب الـ Super Master الجديد للأتمتة الذاتية بالملي
-AGENT_USERNAME = "Aldctor@texas.nsp"
-AGENT_PASSWORD = "Amerk@321"
+# 🌟 تم استعادة بيانات حساب الوكيل/الكاشير القديم الخاص بك بالملي
+AGENT_USERNAME = "Bero@yahoo.com"
+AGENT_PASSWORD = "Aazzam@318"
 
-# ذاكرة حفظ الرموز والخطوات الديناميكية (ستعمل فور تشغيل السيرفر)
-access_token = ""
-refresh_token = ""
+user_cookies = "languageCode=ar; language=ar"
 user_steps = {}
 
 global_bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
 
-# --- دالة تسجيل الدخول الرسمي عبر الـ API لجلب الـ Tokens (صورة 10) ---
-def api_agent_signin():
-    global access_token, refresh_token
-    print("[🔄] جاري طلب تسجيل دخول السوبر ماستر عبر بوابة الـ API...", flush=True)
-    try:
-        headers = {"Content-Type": "application/json"}
-        payload = {"username": AGENT_USERNAME, "password": AGENT_PASSWORD}
-        res = requests.post(SIGNIN_API_URL, json=payload, headers=headers, timeout=15)
-        
-        if res.status_code == 200:
-            res_data = res.json()
-            if res_data.get("status") is True and "result" in res_data:
-                access_token = res_data["result"].get("accessToken")
-                refresh_token = res_data["result"].get("refreshToken")
-                print("[✅] نجاح تسجيل الدخول الرسمي واستلام مفاتيح العبور السحابية للسوبر ماستر!", flush=True)
-                return True
-        print(f"[❌] فشل الدخول عبر الـ API، الرمز: {res.status_code} - الرد: {res.text[:100]}", flush=True)
-        return False
-    except Exception as e:
-        print(f"[❌] خطأ أثناء الاتصال ببوابة تسجيل الدخول: {e}", flush=True)
-        return False
-
-# --- دالة تحديث الرموز تلقائياً عند انتهاء صلاحيتها بعد ساعة (صورة 2) ---
-def api_refresh_access_token():
-    global access_token, refresh_token
-    print("[🔄] جاري تحديث الرمز المؤقت تلقائياً باستخدام Refresh Token...", flush=True)
-    if not refresh_token:
-        return api_agent_signin()
-        
-    try:
-        headers = {"Content-Type": "application/json"}
-        payload = {"refreshToken": refresh_token}
-        res = requests.post(REFRESH_TOKEN_API_URL, json=payload, headers=headers, timeout=15)
-        
-        if res.status_code == 200:
-            res_data = res.json()
-            if res_data.get("status") is True and "result" in res_data:
-                access_token = res_data["result"].get("accessToken")
-                refresh_token = res_data["result"].get("refreshToken")
-                print("[✅] تم تدوير وتحديث رموز الأمان بنجاح قطعي!", flush=True)
-                return True
-        print("[⚠️] الـ Refresh Token انتهت صلاحيته (7 أيام)، جاري تجديد الجلسة بالكامل...", flush=True)
-        return api_agent_signin()
-    except Exception as e:
-        print(f"[❌] خطأ أثناء تحديث الرمز: {e}", flush=True)
-        return False
-
-# --- مسار استقبال الرسائل الآمن عبر توكن البوت لـ Render ---
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
@@ -91,47 +37,47 @@ def webhook():
 
 @app.route('/')
 def home():
-    return "🚀 BOT IS LIVE AND RUNNING 24/7 (OFFICIAL API MODE)"
+    return "🚀 BOT IS LIVE AND RUNNING 24/7 (STABLE COOKIE MODE)"
 
-# --- دالة إنشاء حساب اللاعب الرسمي باستخدام الـ Bearer Token ---
-def api_register_player(username, password, retry=True):
-    global access_token
-    if not access_token:
-        api_agent_signin()
-        
+def api_register_player(username, password):
+    global user_cookies
     try:
+        session = tls_client.Session(client_identifier="chrome_120", random_tls_extension_order=True)
+        cookie_dict = {}
+        if user_cookies:
+            for item in user_cookies.split(";"):
+                if "=" in item:
+                    k, v = item.split("=", 1)
+                    cookie_dict[k.strip()] = v.strip()
+
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {access_token}"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Origin": PANEL_BASE,
+            "Referer": f"{PANEL_BASE}/global/agent/User/index",
+            "Accept": "application/json, text/plain, */*",
+            "X-Requested-With": "XMLHttpRequest"
         }
 
         email = "".join(random.choices(string.ascii_lowercase + string.digits, k=10)) + "@gmail.com"
-        # ⚠️ ملاحظة: تم ترك parentId الحالي "2627036" كما هو، في حال حدوث خطأ بالبيانات يرجى تبديله بـ ID السوبر ماستر الخاص بك
         payload = {"player": {"email": email, "password": password, "parentId": "2627036", "login": username}}
 
-        print(f"[🚀] قذف طلب إنشاء اللاعب عبر الـ API الرسمي: {username}", flush=True)
-        res = requests.post(REGISTER_PLAYER_API_URL, json=payload, headers=headers, timeout=15)
+        print(f"[🚀] قذف حزمة إنشاء اللاعب البشري: {username}", flush=True)
+        res = session.post(REGISTER_PLAYER_API_URL, json=payload, headers=headers, cookies=cookie_dict, timeout_seconds=10)
+        print(f"[🔬] رد لوحة إنشاء الحساب العكسي: الرمز {res.status_code}", flush=True)
         
         if res.status_code == 200:
-            res_data = res.json()
-            if res_data.get("result") == "ex" and retry:
-                print("[⚠️] تم كشف انتهاء صلاحية الـ Access Token، جاري التحديث الفوري...", flush=True)
-                if api_refresh_access_token():
-                    return api_register_player(username, password, retry=False)
-                    
-            if res_data.get("status") is True and (res_data.get("result") == 1 or res_data.get("result") is True):
-                return True, "نجاح"
-                
-            msg = res_data.get("notification", {}).get("content", "خطأ غير معروف في البيانات")
-            return False, msg
-            
-        return False, f"استجابة سيرفر اللوحة بالرمز: {res.status_code}"
+            try:
+                res_data = res.json()
+                if res_data.get("result") == 1 or res_data.get("status") is True:
+                    return True, "نجاح"
+                return False, res_data.get("notification", {}).get("content", "خطأ في بيانات المدخلات باللوحة")
+            except:
+                return False, "فشل فك تشفير حزمة الرد الفعلي للوحة."
+        return False, f"رد اللوحة بـ الرمز {res.status_code}"
     except Exception as e:
-        return False, str(e)
+        return False, f"انتهت مهلة الاتصال باللوحة. تفاصيل: {str(e)}"
 
-# ========================================== #
-# 3. محرك تليجرام وقوائم التحكم والحالات #
-# ========================================== #
 @global_bot.message_handler(commands=['start'])
 def start_cmd(message):
     uid = message.from_user.id
@@ -140,9 +86,9 @@ def start_cmd(message):
     markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     markup.add(telebot.types.KeyboardButton("👤 حسابي"))
     markup.add(telebot.types.KeyboardButton("📩 سحب رصيد"), telebot.types.KeyboardButton("📥 إيداع / شحن رصيد"))
-    markup.add(telebot.types.KeyboardButton("⚙️ تجديد مفاتيح الـ API (للمالك)"))
+    markup.add(telebot.types.KeyboardButton("⚙️ تحديث الكوكيز يدوياً (للمالك)"))
     markup.add(telebot.types.KeyboardButton("📞 الدعم الفني"))
-    global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية الرسمية المحدثة بالملي! 🎉", reply_markup=markup)
+    global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية المحدثة بالملي! 🎉", reply_markup=markup)
 
 @global_bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
@@ -165,7 +111,7 @@ def core_menu_and_states(message):
             username = user_steps[uid].get("username")
             password = text
             del user_steps[uid]
-            global_bot.send_message(chat_id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة عبر البوابة الرسمية...")
+            global_bot.send_message(chat_id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة...")
             
             success, detail = api_register_player(username, password)
             if success:
@@ -176,17 +122,20 @@ def core_menu_and_states(message):
                     f.close()
                 except:
                     pass
-                global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح رسمي كاسح ومطابق 100%!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
+                global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح سحابي كاسح ومطابق 100%!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
             else:
-                global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء عبر الـ API:\n`{str(detail)[:150]}`", parse_mode="Markdown")
+                global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء الآلي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
+            return
+        if current_state == "WAITING_COOKIES" and uid == OWNER_ID:
+            global user_cookies
+            user_cookies = text
+            del user_steps[uid]
+            global_bot.send_message(chat_id, "✅ **تم حقن الكوكيز اليدوية بنجاح وبدء تفعيل الإنشاء الفوري!**")
             return
 
-    if text == "⚙️ تجديد مفاتيح الـ API (للمالك)" and uid == OWNER_ID:
-        global_bot.send_message(chat_id, "🔄 جاري إرسال طلب تسجيل دخول رسمي لإنتاج رموز توكن جديدة...")
-        if api_agent_signin():
-            global_bot.send_message(chat_id, "✅ **تم جلب وتأكيد رموز الـ Tokens الرسمية بنجاح!**\n\nالبوت مستعد الآن لإنشاء الحسابات كالسهم وبدون كوكيز.")
-        else:
-            global_bot.send_message(chat_id, "❌ **فشل جلب الرموز!** تأكد من إعدادات اللوحة وحساب الوكيل.")
+    if text == "⚙️ تحديث الكوكيز يدوياً (للمالك)" and uid == OWNER_ID:
+        user_steps[uid] = {"state": "WAITING_COOKIES"}
+        global_bot.send_message(chat_id, f"🔑 **الكوكيز بالذاكرة حالياً:**\n`{str(user_cookies)[:40]}...`\n\nتفضل بلصق وإرسال سطر الـ Cookies الكامل المستخرج حياً من متصفحك لتنشيط الحساب فوراً:")
         return
         
     if text == "👤 حسابي":
@@ -211,9 +160,8 @@ def start_webhook_setup():
         time.sleep(1)
         webhook_url = f"{RENDER_URL}/{BOT_TOKEN}"
         global_bot.set_webhook(url=webhook_url, drop_pending_updates=True)
-        print("[✅] تم تهيئة واستقرار النظام بالملي مع تليجرام وبدء محرك الـ API الرسمي!", flush=True)
-        
-        threading.Thread(target=api_agent_signin, daemon=True).start()
+        print("[✅] تم تهيئة واستقرار النظام بالملي مع تليجرام وبدء محرك الكوكيز المطور!", flush=True)
     except Exception as e:
         print(f"[❌] فشل تهيئة الـ Webhook: {e}", flush=True)
 
+threading.Thread(target=start_webhook_setup, daemon=True).start()
