@@ -10,43 +10,42 @@ from flask import Flask, request
 # 💡 تخطي حظر الـ 403 باستخدام محاكي بصمة المتصفح الموثق
 import tls_client  
 
-# ========================================== #
-# 1. إعداد خادم الويب ومنفذ الـ Webhook لـ Render #
-# ========================================== #
-app = Flask(__name__)
-
-# الرابط السحابي الخاص بك على منصة Render
-RENDER_URL = "https://onrender.com"
-
-@app.route('/')
-def home():
-    return "🚀 BOT IS LIVE AND RUNNING 24/7 (WEBHOOK STABLE MODE)"
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    if request.headers.get('content-type') == 'application/json':
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        global_bot.process_new_updates([update])
-        return '', 200
-    else:
-        return 'Invalid Request', 403
-
-# ========================================== #
-# 2. إعداد مفاتيح وبوابات الـ API الموثقة #
-# ========================================== #
 BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
 DB_FILE = "players_db.txt"
 
+# النطاق الرسمي للوحة
 PANEL_BASE = "https://texas4win.com"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
+# الرابط السحابي الخاص بك على منصة Render
+RENDER_URL = "https://onrender.com"
+
+# متغير الكوكيز الافتراضي
 user_cookies = "PHPSESSID=488a394c83f1f914e66ca4b00759bfa0d8497f6a3eb0036d5912048678335557; languageCode=ar; language=ar"
 
 # هيكل حفظ الخطوات والحالات الصارم البديل لـ next_step_handler لضمان استقرار الـ Webhook
 user_steps = {}
 
+# تهيئة البوت (تعطيل الـ Threaded لضمان ثبات التوجيه عبر Flask)
+global_bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
+app = Flask(__name__)
+
+# --- مسار استقبال الرسائل الآمن عبر توكن البوت ---
+@app.route(f'/{BOT_TOKEN}', methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        global_bot.process_new_updates([update])
+        return 'OK', 200
+    return 'Forbidden', 403
+
+@app.route('/')
+def home():
+    return "🚀 BOT IS LIVE AND RUNNING 24/7 (WEBHOOK STABLE MODE)"
+
+# --- دالة الاتصال باللوحة عبر محاكي المتصفح لتخطي الـ 403 ---
 def api_register_player(username, password):
     global user_cookies
     try:
@@ -99,13 +98,11 @@ def api_register_player(username, password):
 # ========================================== #
 # 3. محرك تليجرام وقوائم المعالجة والحالات #
 # ========================================== #
-global_bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
-
 @global_bot.message_handler(commands=['start'])
 def start_cmd(message):
     uid = message.from_user.id
     if uid in user_steps:
-        del user_steps[uid]  # تصفير أي عمليات معلقة
+        del user_steps[uid]  # تصفير أي عمليات معلقة بالكامل
         
     markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     markup.add(telebot.types.KeyboardButton("👤 حسابي"))
@@ -155,7 +152,7 @@ def core_menu_and_states(message):
             global_bot.send_message(chat_id, "✅ **تم حقن الكوكيز الموزونة والمطابقة بنجاح!**")
             return
 
-    # 🌟 ثانياً: معالجة قوائم الأزرار العادية
+    # 🌟 ثانياً: معالجة قوائم الأزرار العادية والأصلية بالكامل
     if (text == "⚙️ تحديث الكوكيز (للمالك)" or "تحديث الكوكيز" in text) and uid == OWNER_ID:
         user_steps[uid] = {"state": "WAITING_COOKIES"}
         global_bot.send_message(chat_id, f"🔑 **حالة الكوكيز الحالية بالذاكرة:**\n`{str(user_cookies)[:40]}...`\n\nتفضل بلصق وإرسال سطر الـ Cookies الكامل المستخرج حياً لتنشيط البوت:")
@@ -188,19 +185,24 @@ def run_safe_api_task(chat_id, uid, username, password):
     else:
         global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء التلقائي بسبب رد اللوحة العكسي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
 
-def init_webhook():
+# دالة التشغيل الذكية للـ Webhook مع إضافة تأخير لضمان استقرار السيرفر
+def start_webhook_setup():
+    time.sleep(3)  # انتظار استقرار سيرفر Flask لبدء توجيه تليجرام
     try:
-        print("[🔄] جاري تصفير أي قنوات قديمة لتأمين نظام الحالات الجديد...", flush=True)
+        print("[🔄] جاري تصفير اتصالات تليجرام السابقة...", flush=True)
         global_bot.remove_webhook()
-        time.sleep(1.5)
-        global_bot.set_webhook(url=f"{RENDER_URL}/webhook", drop_pending_updates=True)
-        print("[✅] تم تفعيل نظام الـ Webhook الصارم ومحرك الحالات بنجاح!", flush=True)
+        time.sleep(1)
+        webhook_url = f"{RENDER_URL}/{BOT_TOKEN}"
+        print(f"[🌐] ربط الـ Webhook بالمسار الآمن: {webhook_url}", flush=True)
+        global_bot.set_webhook(url=webhook_url, drop_pending_updates=True)
+        print("[✅] تم تهيئة واستقرار النظام بالملي!", flush=True)
     except Exception as e:
         print(f"[❌] فشل تهيئة الـ Webhook: {e}", flush=True)
 
 if __name__ == "__main__":
     print("[+] إطلاق نظام الأتمتة السحابي والـ Web Service على سيرفر Render...", flush=True)
-    threading.Thread(target=init_webhook, daemon=True).start()
+    # تشغيل أمر الربط التلقائي الآمن بالخلفية
+    threading.Thread(target=start_webhook_setup, daemon=True).start()
     
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
