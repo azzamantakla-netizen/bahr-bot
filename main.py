@@ -21,11 +21,11 @@ REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 
 RENDER_URL = "https://onrender.com"
 
-# 🌟 دمج حساب الوكيل الخاص بك بدقة متناهية للأتمتة الذاتية
+# 🌟 حساب الوكيل الخاص بك مدمج وموثق للأتمتة الذاتية
 AGENT_USERNAME = "Bero@yahoo.com"
 AGENT_PASSWORD = "Aazzam@318"
 
-# متغير الذاكرة المؤقتة للكوكيز (سيقوم البوت بتجديدها برمجياً للأبد عند انتهاء صلاحيتها)
+# متغير الذاكرة المؤقتة للكوكيز
 user_cookies = ""
 user_steps = {}
 
@@ -37,7 +37,6 @@ def refresh_agent_session():
     global user_cookies
     print("[🔄] جاري تجديد جلسة الوكيل وتوليد كوكيز جديدة تلقائياً...", flush=True)
     
-    # حماية من البيانات الافتراضية
     if "اكتب_هنا" in AGENT_USERNAME or not AGENT_USERNAME:
         print("[⚠️] حظر الإقلاع: لم يتم تعيين حساب الوكيل الفعلي داخل الكود حتى الآن.", flush=True)
         return False
@@ -115,7 +114,7 @@ def api_register_player(username, password, retry=True):
 
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Origin": PANEL_BASE,
             "Referer": f"{PANEL_BASE}/global/agent/User/index",
             "Accept": "application/json, text/plain, */*",
@@ -196,6 +195,7 @@ def core_menu_and_states(message):
             threading.Thread(target=run_safe_api_task, args=(chat_id, uid, username, password), daemon=True).start()
             return
 
+    # زر المالك الفوري لتجديد الجلسة
     if (text == "⚙️ تجديد الجلسة آلياً (للمالك)" or "تجديد الجلسة" in text) and uid == OWNER_ID:
         global_bot.send_message(chat_id, "🔄 جاري فحص بيانات الوكيل والاتصال باللوحة لتوليد جلسة طازجة...")
         if refresh_agent_session():
@@ -226,3 +226,5 @@ def run_safe_api_task(chat_id, uid, username, password):
             f.write(json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n")
         global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح سحابي كاسح ومطابق 100%!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
     else:
+        global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء التلقائي بسبب رد اللوحة العكسي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
+
