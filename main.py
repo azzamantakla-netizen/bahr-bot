@@ -6,11 +6,10 @@ import random
 import threading
 import telebot
 from flask import Flask, request
-import tls_client  
+import tls_client
 
 BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
-DB_FILE = "players_db.txt"
 
 PANEL_BASE = "https://texas4win.com"
 LOGIN_PAGE_URL = f"{PANEL_BASE}/global/agent/login/index"
@@ -30,31 +29,15 @@ app = Flask(__name__)
 
 def refresh_agent_session():
     global user_cookies
-    print("[🔄] جاري تجديد جلسة الوكيل وتوليد كوكيز جديدة تلقائياً...", flush=True)
+    print("[🔄] جاري تجديد جلسة الوكيل تلقائياً...", flush=True)
     try:
-        session = tls_client.Session(
-            client_identifier="chrome112",
-            random_tls_extension_order=True
-        )
+        session = tls_client.Session(client_identifier="chrome112", random_tls_extension_order=True)
         init_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "ar,en-US;q=0.9,en;q=0.8"
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
         }
-        
-        html_res = session.get(LOGIN_PAGE_URL, headers=init_headers, timeout_seconds=15)
-        csrf_token = ""
-        
-        if 'name="_csrf"' in html_res.text:
-            try:
-                parts = html_res.text.split('name="_csrf" value="')
-                if len(parts) > 1:
-                    csrf_token = parts[1].split('"')[0]
-                    print(f"[🔑] تم قشط رمز حماية اللوحة: {csrf_token[:15]}...", flush=True)
-            except:
-                pass
-
-        time.sleep(random.uniform(1.0, 2.0))
+        session.get(LOGIN_PAGE_URL, headers=init_headers, timeout_seconds=15)
+        time.sleep(1.5)
 
         headers = {
             "Content-Type": "application/json",
@@ -64,29 +47,20 @@ def refresh_agent_session():
             "Accept": "application/json, text/plain, */*",
             "X-Requested-With": "XMLHttpRequest"
         }
-        
-        if csrf_token:
-            headers["X-CSRF-TOKEN"] = csrf_token
-
         payload = {"login": AGENT_USERNAME, "password": AGENT_PASSWORD, "languageCode": "ar"}
         res = session.post(LOGIN_API_URL, json=payload, headers=headers, timeout_seconds=15)
-        print(f"[🔬] رد اللوحة المباشر على تسجيل الدخول: الرمز {res.status_code}", flush=True)
         
         if res.status_code == 200:
-            cookies_list = []
-            for key, val in res.cookies.items():
-                cookies_list.append(f"{key}={val}")
-            if "languageCode" not in res.cookies:
-                cookies_list.append("languageCode=ar")
-                cookies_list.append("language=ar")
+            cookies_list = [f"{k}={v}" for key, val in res.cookies.items()]
+            cookies_list.append("languageCode=ar")
+            cookies_list.append("language=ar")
             user_cookies = "; ".join(cookies_list)
-            print(f"[✅] تم استخراج وتحديث كوكيز الجلسة بنجاح: {user_cookies[:35]}...", flush=True)
+            print("[✅] تم تجديد الكوكيز بنجاح!", flush=True)
             return True
-        else:
-            print(f"[❌] فشل تسجيل الدخول العكسي، الرمز: {res.status_code}", flush=True)
-            return False
+        print(f"[❌] فشل الدخول، الرمز: {res.status_code}", flush=True)
+        return False
     except Exception as e:
-        print(f"[❌] خطأ أثناء تجديد الجلسة: {e}", flush=True)
+        print(f"[❌] خطأ الجلسة: {e}", flush=True)
         return False
 
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
@@ -100,17 +74,14 @@ def webhook():
 
 @app.route('/')
 def home():
-    return "🚀 BOT IS LIVE AND RUNNING 24/7 (AUTO-COOKIE MODE)"
+    return "🚀 BOT IS LIVE AND RUNNING 24/7"
 
 def api_register_player(username, password, retry=True):
     global user_cookies
     if not user_cookies:
         refresh_agent_session()
     try:
-        session = tls_client.Session(
-            client_identifier="chrome112",
-            random_tls_extension_order=True
-        )
+        session = tls_client.Session(client_identifier="chrome112", random_tls_extension_order=True)
         cookie_dict = {}
         if user_cookies:
             for item in user_cookies.split(";"):
@@ -127,11 +98,10 @@ def api_register_player(username, password, retry=True):
             "X-Requested-With": "XMLHttpRequest"
         }
 
-        time.sleep(random.uniform(0.5, 1.2))
         email = "".join(random.choices(string.ascii_lowercase + string.digits, k=10)) + "@gmail.com"
         payload = {"player": {"email": email, "password": password, "parentId": "2627036", "login": username}}
 
-        print(f"[🚀] قذف حزمة الإنشاء للاعب الجديد: {username}", flush=True)
+        print(f"[🚀] قذف حزمة الإنشاء للاعب: {username}", flush=True)
         res = session.post(REGISTER_PLAYER_API_URL, json=payload, headers=headers, cookies=cookie_dict, timeout_seconds=15)
         
         if res.status_code == 403 and retry:
@@ -143,10 +113,10 @@ def api_register_player(username, password, retry=True):
                 res_data = res.json()
                 if res_data.get("result") == 1 or res_data.get("status") is True:
                     return True, "نجاح"
-                return False, res_data.get("notification", {}).get("content", "فشل")
+                return False, res_data.get("notification", {}).get("content", "فشل اللوحة")
             except:
-                return False, "فشل فك حزمة الـ JSON العكسية."
-        return False, f"رمز خطأ الاستجابة {res.status_code}"
+                return False, "خطأ فك الحزمة"
+        return False, f"رمز اللوحة: {res.status_code}"
     except Exception as e:
         return False, str(e)
 
@@ -161,7 +131,7 @@ def start_cmd(message):
     markup.add(telebot.types.KeyboardButton("📞 الدعم الفني"))
     if uid == OWNER_ID:
         markup.add(telebot.types.KeyboardButton("⚙️ تجديد الجلسة آلياً (للمالك)"))
-    global_bot.send_message(message.chat.id, "👋 مرحباً بك في لوحة الكاشير السحابية ذاتية التحديث بالملي! 🎉", reply_markup=markup)
+    global_bot.send_message(message.chat.id, "👋 لوحة الكاشير السحابية نشطة حياً!", reply_markup=markup)
 
 @global_bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
@@ -180,20 +150,20 @@ def core_menu_and_states(message):
             user_steps[uid]["state"] = "WAITING_PASSWORD"
             global_bot.send_message(chat_id, "🔑 يرجى إرسال كلمة المرور للحساب الجديد:")
             return
-        elif current_state == "WAITING_PASSWORD":
+        if current_state == "WAITING_PASSWORD":
             username = user_steps[uid].get("username")
             password = text
             del user_steps[uid]
-            global_bot.send_message(chat_id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة عبر الجلسة الذكية آلياً...")
-            threading.Thread(target=run_safe_api_task, args=(chat_id, uid, username, password), daemon=True).start()
+            global_bot.send_message(chat_id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة...")
+            threading.Thread(target=run_safe_api_task, args=(chat_id, username, password), daemon=True).start()
             return
 
-    if (text == "⚙️ تجديد الجلسة آلياً (للمالك)" or "تجديد الجلسة" in text) and uid == OWNER_ID:
-        global_bot.send_message(chat_id, "🔄 جاري فحص بيانات الوكيل والاتصال باللوحة لتوليد جلسة طازجة...")
+    if text == "⚙️ تجديد الجلسة آلياً (للمالك)" and uid == OWNER_ID:
+        global_bot.send_message(chat_id, "🔄 جاري تجديد جلسة الوكيل...")
         if refresh_agent_session():
-            global_bot.send_message(chat_id, f"✅ **تم تحديث الجلسة وسحب الكوكيز بنجاح قطعي!**\n\n`{user_cookies[:40]}...`")
+            global_bot.send_message(chat_id, "✅ تم تحديث الجلسة بنجاح!")
         else:
-            global_bot.send_message(chat_id, "❌ **فشل التحديث الآلي!** تأكد من صحة البيانات داخل كود السكربت.")
+            global_bot.send_message(chat_id, "❌ فشل التحديث التلقائي!")
         return
         
     if text == "👤 حسابي":
@@ -211,20 +181,23 @@ def core_menu_and_states(message):
         global_bot.send_message(chat_id, "📞 فريق الدعم متواجد لخدمتكم دائماً.")
         return
 
-def run_safe_api_task(chat_id, uid, username, password):
+def run_safe_api_task(chat_id, username, password):
     success, detail = api_register_player(username, password)
     if success:
-        try:
-            log_line = json.dumps({"tg_id": uid, "login": username, "password": password}, ensure_ascii=False) + "\n"
-            f = open(DB_FILE, "a", encoding="utf-8")
-            f.write(log_line)
-            f.close()
-        except:
-            pass
-        global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح سحابي كاسح ومطابق 100%!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
+        global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
     else:
-        global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء التلقائي بسبب رد اللوحة العكسي:\n`{str(detail)[:150]}`", parse_mode="Markdown")
+        global_bot.send_message(chat_id, f"⚠️ تعذر الإنشاء:\n`{str(detail)[:150]}`", parse_mode="Markdown")
 
 def start_webhook_setup():
     time.sleep(3)  
     try:
+        global_bot.remove_webhook()
+        time.sleep(1)
+        webhook_url = f"{RENDER_URL}/{BOT_TOKEN}"
+        global_bot.set_webhook(url=webhook_url, drop_pending_updates=True)
+        print("[✅] تم تهيئة واستقرار النظام بالملي مع تليجرام!", flush=True)
+        threading.Thread(target=refresh_agent_session, daemon=True).start()
+    except Exception as e:
+        print(f"[❌] فشل تهيئة الـ Webhook: {e}", flush=True)
+
+threading.Thread(target=start_webhook_setup, daemon=True).start()
