@@ -16,11 +16,8 @@ PANEL_BASE = "https://texas4win.com"
 REGISTER_PLAYER_API_URL = f"{PANEL_BASE}/global/api/UserApi/registerPlayer"
 RENDER_URL = "https://onrender.com"
 
-# 🌟 تم استعادة بيانات حساب الوكيل/الكاشير القديم الخاص بك بالملي
-AGENT_USERNAME = "Bero@yahoo.com"
-AGENT_PASSWORD = "Aazzam@318"
-
-user_cookies = "languageCode=ar; language=ar"
+# الكوكيز الموثقة والمستخرجة من صورتك بدقة متناهية
+user_cookies = "language=ar; PHPSESSID=488a394c83f1f914e66ca4b00759bfa0d8497f6a3eb0036d5912048678335557"
 user_steps = {}
 
 global_bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
@@ -154,13 +151,19 @@ def core_menu_and_states(message):
         return
 
 def start_webhook_setup():
-    time.sleep(3)  
+    time.sleep(2)  
     try:
+        # 🌟 خطوة حاسمة لإيقاظ البوت: مسح الـ Webhook القديم المعلق كلياً من سيرفرات تليجرام
+        print("[🔄] جاري حذف وإجبار تليجرام على تصفير الجلسات الميتة...", flush=True)
         global_bot.remove_webhook()
-        time.sleep(1)
+        time.sleep(2)
+        
         webhook_url = f"{RENDER_URL}/{BOT_TOKEN}"
+        print(f"[🌐] ربط الـ Webhook بالمسار الآمن النظيف: {webhook_url}", flush=True)
+        
+        # 🌟 حقن الـ drop_pending_updates لإبادة الرسائل القديمة المتراكمة التي تسبب تجميد البوت
         global_bot.set_webhook(url=webhook_url, drop_pending_updates=True)
-        print("[✅] تم تهيئة واستقرار النظام بالملي مع تليجرام وبدء محرك الكوكيز المطور!", flush=True)
+        print("[✅] تم تفعيل نظام الاستجابة السريعة الشامل بنجاح مذهل!", flush=True)
     except Exception as e:
         print(f"[❌] فشل تهيئة الـ Webhook: {e}", flush=True)
 
