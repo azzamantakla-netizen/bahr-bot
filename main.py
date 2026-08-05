@@ -208,7 +208,7 @@ def run_safe_api_task(chat_id, uid, username, password):
 try:
     global_bot.remove_webhook()
     time.sleep(1)
-    render_url_link = "https://onrender.com"
+    render_url_link = "https://dashboard.render.com/web/srv-d9oi438ae00c73akq3ag/deploys/dep-d9p81lgae00c73edsus0?r=2026-08-05%4000%3A15%3A22%7E2026-08-05%4000%3A18%3A16"
     global_bot.set_webhook(url=f"{render_url_link}/{BOT_TOKEN}")
     print("[+] تم ربط وتفعيل الـ Webhook بنجاح مذهل حياً مع تليجرام!", flush=True)
 except Exception as webhook_error:
