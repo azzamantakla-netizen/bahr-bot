@@ -7,7 +7,16 @@ import base64
 from flask import Flask, request, abort
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
-import tls_client
+
+try:
+    import tls_client
+except Exception:
+    tls_client = None
+
+try:
+    import requests
+except Exception:
+    requests = None
 
 # =============================================================================
 # Logging Setup
@@ -41,10 +50,16 @@ owners_list = []
 admins_list = []
 users_list = []
 
-session = tls_client.Session(
-    client_identifier="chrome_120",
-    random_tls_extension_order=True
-)
+session = None
+if tls_client:
+    try:
+        session = tls_client.Session(
+            client_identifier="chrome_120",
+            random_tls_extension_order=True
+        )
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"tls_client Session failed: {e}")
+        session = None
 access_token = None
 refresh_token = None
 agent_affiliate_id = None
@@ -136,6 +151,41 @@ def decode_jwt_payload(token):
     return {}
 
 
+def _request_with_tls(url, headers, payload, method):
+    if not session:
+        return None
+    try:
+        if method.upper() == "GET":
+            return session.get(url, headers=headers)
+        else:
+            return session.post(url, headers=headers, json=payload)
+    except Exception as e:
+        logger.warning(f"tls_client request failed: {e}")
+        return None
+
+
+def _request_with_requests(url, headers, payload, method):
+    if not requests:
+        return None
+    try:
+        if method.upper() == "GET":
+            return requests.get(url, headers=headers, json=payload, timeout=30, verify=False)
+        else:
+            return requests.post(url, headers=headers, json=payload, timeout=30, verify=False)
+    except Exception as e:
+        logger.warning(f"requests fallback failed: {e}")
+        return None
+
+
+class FakeResponse:
+    def __init__(self, text, status_code):
+        self.text = text
+        self.status_code = status_code
+
+    def json(self):
+        return json.loads(self.text)
+
+
 def api_request(method, endpoint, payload=None, auth=False):
     url = f"{PANEL_BASE}/{endpoint}"
     headers = {"Content-Type": "application/json"}
@@ -143,20 +193,22 @@ def api_request(method, endpoint, payload=None, auth=False):
         headers["Authorization"] = f"Bearer {access_token}"
     logger.info(f"API REQUEST: {method} {url} | auth={auth} | payload={json.dumps(payload, ensure_ascii=False)[:500]}")
     try:
-        if method.upper() == "GET":
-            response = session.get(url, headers=headers)
-        else:
-            response = session.post(url, headers=headers, json=payload)
+        response = _request_with_tls(url, headers, payload, method)
+        if response is None:
+            response = _request_with_requests(url, headers, payload, method)
+        if response is None:
+            raise Exception("Both tls_client and requests failed to connect")
 
         # Auto-retry on auth failure
         if auth and response.status_code in (401, 403):
             logger.warning(f"Auth failed ({response.status_code}), attempting re-signin...")
             if do_signin():
                 headers["Authorization"] = f"Bearer {access_token}"
-                if method.upper() == "GET":
-                    response = session.get(url, headers=headers)
-                else:
-                    response = session.post(url, headers=headers, json=payload)
+                response = _request_with_tls(url, headers, payload, method)
+                if response is None:
+                    response = _request_with_requests(url, headers, payload, method)
+                if response is None:
+                    raise Exception("Both tls_client and requests failed on retry")
             else:
                 logger.error("Re-signin failed after auth error.")
 
@@ -481,7 +533,10 @@ def handle_reg_password(message):
 
         if not agent_affiliate_id:
             logger.info("affiliate_id missing, fetching...")
-            get_agent_affiliate_id()
+            try:
+                get_agent_affiliate_id()
+            except Exception as e:
+                logger.error(f"get_agent_affiliate_id failed: {e}")
 
         parent_id = agent_affiliate_id if agent_affiliate_id else "0"
         try:
