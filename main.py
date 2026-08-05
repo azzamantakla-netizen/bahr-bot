@@ -4,6 +4,8 @@ import time
 import threading
 import logging
 import base64
+import random
+import string
 from flask import Flask, request, abort
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
@@ -555,8 +557,8 @@ def handle_reg_password(message):
         return
     try:
         password = message.text.strip()
-        if not password or len(password) < 4:
-            bot.send_message(chat_id, "❌ كلمة المرور قصيرة جداً.")
+        if not password:
+            bot.send_message(chat_id, "❌ يرجى إدخال كلمة سر صالحة.")
             return
 
         username = state_data.get(user_id, {}).get("username")
@@ -564,6 +566,9 @@ def handle_reg_password(message):
         if not username:
             bot.send_message(chat_id, "❌ خطأ في البيانات. اضغط /start وأعد المحاولة.")
             return
+
+        # Show processing message
+        bot.send_message(chat_id, "⏳ جاري معالجة العملية... الرجاء الانتظار")
 
         # Ensure we have a valid affiliate_id
         if not agent_affiliate_id or agent_affiliate_id == "0":
@@ -579,12 +584,16 @@ def handle_reg_password(message):
         except ValueError:
             parent_id_int = int("2688288")
 
-        logger.info(f"Registering player. username={username}, parentId={parent_id_int}, token_exists={bool(access_token)}")
+        # Generate random email to avoid conflicts
+        rand_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+        email = f"{username}.{rand_suffix}@player.bot"
+
+        logger.info(f"Registering player. username={username}, email={email}, parentId={parent_id_int}, token_exists={bool(access_token)}")
 
         payload = {
             "player": {
                 "login": username,
-                "email": f"{username}@player.bot",
+                "email": email,
                 "password": password,
                 "parentId": parent_id_int,
                 "firstName": username,
@@ -644,7 +653,9 @@ def handle_reg_password(message):
                     reply_markup=main_menu_markup(chat_id)
                 )
         else:
+            # Handle errors - detect if username is already taken
             error_msg = "Unknown error"
+            raw_text = ""
             if result:
                 notif = result.get("notification")
                 if isinstance(notif, list) and len(notif) > 0:
@@ -652,11 +663,29 @@ def handle_reg_password(message):
                 elif isinstance(notif, dict):
                     error_msg = notif.get("content", "Unknown error")
                 if result.get("__raw__"):
-                    error_msg += f" | Raw: {result['__raw__'][:200]}"
+                    raw_text = result["__raw__"]
+                    error_msg += f" | Raw: {raw_text[:200]}"
             elif result is None:
                 error_msg = "No response from server (network error)."
-            logger.error(f"Registration failed for {username}: {result}")
-            bot.send_message(chat_id, f"❌ فشل في إنشاء الحساب: {error_msg}")
+
+            # Check if error is about username already taken
+            lower_err = (error_msg + " " + raw_text).lower()
+            username_taken_keywords = [
+                "already exists", "already taken", "duplicate", "exists", "used",
+                "مستخدم", "موجود", "مكرر", "taken", "existe", "user name", "username"
+            ]
+            is_username_taken = any(k in lower_err for k in username_taken_keywords)
+
+            logger.error(f"Registration failed for {username}: is_username_taken={is_username_taken} | {result}")
+
+            if is_username_taken:
+                bot.send_message(
+                    chat_id,
+                    "❌ هذا الاسم مستخدم بالفعل. يرجى اختيار اسم آخر.\n📝 اضغط على زر إنشاء حساب وحاول مرة أخرى.",
+                    reply_markup=main_menu_markup(chat_id)
+                )
+            else:
+                bot.send_message(chat_id, f"❌ فشل في إنشاء الحساب: {error_msg}")
 
         user_states.pop(user_id, None)
         state_data.pop(user_id, None)
