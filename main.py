@@ -24,14 +24,14 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
 ADMIN_GROUP_ID = -1003983996094
-PANEL_BASE = "https://texas4win.com"
-RENDER_URL = "https://onrender.com"
+PANEL_BASE = "https://agents.texas4win.com"
+RENDER_URL = "https://bahr-bot-c3ac.onrender.com"
 
 # Dynamic credentials and payment details
 AGENT_USERNAME = "Bero@yahoo.com"
 AGENT_PASSWORD = "Aazzam@318"
 SHAM_CASH_WALLET = "a18758d5324eb7595d4463ca355ad221"
-SYRIATEL_CASH_CODE = "481 22120"
+SYRIATEL_CASH_CODE = "48122120"
 
 # File paths
 OWNERS_FILE = "owners.txt"
