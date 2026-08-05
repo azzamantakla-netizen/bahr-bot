@@ -210,5 +210,3 @@ def core_menu_handler(message):
             global_bot.send_message(chat_id, payment_info, parse_mode="Markdown")
             return
 
-    # --- الأزرار الرئيسية للقائمة اللمسية ---
-    if text == "👤 حسابي":
