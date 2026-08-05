@@ -13,7 +13,7 @@ BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
 ADMIN_GROUP_ID = -1003983996094
 
-# بيانات حساب الوكيل للتوثيق التلقائي عبر الـ API
+# بيانات حساب الوكيل للتوثيق التلقائي عبر الـ API الرسمي للوحة
 AGENT_USERNAME = "Bero@yahoo.com"
 AGENT_PASSWORD = "Aazzam@318"
 
@@ -21,7 +21,7 @@ PANEL_BASE = "https://texas4win.com"
 RENDER_URL = "https://onrender.com"
 DB_FILE = "players_db.txt"
 
-# الحسابات المالية لإرشاد اللاعبين عند الإيداع
+# الحسابات المالية الخاصة بك لإرشاد اللاعبين عند الإيداع
 SHAM_CASH_WALLET = "a18758d5324eb7595d4463ca355ad221"
 SYRIATEL_CASH_CODE = "481 22120"
 
@@ -119,7 +119,7 @@ def api_deposit_to_player(player_id, amount):
             "comment": "تم الشحن سحابياً عبر بوت التدقيق والمطابقة السريعة",
             "affiliateId": int(player_id),
             "moneyStatus": 3,
-            "currencyCode": "AMD"  # أو الرمز المعتمد لخزنتك باللوحة
+            "currencyCode": "AMD"  # سيتم التحويل بناءً على عملة اللوحة الافتراضية
         }
         res = session.post(url, json=payload, headers=headers, timeout_seconds=5)
         if res.status_code == 200 and res.json().get("status") is True:
@@ -162,51 +162,52 @@ def start_cmd(message):
     )
     global_bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=markup)
 
-@global_bot.message_handler(func=lambda message: True)
-def core_menu_handler(message):
+# 🌟 معالج مخصص لخطوات إدخال البيانات لضمان عدم تعليق أو تداخل الأزرار اللمسية
+@global_bot.message_handler(func=lambda message: message.from_user.id in user_steps)
+def active_steps_handler(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
+    state = user_steps[uid].get("state")
     
-    # --- معالجة تدفق خطوة إنشاء الحساب الجديد ---
-    if uid in user_steps:
-        state = user_steps[uid].get("state")
-        if state == "WAITING_USERNAME":
-            user_steps[uid]["username"] = text
-            user_steps[uid]["state"] = "WAITING_PASSWORD"
-            global_bot.send_message(chat_id, "🔑 يرجى إرسال كلمة المرور المطلوبة للحساب الجديد:")
-            return
-        elif state == "WAITING_PASSWORD":
-            username = user_steps[uid]["username"]
-            password = text
-            del user_steps[uid]
-            global_bot.send_message(chat_id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة عبر الـ API الرسمي...")
-            success, detail = api_register_player(username, password)
-            if success:
-                try:
-                    with open(DB_FILE, "a", encoding="utf-8") as f:
-                        f.write(json.dumps({"login": username, "password": password}) + "\n")
-                except:
-                    pass
-                global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح سحابي كاسح ومطابق 100%!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
-            else:
-                global_bot.send_message(chat_id, f"⚠️ **فشل إنشاء الحساب**: {detail}")
-            return
-            
-        # --- معالجة تدفق خطوة طلب الإيداع والتحقق من الوصل ---
-        elif state == "WAITING_DEP_ID":
-            user_steps[uid]["player_id"] = text
-            user_steps[uid]["state"] = "WAITING_DEP_AMOUNT"
-            global_bot.send_message(chat_id, "💰 يرجى كتابة المبلغ المراد شحنه (بالرقم):")
-            return
-        elif state == "WAITING_DEP_AMOUNT":
-            user_steps[uid]["amount"] = text
-            user_steps[uid]["state"] = "WAITING_DEP_RECEIPT"
-            
-            payment_info = (
-                f"💳 **خيارات الدفع المتاحة للشحن الحقيقي:**\n\n"
-                f"🏷️ **محفظة شام كاش**:\n`{SHAM_CASH_WALLET}`\n\n"
-                f"📱 **كود سيرياتيل كاش**:\n`{SYRIATEL_CASH_CODE}`\n\n"
-                f"⚠️ قم بتحويل المبلغ المطابق تماماً لطلبك، ثم **قم برفع وإرسال صورة إيصال التحويل (الوصل المالي)** هنا كصورة فوراً لتمريرها للإدارة والتدقيق:"
-            )
-            global_bot.send_message(chat_id, payment_info, parse_mode="Markdown")
-            return
+    if state == "WAITING_USERNAME":
+        user_steps[uid]["username"] = text
+        user_steps[uid]["state"] = "WAITING_PASSWORD"
+        global_bot.send_message(chat_id, "🔑 يرجى إرسال كلمة المرور المطلوب للحساب الجديد:")
+        return
+    elif state == "WAITING_PASSWORD":
+        username = user_steps[uid]["username"]
+        password = text
+        del user_steps[uid]
+        global_bot.send_message(chat_id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة عبر الـ API الرسمي...")
+        success, detail = api_register_player(username, password)
+        if success:
+            try:
+                with open(DB_FILE, "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"login": username, "password": password}, ensure_ascii=False) + "\n")
+            except:
+                pass
+            global_bot.send_message(chat_id, f"✅ **تم إنشاء الحساب بنجاح سحابي كاسح ومطابق 100%!**\n\n👤 اسم المستخدم: `{username}`\n🔑 كلمة المرور: `{password}`", parse_mode="Markdown")
+        else:
+            global_bot.send_message(chat_id, f"⚠️ **فشل إنشاء الحساب**: {detail}")
+        return
+        
+    elif state == "WAITING_DEP_ID":
+        user_steps[uid]["player_id"] = text
+        user_steps[uid]["state"] = "WAITING_DEP_AMOUNT"
+        global_bot.send_message(chat_id, "💰 يرجى كتابة المبلغ المراد شحنه (بالرقم):")
+        return
+    elif state == "WAITING_DEP_AMOUNT":
+        user_steps[uid]["amount"] = text
+        user_steps[uid]["state"] = "WAITING_DEP_RECEIPT"
+        
+        payment_info = (
+            f"💳 **خيارات الدفع المتاحة لشحن حسابك حياً:**\n\n"
+            f"🏷️ **محفظة شام كاش**:\n`{SHAM_CASH_WALLET}`\n\n"
+            f"📱 **كود سيرياتيل كاش**:\n`{SYRIATEL_CASH_CODE}`\n\n"
+            f"⚠️ قم بتحويل المبلغ المطابق تماماً لطلبك، ثم **قم برفع وإرسال صورة إيصال التحويل (الوصل المالي)** هنا كصورة فوراً لتمريرها للإدارة والتدقيق:"
+        )
+        global_bot.send_message(chat_id, payment_info, parse_mode="Markdown")
+        return
 
+# 🌟 معالج مخصص ومستقل للأزرار اللمسية في القائمة الرئيسية لضمان الاستجابة الفورية 100%
+@global_bot.message_handler(func=lambda message: True)
+def main_menu_buttons(message):
