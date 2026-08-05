@@ -154,7 +154,7 @@ def start_cmd(message):
     )
     global_bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=markup)
 
-# 🌟 1. معالج خطوات إدخال البيانات الممتدة (States)
+# 🌟 1. معالج خاص فقط بخطوات إدخال البيانات الممتدة لضمان عدم حظر القائمة الرئيسية
 @global_bot.message_handler(func=lambda message: message.from_user.id in user_steps)
 def active_steps_handler(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
@@ -170,7 +170,7 @@ def active_steps_handler(message):
         username = user_steps[uid]["username"]
         password = text
         del user_steps[uid]
-        global_bot.send_message(chat_id, "⚡️ جارٍ إنشاء حسابك وتأكيده مع اللوحة عبر الـ API الرسمي...")
+        global_bot.send_message(chat_id, "⚡️ ...جارٍ إنشاء حسابك وتأكيده مع اللوحة عبر الـ API الرسمي")
         success, detail = api_register_player(username, password)
         if success:
             try:
@@ -202,7 +202,7 @@ def active_steps_handler(message):
         global_bot.send_message(chat_id, payment_info, parse_mode="Markdown")
         return
 
-# 🌟 2. معالج الأزرار اللمسية الرئيسية للقائمة (مستقل وبمحاذاة صفرية سليمة)
+# 🌟 2. معالج الأزرار الرئيسية للقائمة (منسق بـ if/elif صارم لمنع أي تداخل للأوامر)
 @global_bot.message_handler(func=lambda message: True)
 def main_menu_buttons(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
@@ -211,13 +211,11 @@ def main_menu_buttons(message):
         markup_inline = telebot.types.InlineKeyboardMarkup()
         markup_inline.add(telebot.types.InlineKeyboardButton("🆕 إنشاء حساب جديد", callback_data="start_reg"))
         global_bot.send_message(chat_id, "⚠️ اضغط على الزر أدناه لإنشاء حساب لاعب فوراً برابط مباشر:", reply_markup=markup_inline)
-        return
         
     elif text == "📥 إيداع / شحن رصيد":
         user_steps[uid] = {"state": "WAITING_DEP_ID"}
         global_bot.send_message(chat_id, "👤 يرجى إرسال معرف اللاعب الخاص بك الرقمي (`Player ID`) في اللوحة:")
-        return
         
     elif text == "📩 سحب رصيد":
         global_bot.send_message(chat_id, "📩 خيارات سحب الرصيد وتدقيق حساب اللاعبين قيد المراجعة الفنية بالـ API.")
-        return
+        
