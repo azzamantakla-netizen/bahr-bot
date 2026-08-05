@@ -13,24 +13,20 @@ BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
 ADMIN_GROUP_ID = -1003983996094
 
-# بيانات حساب الوكيل القابلة للتعديل حياً من لوحة التحكم العليا
 AGENT_USERNAME = "Bero@yahoo.com"
 AGENT_PASSWORD = "Aazzam@318"
 
 PANEL_BASE = "https://texas4win.com"
 RENDER_URL = "https://onrender.com"
 
-# ملفات قواعد البيانات المحلية على السيرفر
 DB_FILE = "players_db.txt"
 OWNERS_FILE = "owners.txt"
 ADMINS_FILE = "admins.txt"
 USERS_FILE = "users.txt"
 
-# الحسابات المالية الافتراضية القابلة للتعديل حياً من تليجرام
 SHAM_CASH_WALLET = "a18758d5324eb7595d4463ca355ad221"
 SYRIATEL_CASH_CODE = "481 22120"
 
-# ذاكرة النظام المؤقتة للجلسات والتوكينات وحالات المعاملات المعلقة
 access_token = None
 refresh_token = None
 user_steps = {}
@@ -222,6 +218,7 @@ def active_steps_handler(message):
         user_steps[uid]["state"] = "WAITING_PASSWORD"
         global_bot.send_message(chat_id, "🔑 يرجى إرسال كلمة المرور المطلوبة للحساب الجديد:")
         return
+
     elif state == "WAITING_PASSWORD":
         username = user_steps[uid]["username"]
         password = text
@@ -241,3 +238,7 @@ def active_steps_handler(message):
 
     # تدفق الإيداع المبسط (كتابة المبلغ مباشرة)
     elif state == "WAITING_DEP_AMOUNT":
+        user_steps[uid]["amount"] = text
+        user_steps[uid]["state"] = "WAITING_DEP_RECEIPT"
+        markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+        markup.add(telebot.types.KeyboardButton("🔙 إلغاء والعودة"))
