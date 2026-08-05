@@ -27,24 +27,20 @@ ADMIN_GROUP_ID = -1003983996094
 PANEL_BASE = "https://agents.texas4win.com"
 RENDER_URL = "https://bahr-bot-c3ac.onrender.com"
 
-# Dynamic credentials and payment details
 AGENT_USERNAME = "Bero@yahoo.com"
 AGENT_PASSWORD = "Aazzam@318"
 SHAM_CASH_WALLET = "a18758d5324eb7595d4463ca355ad221"
-SYRIATEL_CASH_CODE = "48122120"
+SYRIATEL_CASH_CODE = "481 22120"
 
-# File paths
 OWNERS_FILE = "owners.txt"
 ADMINS_FILE = "admins.txt"
 USERS_FILE = "users.txt"
 PLAYERS_DB_FILE = "players_db.json"
 
-# In-memory lists
 owners_list = []
 admins_list = []
 users_list = []
 
-# API Session
 session = tls_client.Session(
     client_identifier="chrome_120",
     random_tls_extension_order=True
@@ -53,19 +49,17 @@ access_token = None
 refresh_token = None
 agent_affiliate_id = None
 
-# States & temporary data
 user_states = {}
 state_data = {}
 pending_deposits = {}
 pending_withdrawals = {}
 support_tickets = {}
 
-# Bot & Flask
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
 
 # =============================================================================
-# Helper Functions - File I/O
+# File I/O
 # =============================================================================
 def load_list_from_file(filepath):
     if not os.path.exists(filepath):
@@ -87,11 +81,13 @@ def load_owners():
     if uid not in owners_list:
         owners_list.append(uid)
         save_list_to_file(OWNERS_FILE, owners_list)
+    logger.info(f"Owners loaded: {owners_list}")
 
 
 def load_admins():
     global admins_list
     admins_list = load_list_from_file(ADMINS_FILE)
+    logger.info(f"Admins loaded: {admins_list}")
 
 
 def load_users_list():
@@ -137,26 +133,31 @@ def decode_jwt_payload(token):
     return {}
 
 
-def api_request(method, endpoint, payload=None, auth=False):
-    url = f"{PANEL_BASE}/{endpoint}"
+def api_request(method, endpoint, payload=None, auth=False, full_url=False):
+    if full_url:
+        url = endpoint
+    else:
+        url = f"{PANEL_BASE}/{endpoint}"
     headers = {"Content-Type": "application/json"}
     if auth and access_token:
         headers["Authorization"] = f"Bearer {access_token}"
+    logger.info(f"API REQUEST: {method} {url} | auth={auth} | payload={json.dumps(payload, ensure_ascii=False)[:500]}")
     try:
         if method.upper() == "GET":
             response = session.get(url, headers=headers, timeout=30)
         else:
             response = session.post(url, headers=headers, json=payload, timeout=30)
-        logger.info(f"API {method} {endpoint} -> Status: {response.status_code}")
+        logger.info(f"API RESPONSE status: {response.status_code}")
+        logger.info(f"API RESPONSE text: {response.text[:2000]}")
         try:
             data = response.json()
-            logger.info(f"API Response: {json.dumps(data, ensure_ascii=False)[:500]}")
+            logger.info(f"API RESPONSE json: {json.dumps(data, ensure_ascii=False)[:1000]}")
             return data
-        except Exception:
-            logger.error(f"Non-JSON response from {endpoint}: {response.text[:500]}")
-            return None
+        except Exception as e:
+            logger.error(f"Non-JSON response: {e}")
+            return {"__raw__": response.text}
     except Exception as e:
-        logger.error(f"API request error to {endpoint}: {e}")
+        logger.error(f"API request error: {e}")
         return None
 
 
@@ -167,7 +168,7 @@ def do_signin():
     if result and result.get("status") and isinstance(result.get("result"), dict):
         access_token = result["result"].get("accessToken")
         refresh_token = result["result"].get("refreshToken")
-        logger.info("Sign in successful")
+        logger.info(f"Sign in OK. Token prefix: {access_token[:20] if access_token else 'None'}...")
         return True
     logger.error(f"Sign in failed: {result}")
     return False
@@ -177,12 +178,18 @@ def get_agent_affiliate_id():
     global agent_affiliate_id
     if access_token:
         jwt_data = decode_jwt_payload(access_token)
-        logger.info(f"JWT payload keys: {list(jwt_data.keys())}")
+        logger.info(f"JWT keys: {list(jwt_data.keys())}")
         for key in ["affiliateId", "userId", "id", "sub", "affiliate_id"]:
             if key in jwt_data and jwt_data[key]:
                 agent_affiliate_id = str(jwt_data[key])
                 logger.info(f"Agent affiliateId from JWT ({key}): {agent_affiliate_id}")
                 return agent_affiliate_id
+    # Fallback: try to get from API
+    result = api_request("POST", "global/api/UserApi/getChildren", {}, auth=True)
+    if result and result.get("status") and isinstance(result.get("result"), dict):
+        agent_affiliate_id = str(result["result"].get("parentId", "0"))
+        logger.info(f"Agent affiliateId from getChildren: {agent_affiliate_id}")
+        return agent_affiliate_id
     return None
 
 
@@ -196,9 +203,9 @@ def token_refresh_loop():
             if result and result.get("status") and isinstance(result.get("result"), dict):
                 access_token = result["result"].get("accessToken")
                 refresh_token = result["result"].get("refreshToken")
-                logger.info("Token refreshed successfully")
+                logger.info("Token refreshed")
             else:
-                logger.warning("Token refresh failed, attempting sign in")
+                logger.warning("Refresh failed, signing in again")
                 do_signin()
         else:
             do_signin()
@@ -208,6 +215,7 @@ def token_refresh_loop():
 # =============================================================================
 def main_menu_markup(user_id):
     is_owner = str(user_id) in owners_list
+    logger.info(f"main_menu_markup for user_id={user_id}, is_owner={is_owner}, owners_list={owners_list}")
     markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
         KeyboardButton("👤 حسابي"),
@@ -226,7 +234,7 @@ def back_markup():
     return markup
 
 # =============================================================================
-# Admin Panel Helper
+# Admin Panel
 # =============================================================================
 def show_admin_panel(chat_id, message_id=None):
     markup = InlineKeyboardMarkup(row_width=1)
@@ -247,26 +255,25 @@ def show_admin_panel(chat_id, message_id=None):
         bot.send_message(chat_id, text, reply_markup=markup)
 
 # =============================================================================
-# Admin Group Reply Handler (MUST be registered early)
+# Admin Group Reply Handler (REGISTER FIRST)
 # =============================================================================
 @bot.message_handler(content_types=["text"], func=lambda m: m.chat.id == ADMIN_GROUP_ID and m.reply_to_message is not None)
 def handle_admin_group_reply(message):
     original_msg_id = message.reply_to_message.message_id
-    logger.info(f"Admin reply detected. original_msg_id={original_msg_id}, support_tickets_keys={list(support_tickets.keys())}")
+    logger.info(f"Admin group reply. original_msg_id={original_msg_id}, tickets={list(support_tickets.keys())}")
     if original_msg_id in support_tickets:
         user_id = support_tickets[original_msg_id]
-        logger.info(f"Reply found for user_id={user_id}. Sending reply...")
         try:
             bot.send_message(user_id, f"📩 رد من الدعم الفني:\n\n{message.text}")
             bot.send_message(ADMIN_GROUP_ID, f"✅ تم إرسال الرد للمستخدم {user_id}")
         except Exception as e:
-            logger.error(f"Failed to send support reply to {user_id}: {e}")
+            logger.error(f"Failed to send reply to {user_id}: {e}")
             bot.send_message(ADMIN_GROUP_ID, f"❌ فشل إرسال الرد للمستخدم {user_id}: {e}")
     else:
-        logger.info(f"Reply to msg {original_msg_id} not found in support_tickets. Skipping.")
+        logger.info(f"Reply not in support_tickets. Ignoring.")
 
 # =============================================================================
-# Command Handlers
+# Commands
 # =============================================================================
 @bot.message_handler(commands=["start"])
 def cmd_start(message):
@@ -288,7 +295,7 @@ def cmd_admin(message):
     show_admin_panel(message.chat.id)
 
 # =============================================================================
-# Back Button Handler
+# Back Handler
 # =============================================================================
 @bot.message_handler(func=lambda m: m.text == "🔙 رجوع")
 def handle_back(message):
@@ -301,7 +308,7 @@ def handle_back(message):
     )
 
 # =============================================================================
-# Main Menu Button Handlers
+# Main Menu Handlers
 # =============================================================================
 @bot.message_handler(func=lambda m: m.text == "👤 حسابي")
 def menu_my_account(message):
@@ -356,7 +363,7 @@ def menu_admin_panel(message):
     show_admin_panel(message.chat.id)
 
 # =============================================================================
-# State Handlers - Registration
+# State: Registration
 # =============================================================================
 @bot.message_handler(func=lambda m: user_states.get(m.chat.id) == "WAITING_REG_USERNAME")
 def handle_reg_username(message):
@@ -390,7 +397,7 @@ def handle_reg_password(message):
         get_agent_affiliate_id()
 
     parent_id = agent_affiliate_id if agent_affiliate_id else "0"
-    logger.info(f"Registering player. username={username}, parentId={parent_id}")
+    logger.info(f"Registering player. username={username}, parentId={parent_id}, token_prefix={access_token[:20] if access_token else 'None'}")
 
     payload = {
         "player": {
@@ -402,7 +409,7 @@ def handle_reg_password(message):
     }
 
     result = api_request("POST", "global/api/UserApi/registerPlayer", payload, auth=True)
-    logger.info(f"registerPlayer raw result: {result}")
+    logger.info(f"registerPlayer result: {result}")
 
     if result and result.get("status") and result.get("result") is not False:
         search_payload = {
@@ -445,14 +452,16 @@ def handle_reg_password(message):
             )
     else:
         error_msg = "Unknown error"
-        if result and result.get("notification"):
-            notif = result["notification"]
+        if result:
+            notif = result.get("notification")
             if isinstance(notif, list) and len(notif) > 0:
                 error_msg = notif[0].get("content", "Unknown error")
             elif isinstance(notif, dict):
                 error_msg = notif.get("content", "Unknown error")
-        elif result and result.get("result") is False:
-            error_msg = "Registration failed (result=false). Check logs for details."
+            if result.get("__raw__"):
+                error_msg += f" | Raw: {result['__raw__'][:200]}"
+        elif result is None:
+            error_msg = "No response from server (network error)."
         logger.error(f"Registration failed for {username}: {result}")
         bot.send_message(message.chat.id, f"❌ فشل في إنشاء الحساب: {error_msg}")
 
@@ -460,7 +469,7 @@ def handle_reg_password(message):
     state_data.pop(message.chat.id, None)
 
 # =============================================================================
-# State Handlers - Deposit
+# State: Deposit
 # =============================================================================
 @bot.message_handler(func=lambda m: user_states.get(m.chat.id) == "WAITING_DEP_AMOUNT")
 def handle_dep_amount(message):
@@ -476,54 +485,42 @@ def handle_dep_amount(message):
             f"💳 <b>خيارات الدفع المتاحة لشحن حسابك حياً:</b>\n"
             f"• <b>محفظة شام كاش</b>: {SHAM_CASH_WALLET}\n"
             f"• <b>كود سيرياتيل كاش</b>: {SYRIATEL_CASH_CODE}\n\n"
-            f"⚠️ قم بتحويل المبلغ المطابق تماماً لطلبك، ثم <b>قم برفع وإرسال صورة إيصال التحويل (الوصل المالي)</b> هنا كصورة فوراً لتمريرها للإدارة والتدقيق:"
+            f"⚠️ قم بتحويل المبلغ المطابق تماماً لطلبك، ثم <b>قم برفع وإرسال صورة الإيصال هنا.</b>\n"
+            f"✅ سيتم مراجعة إيصالك وشحن رصيدك خلال دقائق."
         )
-        bot.send_message(message.chat.id, text, reply_markup=back_markup(), parse_mode="HTML")
+        bot.send_message(message.chat.id, text, parse_mode="HTML", reply_markup=back_markup())
     except ValueError:
-        bot.send_message(message.chat.id, "❌ يرجى إدخال مبلغ صحيح (رقم فقط).")
+        bot.send_message(message.chat.id, "❌ يرجى إدخال مبلغ صحيح.")
 
 
 @bot.message_handler(content_types=["photo"], func=lambda m: user_states.get(m.chat.id) == "WAITING_DEP_RECEIPT")
-def handle_dep_receipt_photo(message):
-    amount = state_data.get(message.chat.id, {}).get("amount")
+def handle_dep_receipt(message):
+    chat_id = message.chat.id
+    amount = state_data.get(chat_id, {}).get("amount")
     if not amount:
+        bot.send_message(chat_id, "❌ خطأ في البيانات. أعد المحاولة.")
         return
 
-    photo_file_id = message.photo[-1].file_id
+    file_id = message.photo[-1].file_id
     caption = (
-        f"📥 طلب إيداع جديد\n"
-        f"👤 المستخدم: {message.from_user.id}\n"
-        f"💰 المبلغ: {amount}\n"
-        f"⏰ الوقت: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+        f"🔄 <b>طلب إيداع جديد</b>\n\n"
+        f"👤 المستخدم: <code>{chat_id}</code>\n"
+        f"💰 المبلغ: <b>{amount}</b>\n"
+        f"📎 تم إرفاق إيصال الدفع."
     )
-
-    markup = InlineKeyboardMarkup()
-    markup.row(
-        InlineKeyboardButton("✅ اعتماد وشحن", callback_data="approve_dep"),
-        InlineKeyboardButton("❌ رفض الإيصال", callback_data="reject_dep")
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("✅ موافقة", callback_data="approve_dep"),
+        InlineKeyboardButton("❌ رفض", callback_data="reject_dep")
     )
-
-    sent = bot.send_photo(ADMIN_GROUP_ID, photo_file_id, caption=caption, reply_markup=markup)
-    pending_deposits[sent.message_id] = {
-        "user_id": message.chat.id,
-        "amount": amount
-    }
-
-    bot.send_message(
-        message.chat.id,
-        "⏳ تم إرسال طلبك للإدارة. سيتم مراجعته في أقرب وقت.",
-        reply_markup=main_menu_markup(message.chat.id)
-    )
-    user_states.pop(message.chat.id, None)
-    state_data.pop(message.chat.id, None)
-
-
-@bot.message_handler(content_types=["text"], func=lambda m: user_states.get(m.chat.id) == "WAITING_DEP_RECEIPT")
-def handle_dep_receipt_nonphoto(message):
-    bot.send_message(message.chat.id, "❌ يرجى إرسال صورة الإيصال كصورة (ليس كملف أو نص).")
+    sent = bot.send_photo(ADMIN_GROUP_ID, file_id, caption=caption, reply_markup=markup, parse_mode="HTML")
+    pending_deposits[sent.message_id] = {"user_id": chat_id, "amount": amount}
+    bot.send_message(chat_id, "📤 تم إرسال إيصالك للمراجعة. سيتم إشعارك بالنتيجة.", reply_markup=main_menu_markup(chat_id))
+    user_states.pop(chat_id, None)
+    state_data.pop(chat_id, None)
 
 # =============================================================================
-# State Handlers - Withdraw
+# State: Withdraw
 # =============================================================================
 @bot.message_handler(func=lambda m: user_states.get(m.chat.id) == "WAITING_WITHDRAW_AMOUNT")
 def handle_wd_amount(message):
@@ -531,189 +528,149 @@ def handle_wd_amount(message):
         return
     try:
         amount = float(message.text.strip().replace(",", ""))
-        if amount < 200000 or amount > 1000000:
-            bot.send_message(
-                message.chat.id,
-                "❌ المبلغ يجب أن يكون بين 200,000 و 1,000,000 ليرة."
-            )
+        if amount < 200000:
+            bot.send_message(message.chat.id, "❌ الحد الأدنى للسحب هو 200,000 ليرة.")
+            return
+        if amount > 1000000:
+            bot.send_message(message.chat.id, "❌ الحد الأعلى للسحب هو 1,000,000 ليرة.")
             return
         state_data[message.chat.id]["amount"] = amount
-        method = state_data[message.chat.id]["method"]
-        if method == "sham":
-            bot.send_message(
-                message.chat.id,
-                "💳 يرجى إرسال عنوان محفظة شام كاش الخاصة بك:",
-                reply_markup=back_markup()
-            )
-        else:
-            bot.send_message(
-                message.chat.id,
-                "📱 يرجى إرسال رقم هاتفك المرتبط بسيرياتيل كاش:",
-                reply_markup=back_markup()
-            )
-        user_states[message.chat.id] = "WAITING_WITHDRAW_ACCOUNT"
+        user_states[message.chat.id] = "WAITING_WITHDRAW_PHONE"
+        bot.send_message(
+            message.chat.id,
+            "📱 يرجى إرسال رقم هاتفك (محفظة شام كاش أو سيرياتيل كاش):",
+            reply_markup=back_markup()
+        )
     except ValueError:
         bot.send_message(message.chat.id, "❌ يرجى إدخال مبلغ صحيح.")
 
 
-@bot.message_handler(func=lambda m: user_states.get(m.chat.id) == "WAITING_WITHDRAW_ACCOUNT")
-def handle_wd_account(message):
+@bot.message_handler(func=lambda m: user_states.get(m.chat.id) == "WAITING_WITHDRAW_PHONE")
+def handle_wd_phone(message):
     if message.text == "🔙 رجوع":
         return
-
-    account = message.text.strip()
-    data = state_data.get(message.chat.id, {})
-    amount = data.get("amount", 0)
-    method = data.get("method", "")
-
-    net_amount = amount * 0.9
-    data["account"] = account
-    data["net_amount"] = net_amount
-    state_data[message.chat.id] = data
-
-    method_name = "محفظة شام كاش" if method == "sham" else "سيرياتيل كاش"
-
-    bot.send_message(
-        message.chat.id,
-        "⏱️ تم تقديم طلب السحب بنجاح وجارٍ مراجعته وتحويل الأموال من قبل الإدارة...",
-        reply_markup=main_menu_markup(message.chat.id)
+    phone = message.text.strip()
+    if not phone:
+        bot.send_message(message.chat.id, "❌ يرجى إرسال رقم صحيح.")
+        return
+    state_data[message.chat.id]["phone"] = phone
+    user_states[message.chat.id] = "WAITING_WITHDRAW_CONFIRM"
+    amount = state_data[message.chat.id].get("amount", 0)
+    commission = amount * 0.10
+    net = amount - commission
+    text = (
+        f"⚠️ <b>مراجعة طلب السحب:</b>\n\n"
+        f"💰 المبلغ: {amount}\n"
+        f"📉 العمولة (10%): {commission}\n"
+        f"📨 الصافي: {net}\n"
+        f"📱 الرقم: {phone}\n\n"
+        f"✅ اضغط 'تأكيد' لإرسال الطلب."
     )
-
-    caption = (
-        f"📩 طلب سحب جديد\n\n"
-        f"👤 اللاعب: {message.from_user.first_name}\n"
-        f"🆔 معرف التليجرام: {message.from_user.id}\n"
-        f"💰 المبلغ المطلوب: {amount:,.0f} ليرة\n"
-        f"📲 وسيلة الاستلام: {method_name}\n"
-        f"🔢 تفاصيل الحساب: {account}\n"
-        f"💵 المبلغ الصافي للتحويل: {net_amount:,.0f} ليرة"
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("✅ تأكيد", callback_data="confirm_wd"),
+        InlineKeyboardButton("❌ إلغاء", callback_data="cancel_wd")
     )
-
-    markup = InlineKeyboardMarkup()
-    markup.row(
-        InlineKeyboardButton("✅ تم التحويل والخصم", callback_data="approve_wd"),
-        InlineKeyboardButton("❌ رفض السحب", callback_data="reject_wd")
-    )
-
-    sent = bot.send_message(ADMIN_GROUP_ID, caption, reply_markup=markup)
-    pending_withdrawals[sent.message_id] = {
-        "user_id": message.chat.id,
-        "amount": amount,
-        "method": method,
-        "account": account,
-        "net_amount": net_amount
-    }
-
-    user_states.pop(message.chat.id, None)
-    state_data.pop(message.chat.id, None)
+    bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="HTML")
 
 # =============================================================================
-# State Handlers - Support
+# State: Support
 # =============================================================================
 @bot.message_handler(func=lambda m: user_states.get(m.chat.id) == "WAITING_SUPPORT_TICKET")
 def handle_support_ticket(message):
     if message.text == "🔙 رجوع":
         return
-
-    user = message.from_user
-    admin_msg = (
-        f"📞 تذكرة دعم فني جديدة\n\n"
-        f"👤 من: {user.first_name} (@{user.username or 'لا يوجد'})\n"
-        f"🆔 المعرف: {user.id}\n"
-        f"📝 المشكلة:\n{message.text}"
+    ticket_text = message.text.strip()
+    if not ticket_text:
+        bot.send_message(message.chat.id, "❌ يرجى كتابة نص الرسالة.")
+        return
+    caption = (
+        f"📩 <b>تذكرة دعم فني جديدة</b>\n\n"
+        f"👤 المستخدم: <code>{message.chat.id}</code>\n"
+        f"📝 الرسالة:\n{ticket_text}"
     )
-
-    sent = bot.send_message(ADMIN_GROUP_ID, admin_msg)
+    sent = bot.send_message(ADMIN_GROUP_ID, caption, parse_mode="HTML")
     support_tickets[sent.message_id] = message.chat.id
-    logger.info(f"Support ticket created. admin_msg_id={sent.message_id}, user_chat_id={message.chat.id}, tickets={list(support_tickets.keys())}")
-
-    bot.send_message(
-        message.chat.id,
-        "✅ تم إرسال تذكرتك للدعم الفني. سنرد عليك في أقرب وقت.",
-        reply_markup=main_menu_markup(message.chat.id)
-    )
+    bot.send_message(message.chat.id, "✅ تم إرسال تذكرتك. سيتم الرد عليك قريباً.", reply_markup=main_menu_markup(message.chat.id))
     user_states.pop(message.chat.id, None)
 
 # =============================================================================
-# Admin State Handler
+# State: Admin Panel States
 # =============================================================================
-@bot.message_handler(func=lambda m: user_states.get(m.chat.id) and str(m.chat.id) in owners_list and str(user_states.get(m.chat.id)).startswith("WAITING_ADMIN_"))
-def handle_admin_states(message):
-    state = user_states.get(message.chat.id)
+@bot.message_handler(func=lambda m: user_states.get(m.chat.id) == "WAITING_ADMIN_AGENT_USERNAME")
+def handle_admin_agent_username(message):
+    global AGENT_USERNAME
+    AGENT_USERNAME = message.text.strip()
+    bot.send_message(message.chat.id, f"✅ تم تحديث اسم المستخدم: {AGENT_USERNAME}")
+    user_states.pop(message.chat.id, None)
 
-    if state == "WAITING_ADMIN_AGENT_USERNAME":
-        global AGENT_USERNAME
-        AGENT_USERNAME = message.text.strip()
-        bot.send_message(message.chat.id, f"✅ تم تحديث اسم المستخدم: {AGENT_USERNAME}\nجاري إعادة تسجيل الدخول...")
-        if do_signin():
-            get_agent_affiliate_id()
-            bot.send_message(message.chat.id, "✅ تم تسجيل الدخول بالبيانات الجديدة.")
-        else:
-            bot.send_message(message.chat.id, "❌ فشل تسجيل الدخول. تحقق من البيانات.")
-        user_states.pop(message.chat.id, None)
 
-    elif state == "WAITING_ADMIN_AGENT_PASSWORD":
-        global AGENT_PASSWORD
-        AGENT_PASSWORD = message.text.strip()
-        bot.send_message(message.chat.id, "✅ تم تحديث كلمة المرور.\nجاري إعادة تسجيل الدخول...")
-        if do_signin():
-            bot.send_message(message.chat.id, "✅ تم تسجيل الدخول بالبيانات الجديدة.")
-        else:
-            bot.send_message(message.chat.id, "❌ فشل تسجيل الدخول.")
-        user_states.pop(message.chat.id, None)
+@bot.message_handler(func=lambda m: user_states.get(m.chat.id) == "WAITING_ADMIN_AGENT_PASSWORD")
+def handle_admin_agent_password(message):
+    global AGENT_PASSWORD
+    AGENT_PASSWORD = message.text.strip()
+    bot.send_message(message.chat.id, "🔒 تم تحديث كلمة المرور. جاري إعادة تسجيل الدخول...")
+    if do_signin():
+        get_agent_affiliate_id()
+        bot.send_message(message.chat.id, "✅ تم إعادة تسجيل الدخول بنجاح.")
+    else:
+        bot.send_message(message.chat.id, "❌ فشل إعادة تسجيل الدخول. تحقق من البيانات.")
+    user_states.pop(message.chat.id, None)
 
-    elif state == "WAITING_ADMIN_SHAM_WALLET":
-        global SHAM_CASH_WALLET
-        SHAM_CASH_WALLET = message.text.strip()
-        bot.send_message(message.chat.id, "✅ تم تحديث محفظة شام كاش.")
-        user_states.pop(message.chat.id, None)
 
-    elif state == "WAITING_ADMIN_SYRIATEL_CODE":
-        global SYRIATEL_CASH_CODE
-        SYRIATEL_CASH_CODE = message.text.strip()
-        bot.send_message(message.chat.id, "✅ تم تحديث كود سيرياتيل كاش.")
-        user_states.pop(message.chat.id, None)
+@bot.message_handler(func=lambda m: user_states.get(m.chat.id) == "WAITING_ADMIN_SHAM_WALLET")
+def handle_admin_sham_wallet(message):
+    global SHAM_CASH_WALLET
+    SHAM_CASH_WALLET = message.text.strip()
+    bot.send_message(message.chat.id, f"✅ تم تحديث محفظة شام كاش: {SHAM_CASH_WALLET}")
+    user_states.pop(message.chat.id, None)
 
-    elif state == "WAITING_ADMIN_BROADCAST":
-        text = message.text
-        count = 0
-        for uid in users_list:
-            try:
-                bot.send_message(int(uid), f"📢 إذاعة عامة:\n\n{text}")
-                count += 1
-            except Exception as e:
-                logger.error(f"Broadcast failed to {uid}: {e}")
-        bot.send_message(message.chat.id, f"✅ تم الإرسال لـ {count} مستخدم.")
-        user_states.pop(message.chat.id, None)
 
-    elif state == "WAITING_ADMIN_ADD_OWNER":
+@bot.message_handler(func=lambda m: user_states.get(m.chat.id) == "WAITING_ADMIN_SYRIATEL_CODE")
+def handle_admin_syriatel_code(message):
+    global SYRIATEL_CASH_CODE
+    SYRIATEL_CASH_CODE = message.text.strip()
+    bot.send_message(message.chat.id, f"✅ تم تحديث كود سيرياتيل: {SYRIATEL_CASH_CODE}")
+    user_states.pop(message.chat.id, None)
+
+
+@bot.message_handler(func=lambda m: user_states.get(m.chat.id) == "WAITING_ADMIN_BROADCAST")
+def handle_admin_broadcast(message):
+    text = message.text
+    success = 0
+    failed = 0
+    for uid in users_list:
         try:
-            new_owner = str(int(message.text.strip()))
-            if new_owner not in owners_list:
-                owners_list.append(new_owner)
-                save_list_to_file(OWNERS_FILE, owners_list)
-                bot.send_message(message.chat.id, f"✅ تم إضافة المالك: {new_owner}")
-            else:
-                bot.send_message(message.chat.id, "⚠️ المالك موجود مسبقاً.")
-        except ValueError:
-            bot.send_message(message.chat.id, "❌ معرف غير صالح.")
-        user_states.pop(message.chat.id, None)
+            bot.send_message(int(uid), f"📢 إذاعة:\n\n{text}")
+            success += 1
+        except Exception as e:
+            logger.error(f"Broadcast failed for {uid}: {e}")
+            failed += 1
+    bot.send_message(message.chat.id, f"✅ تم الإرسال: {success} | ❌ فشل: {failed}")
+    user_states.pop(message.chat.id, None)
 
-    elif state == "WAITING_ADMIN_ADD_ADMIN":
-        try:
-            new_admin = str(int(message.text.strip()))
-            if new_admin not in admins_list:
-                admins_list.append(new_admin)
-                save_list_to_file(ADMINS_FILE, admins_list)
-                bot.send_message(message.chat.id, f"✅ تم إضافة المشرف: {new_admin}")
-            else:
-                bot.send_message(message.chat.id, "⚠️ المشرف موجود مسبقاً.")
-        except ValueError:
-            bot.send_message(message.chat.id, "❌ معرف غير صالح.")
-        user_states.pop(message.chat.id, None)
+
+@bot.message_handler(func=lambda m: user_states.get(m.chat.id) == "WAITING_ADMIN_ADD_OWNER")
+def handle_admin_add_owner(message):
+    uid = message.text.strip()
+    if uid not in owners_list:
+        owners_list.append(uid)
+        save_list_to_file(OWNERS_FILE, owners_list)
+    bot.send_message(message.chat.id, f"✅ تمت إضافة المالك: {uid}")
+    user_states.pop(message.chat.id, None)
+
+
+@bot.message_handler(func=lambda m: user_states.get(m.chat.id) == "WAITING_ADMIN_ADD_ADMIN")
+def handle_admin_add_admin(message):
+    uid = message.text.strip()
+    if uid not in admins_list:
+        admins_list.append(uid)
+        save_list_to_file(ADMINS_FILE, admins_list)
+    bot.send_message(message.chat.id, f"✅ تمت إضافة المشرف: {uid}")
+    user_states.pop(message.chat.id, None)
 
 # =============================================================================
-# Callback Handlers - General Navigation
+# Callbacks - Main Menu / Back
 # =============================================================================
 @bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
 def cb_back_to_main(call):
@@ -721,7 +678,7 @@ def cb_back_to_main(call):
     bot.answer_callback_query(call.id)
 
 
-@bot.callback_query_handler(func=lambda call: call.data == "wd_back")
+@bot.callback_query_handler(func=lambda call: call.data in ["wd_back", "cancel_wd"])
 def cb_wd_back(call):
     bot.send_message(call.from_user.id, "🔙 تم العودة للقائمة الرئيسية.", reply_markup=main_menu_markup(call.from_user.id))
     bot.answer_callback_query(call.id)
@@ -742,8 +699,40 @@ def cb_wd_method(call):
     bot.edit_message_text("💰 يرجى كتابة المبلغ المراد سحبه:", call.message.chat.id, call.message.message_id)
     bot.answer_callback_query(call.id)
 
+
+@bot.callback_query_handler(func=lambda call: call.data == "confirm_wd")
+def cb_confirm_wd(call):
+    chat_id = call.from_user.id
+    data = state_data.get(chat_id, {})
+    amount = data.get("amount", 0)
+    phone = data.get("phone", "")
+    method = data.get("method", "")
+    method_name = "شام كاش" if method == "sham" else "سيرياتيل كاش"
+    commission = amount * 0.10
+    net = amount - commission
+    caption = (
+        f"📤 <b>طلب سحب جديد</b>\n\n"
+        f"👤 المستخدم: <code>{chat_id}</code>\n"
+        f"💰 المبلغ: {amount}\n"
+        f"📉 العمولة: {commission}\n"
+        f"📨 الصافي: {net}\n"
+        f"📱 الرقم: {phone}\n"
+        f"💳 الطريقة: {method_name}"
+    )
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("✅ موافقة", callback_data="approve_wd"),
+        InlineKeyboardButton("❌ رفض", callback_data="reject_wd")
+    )
+    sent = bot.send_message(ADMIN_GROUP_ID, caption, reply_markup=markup, parse_mode="HTML")
+    pending_withdrawals[sent.message_id] = {"user_id": chat_id, "amount": amount}
+    bot.send_message(chat_id, "📤 تم إرسال طلب السحب للمراجعة.", reply_markup=main_menu_markup(chat_id))
+    bot.answer_callback_query(call.id)
+    user_states.pop(chat_id, None)
+    state_data.pop(chat_id, None)
+
 # =============================================================================
-# Callback Handlers - Admin Panel
+# Callbacks - Admin Panel
 # =============================================================================
 @bot.callback_query_handler(func=lambda call: call.data.startswith("admin_") or call.data.startswith("edit_"))
 def cb_admin_panel(call):
@@ -822,7 +811,7 @@ def cb_admin_panel(call):
         bot.answer_callback_query(call.id)
 
 # =============================================================================
-# Callback Handlers - Deposit Approval / Rejection
+# Callbacks - Deposit Action
 # =============================================================================
 @bot.callback_query_handler(func=lambda call: call.data in ["approve_dep", "reject_dep"])
 def cb_deposit_action(call):
@@ -889,7 +878,7 @@ def cb_deposit_action(call):
     bot.answer_callback_query(call.id)
 
 # =============================================================================
-# Callback Handlers - Withdraw Approval / Rejection
+# Callbacks - Withdraw Action
 # =============================================================================
 @bot.callback_query_handler(func=lambda call: call.data in ["approve_wd", "reject_wd"])
 def cb_withdraw_action(call):
@@ -956,7 +945,7 @@ def cb_withdraw_action(call):
     bot.answer_callback_query(call.id)
 
 # =============================================================================
-# Flask Webhook Routes
+# Flask Webhook
 # =============================================================================
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def webhook():
@@ -985,7 +974,7 @@ def set_webhook():
         logger.error(f"Failed to set webhook: {e}")
 
 # =============================================================================
-# Main Entry Point
+# Main
 # =============================================================================
 if __name__ == "__main__":
     load_owners()
