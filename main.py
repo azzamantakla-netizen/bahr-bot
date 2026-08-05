@@ -242,25 +242,59 @@ def do_signin():
 
 def get_agent_affiliate_id():
     global agent_affiliate_id
+    # Hardcoded confirmed parentId
+    HARDCODED_AFFILIATE_ID = "2688288"
     if not access_token:
         logger.warning("No access token, attempting signin first")
         if not do_signin():
-            return None
+            agent_affiliate_id = HARDCODED_AFFILIATE_ID
+            return agent_affiliate_id
     if access_token:
         jwt_data = decode_jwt_payload(access_token)
         logger.info(f"JWT keys: {list(jwt_data.keys())}")
         for key in ["affiliateId", "userId", "id", "sub", "affiliate_id"]:
             if key in jwt_data and jwt_data[key]:
-                agent_affiliate_id = str(jwt_data[key])
-                logger.info(f"Agent affiliateId from JWT ({key}): {agent_affiliate_id}")
+                val = str(jwt_data[key])
+                if val == HARDCODED_AFFILIATE_ID:
+                    agent_affiliate_id = val
+                    logger.info(f"Agent affiliateId from JWT ({key}): {agent_affiliate_id}")
+                    return agent_affiliate_id
+    # Fallback 1: try to get from getChildren
+    try:
+        result = api_request("POST", "global/api/UserApi/getChildren", {}, auth=True)
+        if result and result.get("status") and isinstance(result.get("result"), dict):
+            val = str(result["result"].get("parentId", ""))
+            if val and val != "0":
+                agent_affiliate_id = val
+                logger.info(f"Agent affiliateId from getChildren: {agent_affiliate_id}")
                 return agent_affiliate_id
-    # Fallback: try to get from API
-    result = api_request("POST", "global/api/UserApi/getChildren", {}, auth=True)
-    if result and result.get("status") and isinstance(result.get("result"), dict):
-        agent_affiliate_id = str(result["result"].get("parentId", "0"))
-        logger.info(f"Agent affiliateId from getChildren: {agent_affiliate_id}")
-        return agent_affiliate_id
-    return None
+    except Exception as e:
+        logger.error(f"getChildren error: {e}")
+    # Fallback 2: try to get from first player in getPlayersForCurrentAgent
+    try:
+        search_payload = {
+            "start": 0,
+            "limit": 1,
+            "filter": {},
+            "isNextPage": False
+        }
+        players_result = api_request("POST", "global/api/UserApi/getPlayersForCurrentAgent", search_payload, auth=True)
+        logger.info(f"getPlayersForCurrentAgent affiliate fetch: {players_result}")
+        if players_result and players_result.get("status") and isinstance(players_result.get("result"), dict):
+            records = players_result["result"].get("records", [])
+            if records and isinstance(records, list) and len(records) > 0:
+                first_player = records[0]
+                parent_id = first_player.get("parentId")
+                if parent_id:
+                    agent_affiliate_id = str(parent_id)
+                    logger.info(f"Agent affiliateId from first player parentId: {agent_affiliate_id}")
+                    return agent_affiliate_id
+    except Exception as e:
+        logger.error(f"Error fetching affiliate from players: {e}")
+    # Final fallback: use hardcoded confirmed value
+    agent_affiliate_id = HARDCODED_AFFILIATE_ID
+    logger.info(f"Using hardcoded affiliateId: {agent_affiliate_id}")
+    return agent_affiliate_id
 
 
 def token_refresh_loop():
@@ -531,27 +565,30 @@ def handle_reg_password(message):
             bot.send_message(chat_id, "❌ خطأ في البيانات. اضغط /start وأعد المحاولة.")
             return
 
-        if not agent_affiliate_id:
-            logger.info("affiliate_id missing, fetching...")
+        # Ensure we have a valid affiliate_id
+        if not agent_affiliate_id or agent_affiliate_id == "0":
+            logger.info("affiliate_id missing or zero, fetching...")
             try:
                 get_agent_affiliate_id()
             except Exception as e:
                 logger.error(f"get_agent_affiliate_id failed: {e}")
 
-        parent_id = agent_affiliate_id if agent_affiliate_id else "0"
+        parent_id = agent_affiliate_id if agent_affiliate_id else "2688288"
         try:
             parent_id_int = int(parent_id)
         except ValueError:
-            parent_id_int = parent_id
+            parent_id_int = int("2688288")
 
         logger.info(f"Registering player. username={username}, parentId={parent_id_int}, token_exists={bool(access_token)}")
 
         payload = {
             "player": {
+                "login": username,
                 "email": f"{username}@player.bot",
                 "password": password,
                 "parentId": parent_id_int,
-                "login": username
+                "firstName": username,
+                "lastName": username
             }
         }
 
