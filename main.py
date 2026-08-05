@@ -158,9 +158,9 @@ def _request_with_tls(url, headers, payload, method):
         return None
     try:
         if method.upper() == "GET":
-            return session.get(url, headers=headers)
+            return session.get(url, headers=headers, timeout_seconds=30)
         else:
-            return session.post(url, headers=headers, json=payload)
+            return session.post(url, headers=headers, json=payload, timeout_seconds=30)
     except Exception as e:
         logger.warning(f"tls_client request failed: {e}")
         return None
@@ -195,22 +195,23 @@ def api_request(method, endpoint, payload=None, auth=False):
         headers["Authorization"] = f"Bearer {access_token}"
     logger.info(f"API REQUEST: {method} {url} | auth={auth} | payload={json.dumps(payload, ensure_ascii=False)[:500]}")
     try:
-        response = _request_with_tls(url, headers, payload, method)
+        # Use requests first (reliable timeout), fallback to tls_client
+        response = _request_with_requests(url, headers, payload, method)
         if response is None:
-            response = _request_with_requests(url, headers, payload, method)
+            response = _request_with_tls(url, headers, payload, method)
         if response is None:
-            raise Exception("Both tls_client and requests failed to connect")
+            raise Exception("Both requests and tls_client failed to connect")
 
         # Auto-retry on auth failure
         if auth and response.status_code in (401, 403):
             logger.warning(f"Auth failed ({response.status_code}), attempting re-signin...")
             if do_signin():
                 headers["Authorization"] = f"Bearer {access_token}"
-                response = _request_with_tls(url, headers, payload, method)
+                response = _request_with_requests(url, headers, payload, method)
                 if response is None:
-                    response = _request_with_requests(url, headers, payload, method)
+                    response = _request_with_tls(url, headers, payload, method)
                 if response is None:
-                    raise Exception("Both tls_client and requests failed on retry")
+                    raise Exception("Both requests and tls_client failed on retry")
             else:
                 logger.error("Re-signin failed after auth error.")
 
