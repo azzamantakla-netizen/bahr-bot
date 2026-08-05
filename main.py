@@ -190,7 +190,14 @@ class FakeResponse:
 
 def api_request(method, endpoint, payload=None, auth=False):
     url = f"{PANEL_BASE}/{endpoint}"
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Origin": "https://agents.texas4win.com",
+        "Referer": "https://agents.texas4win.com/"
+    }
     if auth and access_token:
         headers["Authorization"] = f"Bearer {access_token}"
     logger.info(f"API REQUEST: {method} {url} | auth={auth} | payload={json.dumps(payload, ensure_ascii=False)[:500]}")
