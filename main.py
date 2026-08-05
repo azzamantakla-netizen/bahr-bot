@@ -202,7 +202,7 @@ def active_steps_handler(message):
         global_bot.send_message(chat_id, payment_info, parse_mode="Markdown")
         return
 
-# 🌟 2. معالج خاص ومستقل للأزرار اللمسية الرئيسية للقائمة لضمان استجابتها الفورية دائماً
+# 🌟 2. معالج خاص ومستقل للأزرار اللمسية الرئيسية للقائمة لضمان استجباتها الفورية دائماً
 @global_bot.message_handler(func=lambda message: True)
 def main_menu_buttons(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
