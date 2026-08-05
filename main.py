@@ -147,10 +147,13 @@ def api_request(method, endpoint, payload=None, auth=False):
             response = session.get(url, headers=headers, timeout=30)
         else:
             response = session.post(url, headers=headers, json=payload, timeout=30)
+        logger.info(f"API {method} {endpoint} -> Status: {response.status_code}")
         try:
-            return response.json()
+            data = response.json()
+            logger.info(f"API Response: {json.dumps(data, ensure_ascii=False)[:500]}")
+            return data
         except Exception:
-            logger.error(f"Non-JSON response from {endpoint}: {response.text[:200]}")
+            logger.error(f"Non-JSON response from {endpoint}: {response.text[:500]}")
             return None
     except Exception as e:
         logger.error(f"API request error to {endpoint}: {e}")
@@ -172,30 +175,14 @@ def do_signin():
 
 def get_agent_affiliate_id():
     global agent_affiliate_id
-    payload = {
-        "start": 0,
-        "limit": 20,
-        "filter": {
-            "self": {"action": "=", "value": True, "valueLabel": "true"}
-        },
-        "isNextPage": False,
-        "searchBy": {"agentChildrenList": ""}
-    }
-    result = api_request("POST", "global/api/UserApi/getChildren", payload, auth=True)
-    if result and result.get("status") and result.get("result"):
-        records = result["result"].get("records", [])
-        if records:
-            agent_affiliate_id = str(records[0].get("affiliateId"))
-            logger.info(f"Agent affiliateId from getChildren: {agent_affiliate_id}")
-            return agent_affiliate_id
     if access_token:
         jwt_data = decode_jwt_payload(access_token)
-        for key in ["affiliateId", "userId", "id", "sub"]:
-            if key in jwt_data:
+        logger.info(f"JWT payload keys: {list(jwt_data.keys())}")
+        for key in ["affiliateId", "userId", "id", "sub", "affiliate_id"]:
+            if key in jwt_data and jwt_data[key]:
                 agent_affiliate_id = str(jwt_data[key])
                 logger.info(f"Agent affiliateId from JWT ({key}): {agent_affiliate_id}")
                 return agent_affiliate_id
-    logger.warning("Could not determine agent affiliateId")
     return None
 
 
@@ -219,7 +206,8 @@ def token_refresh_loop():
 # =============================================================================
 # Keyboard Markups
 # =============================================================================
-def main_menu_markup():
+def main_menu_markup(user_id):
+    is_owner = str(user_id) in owners_list
     markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
         KeyboardButton("👤 حسابي"),
@@ -227,6 +215,8 @@ def main_menu_markup():
         KeyboardButton("📩 سحب رصيد"),
         KeyboardButton("📞 الدعم الفني")
     )
+    if is_owner:
+        markup.add(KeyboardButton("⚙️ لوحة التحكم"))
     return markup
 
 
@@ -257,6 +247,25 @@ def show_admin_panel(chat_id, message_id=None):
         bot.send_message(chat_id, text, reply_markup=markup)
 
 # =============================================================================
+# Admin Group Reply Handler (MUST be registered early)
+# =============================================================================
+@bot.message_handler(content_types=["text"], func=lambda m: m.chat.id == ADMIN_GROUP_ID and m.reply_to_message is not None)
+def handle_admin_group_reply(message):
+    original_msg_id = message.reply_to_message.message_id
+    logger.info(f"Admin reply detected. original_msg_id={original_msg_id}, support_tickets_keys={list(support_tickets.keys())}")
+    if original_msg_id in support_tickets:
+        user_id = support_tickets[original_msg_id]
+        logger.info(f"Reply found for user_id={user_id}. Sending reply...")
+        try:
+            bot.send_message(user_id, f"📩 رد من الدعم الفني:\n\n{message.text}")
+            bot.send_message(ADMIN_GROUP_ID, f"✅ تم إرسال الرد للمستخدم {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to send support reply to {user_id}: {e}")
+            bot.send_message(ADMIN_GROUP_ID, f"❌ فشل إرسال الرد للمستخدم {user_id}: {e}")
+    else:
+        logger.info(f"Reply to msg {original_msg_id} not found in support_tickets. Skipping.")
+
+# =============================================================================
 # Command Handlers
 # =============================================================================
 @bot.message_handler(commands=["start"])
@@ -268,12 +277,13 @@ def cmd_start(message):
         "📑 يمكنك الآن إدارة حسابك، شحن رصيدك، أو طلب السحب فوراً بضغطة زر.\n"
         "🔘 يرجى اختيار العملية المطلوبة من القائمة أدناه:"
     )
-    bot.send_message(message.chat.id, welcome, reply_markup=main_menu_markup())
+    bot.send_message(message.chat.id, welcome, reply_markup=main_menu_markup(message.chat.id))
 
 
 @bot.message_handler(commands=["admin"])
 def cmd_admin(message):
     if str(message.chat.id) not in owners_list:
+        bot.send_message(message.chat.id, "⛔️ ليس لديك صلاحية الوصول.")
         return
     show_admin_panel(message.chat.id)
 
@@ -287,7 +297,7 @@ def handle_back(message):
     bot.send_message(
         message.chat.id,
         "🔙 تم العودة للقائمة الرئيسية.",
-        reply_markup=main_menu_markup()
+        reply_markup=main_menu_markup(message.chat.id)
     )
 
 # =============================================================================
@@ -337,6 +347,14 @@ def menu_support(message):
         reply_markup=back_markup()
     )
 
+
+@bot.message_handler(func=lambda m: m.text == "⚙️ لوحة التحكم")
+def menu_admin_panel(message):
+    if str(message.chat.id) not in owners_list:
+        bot.send_message(message.chat.id, "⛔️ ليس لديك صلاحية الوصول.")
+        return
+    show_admin_panel(message.chat.id)
+
 # =============================================================================
 # State Handlers - Registration
 # =============================================================================
@@ -367,19 +385,24 @@ def handle_reg_password(message):
         bot.send_message(message.chat.id, "❌ خطأ في البيانات. أعد المحاولة.")
         return
 
+    global agent_affiliate_id
     if not agent_affiliate_id:
         get_agent_affiliate_id()
+
+    parent_id = agent_affiliate_id if agent_affiliate_id else "0"
+    logger.info(f"Registering player. username={username}, parentId={parent_id}")
 
     payload = {
         "player": {
             "email": f"{username}@player.bot",
             "password": password,
-            "parentId": agent_affiliate_id or "0",
+            "parentId": parent_id,
             "login": username
         }
     }
 
     result = api_request("POST", "global/api/UserApi/registerPlayer", payload, auth=True)
+    logger.info(f"registerPlayer raw result: {result}")
 
     if result and result.get("status") and result.get("result") is not False:
         search_payload = {
@@ -392,12 +415,15 @@ def handle_reg_password(message):
             "isNextPage": False
         }
         search_result = api_request("POST", "global/api/UserApi/getPlayersForCurrentAgent", search_payload, auth=True)
+        logger.info(f"getPlayersForCurrentAgent result: {search_result}")
+
         player_id = None
         currency = "EUR"
         if search_result and search_result.get("result") and search_result["result"].get("records"):
             player = search_result["result"]["records"][0]
             player_id = str(player.get("playerId"))
             currency = player.get("currency", "EUR")
+            logger.info(f"Player found: id={player_id}, currency={currency}")
 
         if player_id:
             players_db[str(message.chat.id)] = {
@@ -409,18 +435,25 @@ def handle_reg_password(message):
             bot.send_message(
                 message.chat.id,
                 f"✅ تم إنشاء الحساب بنجاح!\n🆔 معرف اللاعب: {player_id}\n💰 العملة: {currency}",
-                reply_markup=main_menu_markup()
+                reply_markup=main_menu_markup(message.chat.id)
             )
         else:
             bot.send_message(
                 message.chat.id,
                 "⚠️ تم إنشاء الحساب لكن لم يتم العثور على المعرف. حاول لاحقاً.",
-                reply_markup=main_menu_markup()
+                reply_markup=main_menu_markup(message.chat.id)
             )
     else:
         error_msg = "Unknown error"
         if result and result.get("notification"):
-            error_msg = result["notification"][0].get("content", "Unknown error")
+            notif = result["notification"]
+            if isinstance(notif, list) and len(notif) > 0:
+                error_msg = notif[0].get("content", "Unknown error")
+            elif isinstance(notif, dict):
+                error_msg = notif.get("content", "Unknown error")
+        elif result and result.get("result") is False:
+            error_msg = "Registration failed (result=false). Check logs for details."
+        logger.error(f"Registration failed for {username}: {result}")
         bot.send_message(message.chat.id, f"❌ فشل في إنشاء الحساب: {error_msg}")
 
     user_states.pop(message.chat.id, None)
@@ -479,13 +512,13 @@ def handle_dep_receipt_photo(message):
     bot.send_message(
         message.chat.id,
         "⏳ تم إرسال طلبك للإدارة. سيتم مراجعته في أقرب وقت.",
-        reply_markup=main_menu_markup()
+        reply_markup=main_menu_markup(message.chat.id)
     )
     user_states.pop(message.chat.id, None)
     state_data.pop(message.chat.id, None)
 
 
-@bot.message_handler(func=lambda m: user_states.get(m.chat.id) == "WAITING_DEP_RECEIPT")
+@bot.message_handler(content_types=["text"], func=lambda m: user_states.get(m.chat.id) == "WAITING_DEP_RECEIPT")
 def handle_dep_receipt_nonphoto(message):
     bot.send_message(message.chat.id, "❌ يرجى إرسال صورة الإيصال كصورة (ليس كملف أو نص).")
 
@@ -543,7 +576,7 @@ def handle_wd_account(message):
     bot.send_message(
         message.chat.id,
         "⏱️ تم تقديم طلب السحب بنجاح وجارٍ مراجعته وتحويل الأموال من قبل الإدارة...",
-        reply_markup=main_menu_markup()
+        reply_markup=main_menu_markup(message.chat.id)
     )
 
     caption = (
@@ -592,18 +625,19 @@ def handle_support_ticket(message):
 
     sent = bot.send_message(ADMIN_GROUP_ID, admin_msg)
     support_tickets[sent.message_id] = message.chat.id
+    logger.info(f"Support ticket created. admin_msg_id={sent.message_id}, user_chat_id={message.chat.id}, tickets={list(support_tickets.keys())}")
 
     bot.send_message(
         message.chat.id,
         "✅ تم إرسال تذكرتك للدعم الفني. سنرد عليك في أقرب وقت.",
-        reply_markup=main_menu_markup()
+        reply_markup=main_menu_markup(message.chat.id)
     )
     user_states.pop(message.chat.id, None)
 
 # =============================================================================
 # Admin State Handler
 # =============================================================================
-@bot.message_handler(func=lambda m: user_states.get(m.chat.id) and str(m.chat.id) in owners_list and user_states.get(m.chat.id).startswith("WAITING_ADMIN_"))
+@bot.message_handler(func=lambda m: user_states.get(m.chat.id) and str(m.chat.id) in owners_list and str(user_states.get(m.chat.id)).startswith("WAITING_ADMIN_"))
 def handle_admin_states(message):
     state = user_states.get(message.chat.id)
 
@@ -679,30 +713,17 @@ def handle_admin_states(message):
         user_states.pop(message.chat.id, None)
 
 # =============================================================================
-# Admin Group Reply Handler (Support)
-# =============================================================================
-@bot.message_handler(func=lambda m: m.chat.id == ADMIN_GROUP_ID and m.reply_to_message)
-def handle_admin_group_reply(message):
-    original_msg_id = message.reply_to_message.message_id
-    if original_msg_id in support_tickets:
-        user_id = support_tickets[original_msg_id]
-        try:
-            bot.send_message(user_id, f"📩 رد من الدعم الفني:\n\n{message.text}")
-        except Exception as e:
-            logger.error(f"Failed to send support reply to {user_id}: {e}")
-
-# =============================================================================
 # Callback Handlers - General Navigation
 # =============================================================================
 @bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
 def cb_back_to_main(call):
-    bot.send_message(call.from_user.id, "🔙 تم العودة للقائمة الرئيسية.", reply_markup=main_menu_markup())
+    bot.send_message(call.from_user.id, "🔙 تم العودة للقائمة الرئيسية.", reply_markup=main_menu_markup(call.from_user.id))
     bot.answer_callback_query(call.id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "wd_back")
 def cb_wd_back(call):
-    bot.send_message(call.from_user.id, "🔙 تم العودة للقائمة الرئيسية.", reply_markup=main_menu_markup())
+    bot.send_message(call.from_user.id, "🔙 تم العودة للقائمة الرئيسية.", reply_markup=main_menu_markup(call.from_user.id))
     bot.answer_callback_query(call.id)
 
 
@@ -793,7 +814,7 @@ def cb_admin_panel(call):
         bot.answer_callback_query(call.id)
 
     elif data == "admin_back":
-        bot.send_message(call.from_user.id, "🔙 تم إغلاق لوحة التحكم.", reply_markup=main_menu_markup())
+        bot.send_message(call.from_user.id, "🔙 تم إغلاق لوحة التحكم.", reply_markup=main_menu_markup(call.from_user.id))
         bot.answer_callback_query(call.id)
 
     elif data == "admin_back_to_menu":
