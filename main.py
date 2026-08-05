@@ -46,7 +46,7 @@ def api_sign_in():
             if res_data.get("status") is True and "result" in res_data:
                 access_token = res_data["result"].get("accessToken")
                 refresh_token = res_data["result"].get("refreshToken")
-                print(f"[🔑] تم توليد توكن الوصول بنجاح حاسم!", flush=True)
+                print("[🔑] تم توليد توكن الوصول بنجاح حاسم!", flush=True)
                 return True
         print(f"[❌] فشل تسجيل الدخول للـ API: الرمز {res.status_code}", flush=True)
     except Exception as e:
@@ -154,7 +154,7 @@ def start_cmd(message):
     )
     global_bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=markup)
 
-# 🌟 1. معالج خاص فقط بخطوات إدخال البيانات الممتدة لعدم حظر الأزرار الرئيسية
+# 🌟 1. معالج خطوات إدخال البيانات الممتدة (States)
 @global_bot.message_handler(func=lambda message: message.from_user.id in user_steps)
 def active_steps_handler(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
@@ -202,7 +202,7 @@ def active_steps_handler(message):
         global_bot.send_message(chat_id, payment_info, parse_mode="Markdown")
         return
 
-# 🌟 2. معالج خاص ومستقل للأزرار اللمسية الرئيسية للقائمة لضمان استجباتها الفورية دائماً
+# 🌟 2. معالج الأزرار اللمسية الرئيسية للقائمة (مستقل وبمحاذاة صفرية سليمة)
 @global_bot.message_handler(func=lambda message: True)
 def main_menu_buttons(message):
     uid, chat_id, text = message.from_user.id, message.chat.id, message.text.strip()
@@ -219,3 +219,5 @@ def main_menu_buttons(message):
         return
         
     elif text == "📩 سحب رصيد":
+        global_bot.send_message(chat_id, "📩 خيارات سحب الرصيد وتدقيق حساب اللاعبين قيد المراجعة الفنية بالـ API.")
+        return
