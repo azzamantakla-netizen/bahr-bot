@@ -30,7 +30,7 @@ RENDER_URL = "https://bahr-bot-c3ac.onrender.com"
 AGENT_USERNAME = "Bero@yahoo.com"
 AGENT_PASSWORD = "Aazzam@318"
 SHAM_CASH_WALLET = "a18758d5324eb7595d4463ca355ad221"
-SYRIATEL_CASH_CODE = "481 22120"
+SYRIATEL_CASH_CODE = "48122120"
 
 OWNERS_FILE = "owners.txt"
 ADMINS_FILE = "admins.txt"
@@ -53,7 +53,8 @@ user_states = {}
 state_data = {}
 pending_deposits = {}
 pending_withdrawals = {}
-support_tickets = {}
+support_tickets = {}          # {msg_id_in_group: user_id}
+active_support_replies = {}   # {admin_id: user_id}
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
@@ -133,20 +134,17 @@ def decode_jwt_payload(token):
     return {}
 
 
-def api_request(method, endpoint, payload=None, auth=False, full_url=False):
-    if full_url:
-        url = endpoint
-    else:
-        url = f"{PANEL_BASE}/{endpoint}"
+def api_request(method, endpoint, payload=None, auth=False):
+    url = f"{PANEL_BASE}/{endpoint}"
     headers = {"Content-Type": "application/json"}
     if auth and access_token:
         headers["Authorization"] = f"Bearer {access_token}"
     logger.info(f"API REQUEST: {method} {url} | auth={auth} | payload={json.dumps(payload, ensure_ascii=False)[:500]}")
     try:
         if method.upper() == "GET":
-            response = session.get(url, headers=headers, timeout=30)
+            response = session.get(url, headers=headers)
         else:
-            response = session.post(url, headers=headers, json=payload, timeout=30)
+            response = session.post(url, headers=headers, json=payload)
         logger.info(f"API RESPONSE status: {response.status_code}")
         logger.info(f"API RESPONSE text: {response.text[:2000]}")
         try:
@@ -164,11 +162,12 @@ def api_request(method, endpoint, payload=None, auth=False, full_url=False):
 def do_signin():
     global access_token, refresh_token
     payload = {"username": AGENT_USERNAME, "password": AGENT_PASSWORD}
+    logger.info(f"Signing in with username: {AGENT_USERNAME}")
     result = api_request("POST", "global/api/UserApi/signIn", payload)
     if result and result.get("status") and isinstance(result.get("result"), dict):
         access_token = result["result"].get("accessToken")
         refresh_token = result["result"].get("refreshToken")
-        logger.info(f"Sign in OK. Token prefix: {access_token[:20] if access_token else 'None'}...")
+        logger.info(f"Sign in OK. Token prefix: {access_token[:30] if access_token else 'None'}...")
         return True
     logger.error(f"Sign in failed: {result}")
     return False
@@ -176,6 +175,10 @@ def do_signin():
 
 def get_agent_affiliate_id():
     global agent_affiliate_id
+    if not access_token:
+        logger.warning("No access token, attempting signin first")
+        if not do_signin():
+            return None
     if access_token:
         jwt_data = decode_jwt_payload(access_token)
         logger.info(f"JWT keys: {list(jwt_data.keys())}")
@@ -215,7 +218,7 @@ def token_refresh_loop():
 # =============================================================================
 def main_menu_markup(user_id):
     is_owner = str(user_id) in owners_list
-    logger.info(f"main_menu_markup for user_id={user_id}, is_owner={is_owner}, owners_list={owners_list}")
+    logger.info(f"main_menu_markup user_id={user_id} is_owner={is_owner} owners={owners_list}")
     markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
         KeyboardButton("👤 حسابي"),
@@ -255,12 +258,12 @@ def show_admin_panel(chat_id, message_id=None):
         bot.send_message(chat_id, text, reply_markup=markup)
 
 # =============================================================================
-# Admin Group Reply Handler (REGISTER FIRST)
+# Admin Group Reply Handler (REGISTERED FIRST)
 # =============================================================================
 @bot.message_handler(content_types=["text"], func=lambda m: m.chat.id == ADMIN_GROUP_ID and m.reply_to_message is not None)
 def handle_admin_group_reply(message):
     original_msg_id = message.reply_to_message.message_id
-    logger.info(f"Admin group reply. original_msg_id={original_msg_id}, tickets={list(support_tickets.keys())}")
+    logger.info(f"Admin reply detected. original_msg_id={original_msg_id}, tickets={list(support_tickets.keys())}")
     if original_msg_id in support_tickets:
         user_id = support_tickets[original_msg_id]
         try:
@@ -270,7 +273,30 @@ def handle_admin_group_reply(message):
             logger.error(f"Failed to send reply to {user_id}: {e}")
             bot.send_message(ADMIN_GROUP_ID, f"❌ فشل إرسال الرد للمستخدم {user_id}: {e}")
     else:
-        logger.info(f"Reply not in support_tickets. Ignoring.")
+        logger.info(f"Reply msg {original_msg_id} not in support_tickets. Ignoring.")
+
+
+@bot.message_handler(content_types=["text"], func=lambda m: m.chat.id == ADMIN_GROUP_ID and m.from_user.id in active_support_replies)
+def handle_admin_active_reply(message):
+    user_id = active_support_replies.get(message.from_user.id)
+    if not user_id:
+        return
+    try:
+        bot.send_message(user_id, f"📩 رد من الدعم الفني:\n\n{message.text}")
+        bot.send_message(ADMIN_GROUP_ID, f"✅ تم إرسال الرد للمستخدم {user_id}")
+    except Exception as e:
+        logger.error(f"Failed to send active reply to {user_id}: {e}")
+        bot.send_message(ADMIN_GROUP_ID, f"❌ فشل إرسال الرد للمستخدم {user_id}: {e}")
+
+
+@bot.message_handler(content_types=["text"], func=lambda m: m.chat.id == ADMIN_GROUP_ID and m.text.strip() in ["تم", "done", "انهاء", "إنهاء", "stop", "خروج"])
+def handle_admin_exit_reply_mode(message):
+    admin_id = message.from_user.id
+    if admin_id in active_support_replies:
+        del active_support_replies[admin_id]
+        bot.send_message(ADMIN_GROUP_ID, f"🔚 تم إنهاء وضع الرد للمشرف {admin_id}.")
+    else:
+        bot.send_message(ADMIN_GROUP_ID, "ℹ️ أنت لست في وضع الرد.")
 
 # =============================================================================
 # Commands
@@ -397,7 +423,7 @@ def handle_reg_password(message):
         get_agent_affiliate_id()
 
     parent_id = agent_affiliate_id if agent_affiliate_id else "0"
-    logger.info(f"Registering player. username={username}, parentId={parent_id}, token_prefix={access_token[:20] if access_token else 'None'}")
+    logger.info(f"Registering player. username={username}, parentId={parent_id}, token_exists={bool(access_token)}")
 
     payload = {
         "player": {
@@ -589,7 +615,9 @@ def handle_support_ticket(message):
         f"👤 المستخدم: <code>{message.chat.id}</code>\n"
         f"📝 الرسالة:\n{ticket_text}"
     )
-    sent = bot.send_message(ADMIN_GROUP_ID, caption, parse_mode="HTML")
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("📝 رد على هذا المستخدم", callback_data=f"reply_support:{message.chat.id}"))
+    sent = bot.send_message(ADMIN_GROUP_ID, caption, reply_markup=markup, parse_mode="HTML")
     support_tickets[sent.message_id] = message.chat.id
     bot.send_message(message.chat.id, "✅ تم إرسال تذكرتك. سيتم الرد عليك قريباً.", reply_markup=main_menu_markup(message.chat.id))
     user_states.pop(message.chat.id, None)
@@ -730,6 +758,22 @@ def cb_confirm_wd(call):
     bot.answer_callback_query(call.id)
     user_states.pop(chat_id, None)
     state_data.pop(chat_id, None)
+
+# =============================================================================
+# Callbacks - Support Reply
+# =============================================================================
+@bot.callback_query_handler(func=lambda call: call.data.startswith("reply_support:"))
+def cb_reply_support(call):
+    user_id = int(call.data.split(":")[1])
+    admin_id = call.from_user.id
+    active_support_replies[admin_id] = user_id
+    bot.send_message(
+        ADMIN_GROUP_ID,
+        f"📝 المشرف {admin_id} دخل وضع الرد على المستخدم {user_id}.\n"
+        f"✍️ اكتب أي رسالة الآن وسيتم إرسالها مباشرة للمستخدم.\n"
+        f"🔚 اكتب 'تم' أو 'done' أو 'إنهاء' للخروج من وضع الرد."
+    )
+    bot.answer_callback_query(call.id)
 
 # =============================================================================
 # Callbacks - Admin Panel
