@@ -94,6 +94,7 @@ def load_admins():
 def load_users_list():
     global users_list
     users_list = load_list_from_file(USERS_FILE)
+    logger.info(f"Users list loaded: {len(users_list)} users")
 
 
 def add_user(user_id):
@@ -102,6 +103,7 @@ def add_user(user_id):
         users_list.append(uid)
         with open(USERS_FILE, "a", encoding="utf-8") as f:
             f.write(uid + "\n")
+        logger.info(f"New user added: {uid}")
 
 
 def load_players_db():
@@ -145,6 +147,19 @@ def api_request(method, endpoint, payload=None, auth=False):
             response = session.get(url, headers=headers)
         else:
             response = session.post(url, headers=headers, json=payload)
+
+        # Auto-retry on auth failure
+        if auth and response.status_code in (401, 403):
+            logger.warning(f"Auth failed ({response.status_code}), attempting re-signin...")
+            if do_signin():
+                headers["Authorization"] = f"Bearer {access_token}"
+                if method.upper() == "GET":
+                    response = session.get(url, headers=headers)
+                else:
+                    response = session.post(url, headers=headers, json=payload)
+            else:
+                logger.error("Re-signin failed after auth error.")
+
         logger.info(f"API RESPONSE status: {response.status_code}")
         logger.info(f"API RESPONSE text: {response.text[:2000]}")
         try:
@@ -280,9 +295,9 @@ def handle_admin_exit_reply_mode(message):
     bot.send_message(ADMIN_GROUP_ID, f"🔚 تم إنهاء وضع الرد للمشرف {admin_id}.")
 
 
-# 2. Reply to a support ticket message (only if msg_id is actually in support_tickets)
+# 2. Reply to a support ticket message (accept ANY content type)
 @bot.message_handler(
-    content_types=["text"],
+    content_types=["text", "photo", "video", "document", "audio", "voice", "video_note", "sticker", "animation"],
     func=lambda m: (
         m.chat.id == ADMIN_GROUP_ID
         and m.reply_to_message is not None
@@ -294,16 +309,21 @@ def handle_admin_group_reply(message):
     user_id = support_tickets[original_msg_id]
     logger.info(f"Admin reply to ticket msg {original_msg_id} -> user {user_id}")
     try:
-        bot.send_message(user_id, f"📩 رد من الدعم الفني:\n\n{message.text}")
+        bot.send_message(user_id, "📩 رد من الدعم الفني:")
+        try:
+            bot.copy_message(user_id, ADMIN_GROUP_ID, message.message_id)
+        except Exception as e:
+            logger.warning(f"copy_message failed: {e}")
+            bot.forward_message(user_id, ADMIN_GROUP_ID, message.message_id)
         bot.send_message(ADMIN_GROUP_ID, f"✅ تم إرسال الرد للمستخدم {user_id}")
     except Exception as e:
         logger.error(f"Failed to send reply to {user_id}: {e}")
         bot.send_message(ADMIN_GROUP_ID, f"❌ فشل إرسال الرد للمستخدم {user_id}: {e}")
 
 
-# 3. Active reply mode (any text while in active reply mode, but NOT a reply to support ticket)
+# 3. Active reply mode (any message while in active reply mode, but NOT a reply to support ticket)
 @bot.message_handler(
-    content_types=["text"],
+    content_types=["text", "photo", "video", "document", "audio", "voice", "video_note", "sticker", "animation"],
     func=lambda m: (
         m.chat.id == ADMIN_GROUP_ID
         and m.from_user.id in active_support_replies
@@ -314,9 +334,14 @@ def handle_admin_active_reply(message):
     user_id = active_support_replies.get(message.from_user.id)
     if not user_id:
         return
-    logger.info(f"Admin active reply to user {user_id}: {message.text[:50]}")
+    logger.info(f"Admin active reply to user {user_id}")
     try:
-        bot.send_message(user_id, f"📩 رد من الدعم الفني:\n\n{message.text}")
+        bot.send_message(user_id, "📩 رد من الدعم الفني:")
+        try:
+            bot.copy_message(user_id, ADMIN_GROUP_ID, message.message_id)
+        except Exception as e:
+            logger.warning(f"copy_message failed: {e}")
+            bot.forward_message(user_id, ADMIN_GROUP_ID, message.message_id)
         bot.send_message(ADMIN_GROUP_ID, f"✅ تم إرسال الرد للمستخدم {user_id}")
     except Exception as e:
         logger.error(f"Failed to send active reply to {user_id}: {e}")
@@ -362,6 +387,7 @@ def handle_back(message):
 # =============================================================================
 @bot.message_handler(func=lambda m: m.text is not None and m.text == "👤 حسابي")
 def menu_my_account(message):
+    add_user(message.from_user.id)
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("🆕 إنشاء حساب جديد", callback_data="create_account"))
     markup.add(InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main"))
@@ -370,6 +396,7 @@ def menu_my_account(message):
 
 @bot.message_handler(func=lambda m: m.text is not None and m.text == "📥 إيداع / شحن رصيد")
 def menu_deposit(message):
+    add_user(message.from_user.id)
     user_states[message.from_user.id] = "WAITING_DEP_AMOUNT"
     bot.send_message(
         message.from_user.id,
@@ -380,6 +407,7 @@ def menu_deposit(message):
 
 @bot.message_handler(func=lambda m: m.text is not None and m.text == "📩 سحب رصيد")
 def menu_withdraw(message):
+    add_user(message.from_user.id)
     text = (
         "⚠️ <b>تنبيه شروط السحب الفوري:</b>\n"
         "• يرجى العلم أنه سيتم خصم عمولة بقيمة <b>10%</b> تلقائياً من المبلغ المسحوب.\n"
@@ -397,6 +425,7 @@ def menu_withdraw(message):
 
 @bot.message_handler(func=lambda m: m.text is not None and m.text == "📞 الدعم الفني")
 def menu_support(message):
+    add_user(message.from_user.id)
     user_states[message.from_user.id] = "WAITING_SUPPORT_TICKET"
     bot.send_message(
         message.from_user.id,
@@ -407,6 +436,7 @@ def menu_support(message):
 
 @bot.message_handler(func=lambda m: m.text is not None and m.text == "⚙️ لوحة التحكم")
 def menu_admin_panel(message):
+    add_user(message.from_user.id)
     if str(message.from_user.id) not in owners_list and str(message.from_user.id) != str(OWNER_ID):
         bot.send_message(message.chat.id, "⛔️ ليس لديك صلاحية الوصول.")
         return
@@ -417,47 +447,55 @@ def menu_admin_panel(message):
 # =============================================================================
 @bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_REG_USERNAME" and m.text is not None)
 def handle_reg_username(message):
+    chat_id = message.chat.id
+    logger.info(f"handle_reg_username TRIGGERED chat={chat_id}")
     if message.text == "🔙 رجوع":
         return
     username = message.text.strip()
     if not username or len(username) < 3:
-        bot.send_message(message.from_user.id, "❌ اسم المستخدم قصير جداً.")
+        bot.send_message(chat_id, "❌ اسم المستخدم قصير جداً.")
         return
     state_data[message.from_user.id] = {"username": username}
     user_states[message.from_user.id] = "WAITING_REG_PASSWORD"
-    bot.send_message(message.from_user.id, "🔒 يرجى إرسال كلمة المرور:", reply_markup=back_markup())
+    bot.send_message(chat_id, "🔒 يرجى إرسال كلمة المرور:", reply_markup=back_markup())
 
 
 @bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_REG_PASSWORD" and m.text is not None)
 def handle_reg_password(message):
-    logger.info(f"handle_reg_password TRIGGERED for user={message.from_user.id} text_len={len(message.text)}")
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    logger.info(f"handle_reg_password TRIGGERED chat={chat_id} user={user_id} text_len={len(message.text)}")
     if message.text == "🔙 رجوع":
         return
     try:
         password = message.text.strip()
         if not password or len(password) < 4:
-            bot.send_message(message.from_user.id, "❌ كلمة المرور قصيرة جداً.")
+            bot.send_message(chat_id, "❌ كلمة المرور قصيرة جداً.")
             return
 
-        username = state_data.get(message.from_user.id, {}).get("username")
-        logger.info(f"Reg data: username={username}, user_id={message.from_user.id}")
+        username = state_data.get(user_id, {}).get("username")
+        logger.info(f"Reg data: username={username}")
         if not username:
-            bot.send_message(message.from_user.id, "❌ خطأ في البيانات. أعد المحاولة.")
+            bot.send_message(chat_id, "❌ خطأ في البيانات. اضغط /start وأعد المحاولة.")
             return
 
-        global agent_affiliate_id
         if not agent_affiliate_id:
             logger.info("affiliate_id missing, fetching...")
             get_agent_affiliate_id()
 
         parent_id = agent_affiliate_id if agent_affiliate_id else "0"
-        logger.info(f"Registering player. username={username}, parentId={parent_id}, token_exists={bool(access_token)}")
+        try:
+            parent_id_int = int(parent_id)
+        except ValueError:
+            parent_id_int = parent_id
+
+        logger.info(f"Registering player. username={username}, parentId={parent_id_int}, token_exists={bool(access_token)}")
 
         payload = {
             "player": {
                 "email": f"{username}@player.bot",
                 "password": password,
-                "parentId": parent_id,
+                "parentId": parent_id_int,
                 "login": username
             }
         }
@@ -465,44 +503,53 @@ def handle_reg_password(message):
         result = api_request("POST", "global/api/UserApi/registerPlayer", payload, auth=True)
         logger.info(f"registerPlayer result: {result}")
 
-        if result and result.get("status") and result.get("result") is not False:
-            search_payload = {
-                "start": 0,
-                "limit": 20,
-                "filter": {
-                    "withoutTotalCount": {"action": "=", "value": True},
-                    "userName": {"action": "=", "value": username, "valueLabel": username}
-                },
-                "isNextPage": False
-            }
-            search_result = api_request("POST", "global/api/UserApi/getPlayersForCurrentAgent", search_payload, auth=True)
-            logger.info(f"getPlayersForCurrentAgent result: {search_result}")
-
+        if result and result.get("status"):
+            reg_result = result.get("result")
             player_id = None
             currency = "EUR"
-            if search_result and search_result.get("result") and search_result["result"].get("records"):
-                player = search_result["result"]["records"][0]
-                player_id = str(player.get("playerId"))
-                currency = player.get("currency", "EUR")
-                logger.info(f"Player found: id={player_id}, currency={currency}")
 
-            if player_id:
-                players_db[str(message.from_user.id)] = {
+            if isinstance(reg_result, dict):
+                player_id = str(reg_result.get("playerId") or reg_result.get("id") or reg_result.get("userId") or "")
+            elif isinstance(reg_result, (int, str)):
+                player_id = str(reg_result)
+
+            if not player_id or player_id == "None":
+                logger.info("Player ID not in register result, searching via getPlayersForCurrentAgent...")
+                time.sleep(1.5)
+                search_payload = {
+                    "start": 0,
+                    "limit": 20,
+                    "filter": {
+                        "withoutTotalCount": {"action": "=", "value": True},
+                        "userName": {"action": "=", "value": username, "valueLabel": username}
+                    },
+                    "isNextPage": False
+                }
+                search_result = api_request("POST", "global/api/UserApi/getPlayersForCurrentAgent", search_payload, auth=True)
+                logger.info(f"getPlayersForCurrentAgent result: {search_result}")
+                if search_result and search_result.get("result") and search_result["result"].get("records"):
+                    player = search_result["result"]["records"][0]
+                    player_id = str(player.get("playerId"))
+                    currency = player.get("currency", "EUR")
+                    logger.info(f"Player found via search: id={player_id}, currency={currency}")
+
+            if player_id and player_id != "None":
+                players_db[str(chat_id)] = {
                     "player_id": player_id,
                     "username": username,
                     "currency": currency
                 }
                 save_players_db(players_db)
                 bot.send_message(
-                    message.from_user.id,
+                    chat_id,
                     f"✅ تم إنشاء الحساب بنجاح!\n🆔 معرف اللاعب: {player_id}\n💰 العملة: {currency}",
-                    reply_markup=main_menu_markup(message.from_user.id)
+                    reply_markup=main_menu_markup(chat_id)
                 )
             else:
                 bot.send_message(
-                    message.from_user.id,
-                    "⚠️ تم إنشاء الحساب لكن لم يتم العثور على المعرف. حاول لاحقاً.",
-                    reply_markup=main_menu_markup(message.from_user.id)
+                    chat_id,
+                    "⚠️ تم إنشاء الحساب لكن لم يتم العثور على المعرف. حاول لاحقاً أو تواصل مع الدعم.",
+                    reply_markup=main_menu_markup(chat_id)
                 )
         else:
             error_msg = "Unknown error"
@@ -517,15 +564,15 @@ def handle_reg_password(message):
             elif result is None:
                 error_msg = "No response from server (network error)."
             logger.error(f"Registration failed for {username}: {result}")
-            bot.send_message(message.from_user.id, f"❌ فشل في إنشاء الحساب: {error_msg}")
+            bot.send_message(chat_id, f"❌ فشل في إنشاء الحساب: {error_msg}")
 
-        user_states.pop(message.from_user.id, None)
-        state_data.pop(message.from_user.id, None)
+        user_states.pop(user_id, None)
+        state_data.pop(user_id, None)
     except Exception as e:
         logger.exception(f"CRITICAL ERROR in handle_reg_password: {e}")
-        bot.send_message(message.from_user.id, f"❌ حدث خطأ داخلي: {e}")
-        user_states.pop(message.from_user.id, None)
-        state_data.pop(message.from_user.id, None)
+        bot.send_message(chat_id, f"❌ حدث خطأ داخلي: {e}")
+        user_states.pop(user_id, None)
+        state_data.pop(user_id, None)
 
 # =============================================================================
 # State: Deposit
@@ -698,16 +745,18 @@ def handle_admin_syriatel_code(message):
 @bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_BROADCAST" and m.text is not None)
 def handle_admin_broadcast(message):
     text = message.text
+    all_recipients = set(users_list + list(players_db.keys()) + owners_list + admins_list)
     success = 0
     failed = 0
-    for uid in users_list:
+    logger.info(f"Broadcasting to {len(all_recipients)} users...")
+    for uid in all_recipients:
         try:
             bot.send_message(int(uid), f"📢 إذاعة:\n\n{text}")
             success += 1
         except Exception as e:
             logger.error(f"Broadcast failed for {uid}: {e}")
             failed += 1
-    bot.send_message(message.from_user.id, f"✅ تم الإرسال: {success} | ❌ فشل: {failed}")
+    bot.send_message(message.chat.id, f"✅ تم الإرسال: {success} | ❌ فشل: {failed} | 📊 إجمالي المشتركين: {len(all_recipients)}")
     user_states.pop(message.from_user.id, None)
 
 
@@ -771,6 +820,7 @@ def cb_wd_back(call):
 
 @bot.callback_query_handler(func=lambda call: call.data == "create_account")
 def cb_create_account(call):
+    add_user(call.from_user.id)
     user_states[call.from_user.id] = "WAITING_REG_USERNAME"
     bot.send_message(call.from_user.id, "📝 يرجى إرسال اسم المستخدم المطلوب:", reply_markup=back_markup())
     bot.answer_callback_query(call.id)
@@ -827,7 +877,7 @@ def cb_reply_support(call):
     bot.send_message(
         ADMIN_GROUP_ID,
         f"📝 المشرف {admin_id} دخل وضع الرد على المستخدم {user_id}.\n"
-        f"✍️ اكتب أي رسالة الآن وسيتم إرسالها مباشرة للمستخدم.\n"
+        f"✍️ اكتب أي رسالة الآن (نص، صورة، فيديو، ملف...) وسيتم إرسالها مباشرة للمستخدم.\n"
         f"🔚 اكتب 'تم' أو 'done' أو 'إنهاء' للخروج من وضع الرد."
     )
     bot.answer_callback_query(call.id)
@@ -1097,6 +1147,8 @@ if __name__ == "__main__":
 
     if do_signin():
         get_agent_affiliate_id()
+    else:
+        logger.error("Initial signin failed. API calls may fail until signin succeeds.")
 
     refresh_thread = threading.Thread(target=token_refresh_loop, daemon=True)
     refresh_thread.start()
