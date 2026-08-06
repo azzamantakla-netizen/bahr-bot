@@ -643,16 +643,13 @@ def handle_reg_password(message):
                     currency = player.get("currency", "EUR")
                     logger.info(f"Player found via search: id={player_id}, currency={currency}")
 
-                                if player_id and player_id != "None":
-                # تأكد أن هذه الأسطر تبدأ بـ 16 مسافة (أو 4 ضغطات Tab) لتطابق الدالة
+                            if player_id and player_id != "None":
                 try:
                     player_email = f"{username}@texas.bot"
                     execute_panel_registration(username, password, player_email)
                 except Exception:
                     pass
-
                 players_db[str(chat_id)] = {
-
 
                 save_players_db(players_db)
                 bot.send_message(
