@@ -196,7 +196,7 @@ def api_request(method, endpoint, payload=None, auth=False):
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "en-US,en;q=0.9",
         "Origin": "https://agents.texas4win.com",
-        "Referer": "https://agents.texas4win.com/dashboard"
+        "Referer": "https://agents.texas4win.com/"
     }
     if auth and access_token:
         headers["Authorization"] = f"Bearer {access_token}"
@@ -332,19 +332,19 @@ def main_menu_markup(user_id):
     logger.info(f"main_menu_markup user_id={user_id} is_owner={is_owner} owners={owners_list}")
     markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
-        KeyboardButton("ðŸ‘¤ Ø­Ø³Ø§Ø¨ÙŠ"),
-        KeyboardButton("ðŸ“¥ Ø¥ÙŠØ¯Ø§Ø¹ / Ø´Ø­Ù† Ø±ØµÙŠØ¯"),
-        KeyboardButton("ðŸ“© Ø³Ø­Ø¨ Ø±ØµÙŠØ¯"),
-        KeyboardButton("ðŸ“ž Ø§Ù„Ø¯Ø¹Ù… Ø§Ù„ÙÙ†ÙŠ")
+        KeyboardButton("👤 حسابي"),
+        KeyboardButton("📥 إيداع / شحن رصيد"),
+        KeyboardButton("📩 سحب رصيد"),
+        KeyboardButton("📞 الدعم الفني")
     )
     if is_owner:
-        markup.add(KeyboardButton("âš™ï¸ Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ…"))
+        markup.add(KeyboardButton("⚙️ لوحة التحكم"))
     return markup
 
 
 def back_markup():
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(KeyboardButton("ðŸ”™ Ø±Ø¬ÙˆØ¹"))
+    markup.add(KeyboardButton("🔙 رجوع"))
     return markup
 
 # =============================================================================
@@ -353,18 +353,18 @@ def back_markup():
 def show_admin_panel(chat_id, message_id=None):
     markup = InlineKeyboardMarkup(row_width=1)
     markup.add(
-        InlineKeyboardButton("ðŸ’¼ ØªØ¹Ø¯ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„ÙˆÙƒÙŠÙ„", callback_data="admin_agent_data"),
-        InlineKeyboardButton("ðŸ’° ØªØ¹Ø¯ÙŠÙ„ Ù…Ø­ÙØ¸Ø© Ø´Ø§Ù… ÙƒØ§Ø´", callback_data="admin_sham_wallet"),
-        InlineKeyboardButton("ðŸ“± ØªØ¹Ø¯ÙŠÙ„ ÙƒÙˆØ¯ Ø³ÙŠØ±ÙŠØ§ØªÙŠÙ„", callback_data="admin_syriatel_code"),
-        InlineKeyboardButton("ðŸ“Š Ø±ØµÙŠØ¯ Ø§Ù„Ø®Ø²Ù†Ø© Ø§Ù„Ø­Ø§Ù„ÙŠ", callback_data="admin_balance"),
-        InlineKeyboardButton("ðŸ“¢ Ø¥Ø°Ø§Ø¹Ø© Ø¹Ø§Ù…Ø©", callback_data="admin_broadcast"),
-        InlineKeyboardButton("âž• Ø¥Ø¶Ø§ÙØ© Ù…Ø§Ù„ÙƒÙŠÙ†", callback_data="admin_add_owner"),
-        InlineKeyboardButton("âž• Ø¥Ø¶Ø§ÙØ© Ù…Ø´Ø±ÙÙŠÙ†", callback_data="admin_add_admin"),
-        InlineKeyboardButton("âž– Ø¥Ø²Ø§Ù„Ø© Ù…Ø§Ù„ÙƒÙŠÙ†", callback_data="admin_remove_owner"),
-        InlineKeyboardButton("âž– Ø¥Ø²Ø§Ù„Ø© Ù…Ø´Ø±ÙÙŠÙ†", callback_data="admin_remove_admin"),
-        InlineKeyboardButton("ðŸ”™ Ø±Ø¬ÙˆØ¹", callback_data="admin_back")
+        InlineKeyboardButton("💼 تعديل بيانات الوكيل", callback_data="admin_agent_data"),
+        InlineKeyboardButton("💰 تعديل محفظة شام كاش", callback_data="admin_sham_wallet"),
+        InlineKeyboardButton("📱 تعديل كود سيرياتيل", callback_data="admin_syriatel_code"),
+        InlineKeyboardButton("📊 رصيد الخزنة الحالي", callback_data="admin_balance"),
+        InlineKeyboardButton("📢 إذاعة عامة", callback_data="admin_broadcast"),
+        InlineKeyboardButton("➕ إضافة مالكين", callback_data="admin_add_owner"),
+        InlineKeyboardButton("➕ إضافة مشرفين", callback_data="admin_add_admin"),
+        InlineKeyboardButton("➖ إزالة مالكين", callback_data="admin_remove_owner"),
+        InlineKeyboardButton("➖ إزالة مشرفين", callback_data="admin_remove_admin"),
+        InlineKeyboardButton("🔙 رجوع", callback_data="admin_back")
     )
-    text = "âš™ï¸ Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ… Ø§Ù„Ø¹Ù„ÙŠØ§:"
+    text = "⚙️ لوحة التحكم العليا:"
     if message_id:
         bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
     else:
@@ -381,14 +381,14 @@ def show_admin_panel(chat_id, message_id=None):
         m.chat.id == ADMIN_GROUP_ID
         and m.from_user.id in active_support_replies
         and m.text is not None
-        and m.text.strip() in ["ØªÙ…", "done", "Ø§Ù†Ù‡Ø§Ø¡", "Ø¥Ù†Ù‡Ø§Ø¡", "stop", "Ø®Ø±ÙˆØ¬"]
+        and m.text.strip() in ["تم", "done", "انهاء", "إنهاء", "stop", "خروج"]
     )
 )
 def handle_admin_exit_reply_mode(message):
     admin_id = message.from_user.id
     logger.info(f"Admin {admin_id} exited reply mode.")
     del active_support_replies[admin_id]
-    bot.send_message(ADMIN_GROUP_ID, f"ðŸ”š ØªÙ… Ø¥Ù†Ù‡Ø§Ø¡ ÙˆØ¶Ø¹ Ø§Ù„Ø±Ø¯ Ù„Ù„Ù…Ø´Ø±Ù {admin_id}.")
+    bot.send_message(ADMIN_GROUP_ID, f"🔚 تم إنهاء وضع الرد للمشرف {admin_id}.")
 
 
 # 2. Reply to a support ticket message (accept ANY content type)
@@ -405,16 +405,16 @@ def handle_admin_group_reply(message):
     user_id = support_tickets[original_msg_id]
     logger.info(f"Admin reply to ticket msg {original_msg_id} -> user {user_id}")
     try:
-        bot.send_message(user_id, "ðŸ“© Ø±Ø¯ Ù…Ù† Ø§Ù„Ø¯Ø¹Ù… Ø§Ù„ÙÙ†ÙŠ:")
+        bot.send_message(user_id, "📩 رد من الدعم الفني:")
         try:
             bot.copy_message(user_id, ADMIN_GROUP_ID, message.message_id)
         except Exception as e:
             logger.warning(f"copy_message failed: {e}")
             bot.forward_message(user_id, ADMIN_GROUP_ID, message.message_id)
-        bot.send_message(ADMIN_GROUP_ID, f"âœ… ØªÙ… Ø¥Ø±Ø³Ø§Ù„ Ø§Ù„Ø±Ø¯ Ù„Ù„Ù…Ø³ØªØ®Ø¯Ù… {user_id}")
+        bot.send_message(ADMIN_GROUP_ID, f"✅ تم إرسال الرد للمستخدم {user_id}")
     except Exception as e:
         logger.error(f"Failed to send reply to {user_id}: {e}")
-        bot.send_message(ADMIN_GROUP_ID, f"âŒ ÙØ´Ù„ Ø¥Ø±Ø³Ø§Ù„ Ø§Ù„Ø±Ø¯ Ù„Ù„Ù…Ø³ØªØ®Ø¯Ù… {user_id}: {e}")
+        bot.send_message(ADMIN_GROUP_ID, f"❌ فشل إرسال الرد للمستخدم {user_id}: {e}")
 
 
 # 3. Active reply mode (any message while in active reply mode, but NOT a reply to support ticket)
@@ -432,16 +432,16 @@ def handle_admin_active_reply(message):
         return
     logger.info(f"Admin active reply to user {user_id}")
     try:
-        bot.send_message(user_id, "ðŸ“© Ø±Ø¯ Ù…Ù† Ø§Ù„Ø¯Ø¹Ù… Ø§Ù„ÙÙ†ÙŠ:")
+        bot.send_message(user_id, "📩 رد من الدعم الفني:")
         try:
             bot.copy_message(user_id, ADMIN_GROUP_ID, message.message_id)
         except Exception as e:
             logger.warning(f"copy_message failed: {e}")
             bot.forward_message(user_id, ADMIN_GROUP_ID, message.message_id)
-        bot.send_message(ADMIN_GROUP_ID, f"âœ… ØªÙ… Ø¥Ø±Ø³Ø§Ù„ Ø§Ù„Ø±Ø¯ Ù„Ù„Ù…Ø³ØªØ®Ø¯Ù… {user_id}")
+        bot.send_message(ADMIN_GROUP_ID, f"✅ تم إرسال الرد للمستخدم {user_id}")
     except Exception as e:
         logger.error(f"Failed to send active reply to {user_id}: {e}")
-        bot.send_message(ADMIN_GROUP_ID, f"âŒ ÙØ´Ù„ Ø¥Ø±Ø³Ø§Ù„ Ø§Ù„Ø±Ø¯ Ù„Ù„Ù…Ø³ØªØ®Ø¯Ù… {user_id}: {e}")
+        bot.send_message(ADMIN_GROUP_ID, f"❌ فشل إرسال الرد للمستخدم {user_id}: {e}")
 
 # =============================================================================
 # Commands
@@ -450,10 +450,10 @@ def handle_admin_active_reply(message):
 def cmd_start(message):
     add_user(message.chat.id)
     welcome = (
-        "Ù…Ø±Ø­Ø¨Ø§Ù‹ Ø¨Ùƒ ÙÙŠ Ø§Ù„Ø¨ÙˆØª Ø§Ù„Ø§Ø­ØªØ±Ø§ÙÙŠ ! ðŸŽ‰\n"
-        "âš¡ï¸ Ù†Ø¸Ø§Ù… Ù…Ø¹Ø§Ù„Ø¬Ø© Ø§Ù„Ù…Ø¹Ø§Ù…Ù„Ø§Øª Ø§Ù„ØªÙ„Ù‚Ø§Ø¦ÙŠ Ù…Ø³ØªÙ‚Ø± ÙˆÙŠØ¹Ù…Ù„ Ø¨Ø£Ø¹Ù„Ù‰ ÙƒÙØ§Ø¡Ø©.\n"
-        "ðŸ“‘ ÙŠÙ…ÙƒÙ†Ùƒ Ø§Ù„Ø¢Ù† Ø¥Ø¯Ø§Ø±Ø© Ø­Ø³Ø§Ø¨ÙƒØŒ Ø´Ø­Ù† Ø±ØµÙŠØ¯ÙƒØŒ Ø£Ùˆ Ø·Ù„Ø¨ Ø§Ù„Ø³Ø­Ø¨ ÙÙˆØ±Ø§Ù‹ Ø¨Ø¶ØºØ·Ø© Ø²Ø±.\n"
-        "ðŸ”˜ ÙŠØ±Ø¬Ù‰ Ø§Ø®ØªÙŠØ§Ø± Ø§Ù„Ø¹Ù…Ù„ÙŠØ© Ø§Ù„Ù…Ø·Ù„ÙˆØ¨Ø© Ù…Ù† Ø§Ù„Ù‚Ø§Ø¦Ù…Ø© Ø£Ø¯Ù†Ø§Ù‡:"
+        "مرحباً بك في البوت الاحترافي ! 🎉\n"
+        "⚡️ نظام معالجة المعاملات التلقائي مستقر ويعمل بأعلى كفاءة.\n"
+        "📑 يمكنك الآن إدارة حسابك، شحن رصيدك، أو طلب السحب فوراً بضغطة زر.\n"
+        "🔘 يرجى اختيار العملية المطلوبة من القائمة أدناه:"
     )
     bot.send_message(message.chat.id, welcome, reply_markup=main_menu_markup(message.chat.id))
 
@@ -461,80 +461,80 @@ def cmd_start(message):
 @bot.message_handler(commands=["admin"])
 def cmd_admin(message):
     if str(message.chat.id) not in owners_list and str(message.chat.id) != str(OWNER_ID):
-        bot.send_message(message.chat.id, "â›”ï¸ Ù„ÙŠØ³ Ù„Ø¯ÙŠÙƒ ØµÙ„Ø§Ø­ÙŠØ© Ø§Ù„ÙˆØµÙˆÙ„.")
+        bot.send_message(message.chat.id, "⛔️ ليس لديك صلاحية الوصول.")
         return
     show_admin_panel(message.chat.id)
 
 # =============================================================================
 # Back Handler
 # =============================================================================
-@bot.message_handler(func=lambda m: m.text is not None and m.text == "ðŸ”™ Ø±Ø¬ÙˆØ¹")
+@bot.message_handler(func=lambda m: m.text is not None and m.text == "🔙 رجوع")
 def handle_back(message):
     user_states.pop(message.from_user.id, None)
     state_data.pop(message.from_user.id, None)
     bot.send_message(
         message.from_user.id,
-        "ðŸ”™ ØªÙ… Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©.",
+        "🔙 تم العودة للقائمة الرئيسية.",
         reply_markup=main_menu_markup(message.from_user.id)
     )
 
 # =============================================================================
 # Main Menu Handlers
 # =============================================================================
-@bot.message_handler(func=lambda m: m.text is not None and m.text == "ðŸ‘¤ Ø­Ø³Ø§Ø¨ÙŠ")
+@bot.message_handler(func=lambda m: m.text is not None and m.text == "👤 حسابي")
 def menu_my_account(message):
     add_user(message.from_user.id)
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("ðŸ†• Ø¥Ù†Ø´Ø§Ø¡ Ø­Ø³Ø§Ø¨ Ø¬Ø¯ÙŠØ¯", callback_data="create_account"))
-    markup.add(InlineKeyboardButton("ðŸ”™ Ø±Ø¬ÙˆØ¹", callback_data="back_to_main"))
-    bot.send_message(message.chat.id, "ðŸ‘¤ Ø¥Ø¯Ø§Ø±Ø© Ø­Ø³Ø§Ø¨Ùƒ:", reply_markup=markup)
+    markup.add(InlineKeyboardButton("🆕 إنشاء حساب جديد", callback_data="create_account"))
+    markup.add(InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main"))
+    bot.send_message(message.chat.id, "👤 إدارة حسابك:", reply_markup=markup)
 
 
-@bot.message_handler(func=lambda m: m.text is not None and m.text == "ðŸ“¥ Ø¥ÙŠØ¯Ø§Ø¹ / Ø´Ø­Ù† Ø±ØµÙŠØ¯")
+@bot.message_handler(func=lambda m: m.text is not None and m.text == "📥 إيداع / شحن رصيد")
 def menu_deposit(message):
     add_user(message.from_user.id)
     user_states[message.from_user.id] = "WAITING_DEP_AMOUNT"
     bot.send_message(
         message.from_user.id,
-        "ðŸ’° ÙŠØ±Ø¬Ù‰ ÙƒØªØ§Ø¨Ø© Ø§Ù„Ù…Ø¨Ù„Øº Ø§Ù„Ù…Ø±Ø§Ø¯ Ø´Ø­Ù†Ù‡ ÙˆØ§Ø¶ØºØ· Ø¥Ø±Ø³Ø§Ù„:",
+        "💰 يرجى كتابة المبلغ المراد شحنه واضغط إرسال:",
         reply_markup=back_markup()
     )
 
 
-@bot.message_handler(func=lambda m: m.text is not None and m.text == "ðŸ“© Ø³Ø­Ø¨ Ø±ØµÙŠØ¯")
+@bot.message_handler(func=lambda m: m.text is not None and m.text == "📩 سحب رصيد")
 def menu_withdraw(message):
     add_user(message.from_user.id)
     text = (
-        "âš ï¸ <b>ØªÙ†Ø¨ÙŠÙ‡ Ø´Ø±ÙˆØ· Ø§Ù„Ø³Ø­Ø¨ Ø§Ù„ÙÙˆØ±ÙŠ:</b>\n"
-        "â€¢ ÙŠØ±Ø¬Ù‰ Ø§Ù„Ø¹Ù„Ù… Ø£Ù†Ù‡ Ø³ÙŠØªÙ… Ø®ØµÙ… Ø¹Ù…ÙˆÙ„Ø© Ø¨Ù‚ÙŠÙ…Ø© <b>10%</b> ØªÙ„Ù‚Ø§Ø¦ÙŠØ§Ù‹ Ù…Ù† Ø§Ù„Ù…Ø¨Ù„Øº Ø§Ù„Ù…Ø³Ø­ÙˆØ¨.\n"
-        "â€¢ Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ø¯Ù†Ù‰ Ù„Ù„Ø³Ø­Ø¨ Ù‡Ùˆ: <b>200,000</b> Ù„ÙŠØ±Ø©.\n"
-        "â€¢ Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ø¹Ù„Ù‰ Ù„Ù„Ø³Ø­Ø¨ Ù‡Ùˆ: <b>1,000,000</b> Ù„ÙŠØ±Ø©."
+        "⚠️ <b>تنبيه شروط السحب الفوري:</b>\n"
+        "• يرجى العلم أنه سيتم خصم عمولة بقيمة <b>10%</b> تلقائياً من المبلغ المسحوب.\n"
+        "• الحد الأدنى للسحب هو: <b>200,000</b> ليرة.\n"
+        "• الحد الأعلى للسحب هو: <b>1,000,000</b> ليرة."
     )
     markup = InlineKeyboardMarkup(row_width=1)
     markup.add(
-        InlineKeyboardButton("ðŸ’³ Ù…Ø­ÙØ¸Ø© Ø´Ø§Ù… ÙƒØ§Ø´", callback_data="wd_method:sham"),
-        InlineKeyboardButton("ðŸ“± Ø³ÙŠØ±ÙŠØ§ØªÙŠÙ„ ÙƒØ§Ø´", callback_data="wd_method:syriatel"),
-        InlineKeyboardButton("ðŸ”™ Ø±Ø¬ÙˆØ¹", callback_data="wd_back")
+        InlineKeyboardButton("💳 محفظة شام كاش", callback_data="wd_method:sham"),
+        InlineKeyboardButton("📱 سيرياتيل كاش", callback_data="wd_method:syriatel"),
+        InlineKeyboardButton("🔙 رجوع", callback_data="wd_back")
     )
     bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="HTML")
 
 
-@bot.message_handler(func=lambda m: m.text is not None and m.text == "ðŸ“ž Ø§Ù„Ø¯Ø¹Ù… Ø§Ù„ÙÙ†ÙŠ")
+@bot.message_handler(func=lambda m: m.text is not None and m.text == "📞 الدعم الفني")
 def menu_support(message):
     add_user(message.from_user.id)
     user_states[message.from_user.id] = "WAITING_SUPPORT_TICKET"
     bot.send_message(
         message.from_user.id,
-        "Ø£Ù†Øª Ø¨Ø£Ù…Ø§Ù†ØŒ ÙØ±ÙŠÙ‚Ù†Ø§ Ù…ÙˆØ¬ÙˆØ¯ Ø¨Ø¬Ø§Ù†Ø¨Ùƒ Ø¹Ù„Ù‰ Ù…Ø¯Ø§Ø± Ø§Ù„Ø³Ø§Ø¹Ø© ÙÙ‚Ø· Ø£Ø®Ø¨Ø±Ù†Ø§ Ø¨Ù…Ø´ÙƒÙ„ØªÙƒ:",
+        "أنت بأمان، فريقنا موجود بجانبك على مدار الساعة فقط أخبرنا بمشكلتك:",
         reply_markup=back_markup()
     )
 
 
-@bot.message_handler(func=lambda m: m.text is not None and m.text == "âš™ï¸ Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ…")
+@bot.message_handler(func=lambda m: m.text is not None and m.text == "⚙️ لوحة التحكم")
 def menu_admin_panel(message):
     add_user(message.from_user.id)
     if str(message.from_user.id) not in owners_list and str(message.from_user.id) != str(OWNER_ID):
-        bot.send_message(message.chat.id, "â›”ï¸ Ù„ÙŠØ³ Ù„Ø¯ÙŠÙƒ ØµÙ„Ø§Ø­ÙŠØ© Ø§Ù„ÙˆØµÙˆÙ„.")
+        bot.send_message(message.chat.id, "⛔️ ليس لديك صلاحية الوصول.")
         return
     show_admin_panel(message.chat.id)
 
@@ -545,15 +545,15 @@ def menu_admin_panel(message):
 def handle_reg_username(message):
     chat_id = message.chat.id
     logger.info(f"handle_reg_username TRIGGERED chat={chat_id}")
-    if message.text == "ðŸ”™ Ø±Ø¬ÙˆØ¹":
+    if message.text == "🔙 رجوع":
         return
     username = message.text.strip()
     if not username or len(username) < 3:
-        bot.send_message(chat_id, "âŒ Ø§Ø³Ù… Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ù‚ØµÙŠØ± Ø¬Ø¯Ø§Ù‹.")
+        bot.send_message(chat_id, "❌ اسم المستخدم قصير جداً.")
         return
     state_data[message.from_user.id] = {"username": username}
     user_states[message.from_user.id] = "WAITING_REG_PASSWORD"
-    bot.send_message(chat_id, "ðŸ”’ ÙŠØ±Ø¬Ù‰ Ø¥Ø±Ø³Ø§Ù„ ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ±:", reply_markup=back_markup())
+    bot.send_message(chat_id, "🔒 يرجى إرسال كلمة المرور:", reply_markup=back_markup())
 
 
 @bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_REG_PASSWORD" and m.text is not None)
@@ -561,22 +561,22 @@ def handle_reg_password(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
     logger.info(f"handle_reg_password TRIGGERED chat={chat_id} user={user_id} text_len={len(message.text)}")
-    if message.text == "ðŸ”™ Ø±Ø¬ÙˆØ¹":
+    if message.text == "🔙 رجوع":
         return
     try:
         password = message.text.strip()
         if not password:
-            bot.send_message(chat_id, "âŒ ÙŠØ±Ø¬Ù‰ Ø¥Ø¯Ø®Ø§Ù„ ÙƒÙ„Ù…Ø© Ø³Ø± ØµØ§Ù„Ø­Ø©.")
+            bot.send_message(chat_id, "❌ يرجى إدخال كلمة سر صالحة.")
             return
 
         username = state_data.get(user_id, {}).get("username")
         logger.info(f"Reg data: username={username}")
         if not username:
-            bot.send_message(chat_id, "âŒ Ø®Ø·Ø£ ÙÙŠ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª. Ø§Ø¶ØºØ· /start ÙˆØ£Ø¹Ø¯ Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø©.")
+            bot.send_message(chat_id, "❌ خطأ في البيانات. اضغط /start وأعد المحاولة.")
             return
 
         # Show processing message
-        bot.send_message(chat_id, "â³ Ø¬Ø§Ø±ÙŠ Ù…Ø¹Ø§Ù„Ø¬Ø© Ø§Ù„Ø¹Ù…Ù„ÙŠØ©... Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø§Ù„Ø§Ù†ØªØ¸Ø§Ø±")
+        bot.send_message(chat_id, "⏳ جاري معالجة العملية... الرجاء الانتظار")
 
         # Ensure we have a valid affiliate_id
         if not agent_affiliate_id or agent_affiliate_id == "0":
@@ -587,23 +587,29 @@ def handle_reg_password(message):
                 logger.error(f"get_agent_affiliate_id failed: {e}")
 
         parent_id = agent_affiliate_id if agent_affiliate_id else "2688288"
+        try:
+            parent_id_int = int(parent_id)
+        except ValueError:
+            parent_id_int = int("2688288")
 
         # Generate random email to avoid conflicts
         rand_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
         email = f"{username}.{rand_suffix}@player.bot"
 
-        logger.info(f"Registering player. username={username}, email={email}, parentId={parent_id}, token_exists={bool(access_token)}")
+        logger.info(f"Registering player. username={username}, email={email}, parentId={parent_id_int}, token_exists={bool(access_token)}")
 
         payload = {
             "player": {
                 "login": username,
                 "email": email,
                 "password": password,
-                "parentId": str(parent_id)
+                "parentId": parent_id_int,
+                "firstName": username,
+                "lastName": username
             }
         }
 
-        result = api_request("POST", "global/api/Player/registerPlayer", payload, auth=True)
+        result = api_request("POST", "global/api/UserApi/registerPlayer", payload, auth=True)
         logger.info(f"registerPlayer result: {result}")
 
         if result and result.get("status"):
@@ -645,13 +651,13 @@ def handle_reg_password(message):
                 save_players_db(players_db)
                 bot.send_message(
                     chat_id,
-                    f"âœ… ØªÙ… Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø­Ø³Ø§Ø¨ Ø¨Ù†Ø¬Ø§Ø­!\nðŸ†” Ù…Ø¹Ø±Ù Ø§Ù„Ù„Ø§Ø¹Ø¨: {player_id}\nðŸ’° Ø§Ù„Ø¹Ù…Ù„Ø©: {currency}",
+                    f"✅ تم إنشاء الحساب بنجاح!\n🆔 معرف اللاعب: {player_id}\n💰 العملة: {currency}",
                     reply_markup=main_menu_markup(chat_id)
                 )
             else:
                 bot.send_message(
                     chat_id,
-                    "âš ï¸ ØªÙ… Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø­Ø³Ø§Ø¨ Ù„ÙƒÙ† Ù„Ù… ÙŠØªÙ… Ø§Ù„Ø¹Ø«ÙˆØ± Ø¹Ù„Ù‰ Ø§Ù„Ù…Ø¹Ø±Ù. Ø­Ø§ÙˆÙ„ Ù„Ø§Ø­Ù‚Ø§Ù‹ Ø£Ùˆ ØªÙˆØ§ØµÙ„ Ù…Ø¹ Ø§Ù„Ø¯Ø¹Ù….",
+                    "⚠️ تم إنشاء الحساب لكن لم يتم العثور على المعرف. حاول لاحقاً أو تواصل مع الدعم.",
                     reply_markup=main_menu_markup(chat_id)
                 )
         else:
@@ -674,7 +680,7 @@ def handle_reg_password(message):
             lower_err = (error_msg + " " + raw_text).lower()
             username_taken_keywords = [
                 "already exists", "already taken", "duplicate", "exists", "used",
-                "Ù…Ø³ØªØ®Ø¯Ù…", "Ù…ÙˆØ¬ÙˆØ¯", "Ù…ÙƒØ±Ø±", "taken", "existe", "user name", "username"
+                "مستخدم", "موجود", "مكرر", "taken", "existe", "user name", "username"
             ]
             is_username_taken = any(k in lower_err for k in username_taken_keywords)
 
@@ -683,17 +689,17 @@ def handle_reg_password(message):
             if is_username_taken:
                 bot.send_message(
                     chat_id,
-                    "âŒ Ù‡Ø°Ø§ Ø§Ù„Ø§Ø³Ù… Ù…Ø³ØªØ®Ø¯Ù… Ø¨Ø§Ù„ÙØ¹Ù„. ÙŠØ±Ø¬Ù‰ Ø§Ø®ØªÙŠØ§Ø± Ø§Ø³Ù… Ø¢Ø®Ø±.\nðŸ“ Ø§Ø¶ØºØ· Ø¹Ù„Ù‰ Ø²Ø± Ø¥Ù†Ø´Ø§Ø¡ Ø­Ø³Ø§Ø¨ ÙˆØ­Ø§ÙˆÙ„ Ù…Ø±Ø© Ø£Ø®Ø±Ù‰.",
+                    "❌ هذا الاسم مستخدم بالفعل. يرجى اختيار اسم آخر.\n📝 اضغط على زر إنشاء حساب وحاول مرة أخرى.",
                     reply_markup=main_menu_markup(chat_id)
                 )
             else:
-                bot.send_message(chat_id, f"âŒ ÙØ´Ù„ ÙÙŠ Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø­Ø³Ø§Ø¨: {error_msg}")
+                bot.send_message(chat_id, f"❌ فشل في إنشاء الحساب: {error_msg}")
 
         user_states.pop(user_id, None)
         state_data.pop(user_id, None)
     except Exception as e:
         logger.exception(f"CRITICAL ERROR in handle_reg_password: {e}")
-        bot.send_message(chat_id, f"âŒ Ø­Ø¯Ø« Ø®Ø·Ø£ Ø¯Ø§Ø®Ù„ÙŠ: {e}")
+        bot.send_message(chat_id, f"❌ حدث خطأ داخلي: {e}")
         user_states.pop(user_id, None)
         state_data.pop(user_id, None)
 
@@ -702,7 +708,7 @@ def handle_reg_password(message):
 # =============================================================================
 @bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_DEP_AMOUNT" and m.text is not None)
 def handle_dep_amount(message):
-    if message.text == "ðŸ”™ Ø±Ø¬ÙˆØ¹":
+    if message.text == "🔙 رجوع":
         return
     try:
         amount = float(message.text.strip().replace(",", ""))
@@ -711,15 +717,15 @@ def handle_dep_amount(message):
         state_data[message.from_user.id] = {"amount": amount}
         user_states[message.from_user.id] = "WAITING_DEP_RECEIPT"
         text = (
-            f"ðŸ’³ <b>Ø®ÙŠØ§Ø±Ø§Øª Ø§Ù„Ø¯ÙØ¹ Ø§Ù„Ù…ØªØ§Ø­Ø© Ù„Ø´Ø­Ù† Ø­Ø³Ø§Ø¨Ùƒ Ø­ÙŠØ§Ù‹:</b>\n"
-            f"â€¢ <b>Ù…Ø­ÙØ¸Ø© Ø´Ø§Ù… ÙƒØ§Ø´</b>: {SHAM_CASH_WALLET}\n"
-            f"â€¢ <b>ÙƒÙˆØ¯ Ø³ÙŠØ±ÙŠØ§ØªÙŠÙ„ ÙƒØ§Ø´</b>: {SYRIATEL_CASH_CODE}\n\n"
-            f"âš ï¸ Ù‚Ù… Ø¨ØªØ­ÙˆÙŠÙ„ Ø§Ù„Ù…Ø¨Ù„Øº Ø§Ù„Ù…Ø·Ø§Ø¨Ù‚ ØªÙ…Ø§Ù…Ø§Ù‹ Ù„Ø·Ù„Ø¨ÙƒØŒ Ø«Ù… <b>Ù‚Ù… Ø¨Ø±ÙØ¹ ÙˆØ¥Ø±Ø³Ø§Ù„ ØµÙˆØ±Ø© Ø§Ù„Ø¥ÙŠØµØ§Ù„ Ù‡Ù†Ø§.</b>\n"
-            f"âœ… Ø³ÙŠØªÙ… Ù…Ø±Ø§Ø¬Ø¹Ø© Ø¥ÙŠØµØ§Ù„Ùƒ ÙˆØ´Ø­Ù† Ø±ØµÙŠØ¯Ùƒ Ø®Ù„Ø§Ù„ Ø¯Ù‚Ø§Ø¦Ù‚."
+            f"💳 <b>خيارات الدفع المتاحة لشحن حسابك حياً:</b>\n"
+            f"• <b>محفظة شام كاش</b>: {SHAM_CASH_WALLET}\n"
+            f"• <b>كود سيرياتيل كاش</b>: {SYRIATEL_CASH_CODE}\n\n"
+            f"⚠️ قم بتحويل المبلغ المطابق تماماً لطلبك، ثم <b>قم برفع وإرسال صورة الإيصال هنا.</b>\n"
+            f"✅ سيتم مراجعة إيصالك وشحن رصيدك خلال دقائق."
         )
         bot.send_message(message.from_user.id, text, parse_mode="HTML", reply_markup=back_markup())
     except ValueError:
-        bot.send_message(message.from_user.id, "âŒ ÙŠØ±Ø¬Ù‰ Ø¥Ø¯Ø®Ø§Ù„ Ù…Ø¨Ù„Øº ØµØ­ÙŠØ­.")
+        bot.send_message(message.from_user.id, "❌ يرجى إدخال مبلغ صحيح.")
 
 
 @bot.message_handler(content_types=["photo"], func=lambda m: user_states.get(m.from_user.id) == "WAITING_DEP_RECEIPT")
@@ -727,24 +733,24 @@ def handle_dep_receipt(message):
     user_id = message.from_user.id
     amount = state_data.get(user_id, {}).get("amount")
     if not amount:
-        bot.send_message(user_id, "âŒ Ø®Ø·Ø£ ÙÙŠ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª. Ø£Ø¹Ø¯ Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø©.")
+        bot.send_message(user_id, "❌ خطأ في البيانات. أعد المحاولة.")
         return
 
     file_id = message.photo[-1].file_id
     caption = (
-        f"ðŸ”„ <b>Ø·Ù„Ø¨ Ø¥ÙŠØ¯Ø§Ø¹ Ø¬Ø¯ÙŠØ¯</b>\n\n"
-        f"ðŸ‘¤ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…: <code>{user_id}</code>\n"
-        f"ðŸ’° Ø§Ù„Ù…Ø¨Ù„Øº: <b>{amount}</b>\n"
-        f"ðŸ“Ž ØªÙ… Ø¥Ø±ÙØ§Ù‚ Ø¥ÙŠØµØ§Ù„ Ø§Ù„Ø¯ÙØ¹."
+        f"🔄 <b>طلب إيداع جديد</b>\n\n"
+        f"👤 المستخدم: <code>{user_id}</code>\n"
+        f"💰 المبلغ: <b>{amount}</b>\n"
+        f"📎 تم إرفاق إيصال الدفع."
     )
     markup = InlineKeyboardMarkup(row_width=2)
     markup.add(
-        InlineKeyboardButton("âœ… Ù…ÙˆØ§ÙÙ‚Ø©", callback_data="approve_dep"),
-        InlineKeyboardButton("âŒ Ø±ÙØ¶", callback_data="reject_dep")
+        InlineKeyboardButton("✅ موافقة", callback_data="approve_dep"),
+        InlineKeyboardButton("❌ رفض", callback_data="reject_dep")
     )
     sent = bot.send_photo(ADMIN_GROUP_ID, file_id, caption=caption, reply_markup=markup, parse_mode="HTML")
     pending_deposits[sent.message_id] = {"user_id": user_id, "amount": amount}
-    bot.send_message(user_id, "ðŸ“¤ ØªÙ… Ø¥Ø±Ø³Ø§Ù„ Ø¥ÙŠØµØ§Ù„Ùƒ Ù„Ù„Ù…Ø±Ø§Ø¬Ø¹Ø©. Ø³ÙŠØªÙ… Ø¥Ø´Ø¹Ø§Ø±Ùƒ Ø¨Ø§Ù„Ù†ØªÙŠØ¬Ø©.", reply_markup=main_menu_markup(user_id))
+    bot.send_message(user_id, "📤 تم إرسال إيصالك للمراجعة. سيتم إشعارك بالنتيجة.", reply_markup=main_menu_markup(user_id))
     user_states.pop(user_id, None)
     state_data.pop(user_id, None)
 
@@ -753,34 +759,34 @@ def handle_dep_receipt(message):
 # =============================================================================
 @bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_WITHDRAW_AMOUNT" and m.text is not None)
 def handle_wd_amount(message):
-    if message.text == "ðŸ”™ Ø±Ø¬ÙˆØ¹":
+    if message.text == "🔙 رجوع":
         return
     try:
         amount = float(message.text.strip().replace(",", ""))
         if amount < 200000:
-            bot.send_message(message.from_user.id, "âŒ Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ø¯Ù†Ù‰ Ù„Ù„Ø³Ø­Ø¨ Ù‡Ùˆ 200,000 Ù„ÙŠØ±Ø©.")
+            bot.send_message(message.from_user.id, "❌ الحد الأدنى للسحب هو 200,000 ليرة.")
             return
         if amount > 1000000:
-            bot.send_message(message.from_user.id, "âŒ Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ø¹Ù„Ù‰ Ù„Ù„Ø³Ø­Ø¨ Ù‡Ùˆ 1,000,000 Ù„ÙŠØ±Ø©.")
+            bot.send_message(message.from_user.id, "❌ الحد الأعلى للسحب هو 1,000,000 ليرة.")
             return
         state_data[message.from_user.id]["amount"] = amount
         user_states[message.from_user.id] = "WAITING_WITHDRAW_PHONE"
         bot.send_message(
             message.from_user.id,
-            "ðŸ“± ÙŠØ±Ø¬Ù‰ Ø¥Ø±Ø³Ø§Ù„ Ø±Ù‚Ù… Ù‡Ø§ØªÙÙƒ (Ù…Ø­ÙØ¸Ø© Ø´Ø§Ù… ÙƒØ§Ø´ Ø£Ùˆ Ø³ÙŠØ±ÙŠØ§ØªÙŠÙ„ ÙƒØ§Ø´):",
+            "📱 يرجى إرسال رقم هاتفك (محفظة شام كاش أو سيرياتيل كاش):",
             reply_markup=back_markup()
         )
     except ValueError:
-        bot.send_message(message.from_user.id, "âŒ ÙŠØ±Ø¬Ù‰ Ø¥Ø¯Ø®Ø§Ù„ Ù…Ø¨Ù„Øº ØµØ­ÙŠØ­.")
+        bot.send_message(message.from_user.id, "❌ يرجى إدخال مبلغ صحيح.")
 
 
 @bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_WITHDRAW_PHONE" and m.text is not None)
 def handle_wd_phone(message):
-    if message.text == "ðŸ”™ Ø±Ø¬ÙˆØ¹":
+    if message.text == "🔙 رجوع":
         return
     phone = message.text.strip()
     if not phone:
-        bot.send_message(message.from_user.id, "âŒ ÙŠØ±Ø¬Ù‰ Ø¥Ø±Ø³Ø§Ù„ Ø±Ù‚Ù… ØµØ­ÙŠØ­.")
+        bot.send_message(message.from_user.id, "❌ يرجى إرسال رقم صحيح.")
         return
     state_data[message.from_user.id]["phone"] = phone
     user_states[message.from_user.id] = "WAITING_WITHDRAW_CONFIRM"
@@ -788,17 +794,17 @@ def handle_wd_phone(message):
     commission = amount * 0.10
     net = amount - commission
     text = (
-        f"âš ï¸ <b>Ù…Ø±Ø§Ø¬Ø¹Ø© Ø·Ù„Ø¨ Ø§Ù„Ø³Ø­Ø¨:</b>\n\n"
-        f"ðŸ’° Ø§Ù„Ù…Ø¨Ù„Øº: {amount}\n"
-        f"ðŸ“‰ Ø§Ù„Ø¹Ù…ÙˆÙ„Ø© (10%): {commission}\n"
-        f"ðŸ“¨ Ø§Ù„ØµØ§ÙÙŠ: {net}\n"
-        f"ðŸ“± Ø§Ù„Ø±Ù‚Ù…: {phone}\n\n"
-        f"âœ… Ø§Ø¶ØºØ· 'ØªØ£ÙƒÙŠØ¯' Ù„Ø¥Ø±Ø³Ø§Ù„ Ø§Ù„Ø·Ù„Ø¨."
+        f"⚠️ <b>مراجعة طلب السحب:</b>\n\n"
+        f"💰 المبلغ: {amount}\n"
+        f"📉 العمولة (10%): {commission}\n"
+        f"📨 الصافي: {net}\n"
+        f"📱 الرقم: {phone}\n\n"
+        f"✅ اضغط 'تأكيد' لإرسال الطلب."
     )
     markup = InlineKeyboardMarkup(row_width=2)
     markup.add(
-        InlineKeyboardButton("âœ… ØªØ£ÙƒÙŠØ¯", callback_data="confirm_wd"),
-        InlineKeyboardButton("âŒ Ø¥Ù„ØºØ§Ø¡", callback_data="cancel_wd")
+        InlineKeyboardButton("✅ تأكيد", callback_data="confirm_wd"),
+        InlineKeyboardButton("❌ إلغاء", callback_data="cancel_wd")
     )
     bot.send_message(message.from_user.id, text, reply_markup=markup, parse_mode="HTML")
 
@@ -807,22 +813,22 @@ def handle_wd_phone(message):
 # =============================================================================
 @bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_SUPPORT_TICKET" and m.text is not None)
 def handle_support_ticket(message):
-    if message.text == "ðŸ”™ Ø±Ø¬ÙˆØ¹":
+    if message.text == "🔙 رجوع":
         return
     ticket_text = message.text.strip()
     if not ticket_text:
-        bot.send_message(message.from_user.id, "âŒ ÙŠØ±Ø¬Ù‰ ÙƒØªØ§Ø¨Ø© Ù†Øµ Ø§Ù„Ø±Ø³Ø§Ù„Ø©.")
+        bot.send_message(message.from_user.id, "❌ يرجى كتابة نص الرسالة.")
         return
     caption = (
-        f"ðŸ“© <b>ØªØ°ÙƒØ±Ø© Ø¯Ø¹Ù… ÙÙ†ÙŠ Ø¬Ø¯ÙŠØ¯Ø©</b>\n\n"
-        f"ðŸ‘¤ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…: <code>{message.from_user.id}</code>\n"
-        f"ðŸ“ Ø§Ù„Ø±Ø³Ø§Ù„Ø©:\n{ticket_text}"
+        f"📩 <b>تذكرة دعم فني جديدة</b>\n\n"
+        f"👤 المستخدم: <code>{message.from_user.id}</code>\n"
+        f"📝 الرسالة:\n{ticket_text}"
     )
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("ðŸ“ Ø±Ø¯ Ø¹Ù„Ù‰ Ù‡Ø°Ø§ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…", callback_data=f"reply_support:{message.from_user.id}"))
+    markup.add(InlineKeyboardButton("📝 رد على هذا المستخدم", callback_data=f"reply_support:{message.from_user.id}"))
     sent = bot.send_message(ADMIN_GROUP_ID, caption, reply_markup=markup, parse_mode="HTML")
     support_tickets[sent.message_id] = message.from_user.id
-    bot.send_message(message.from_user.id, "âœ… ØªÙ… Ø¥Ø±Ø³Ø§Ù„ ØªØ°ÙƒØ±ØªÙƒ. Ø³ÙŠØªÙ… Ø§Ù„Ø±Ø¯ Ø¹Ù„ÙŠÙƒ Ù‚Ø±ÙŠØ¨Ø§Ù‹.", reply_markup=main_menu_markup(message.from_user.id))
+    bot.send_message(message.from_user.id, "✅ تم إرسال تذكرتك. سيتم الرد عليك قريباً.", reply_markup=main_menu_markup(message.from_user.id))
     user_states.pop(message.from_user.id, None)
 
 # =============================================================================
@@ -832,7 +838,7 @@ def handle_support_ticket(message):
 def handle_admin_agent_username(message):
     global AGENT_USERNAME
     AGENT_USERNAME = message.text.strip()
-    bot.send_message(message.from_user.id, f"âœ… ØªÙ… ØªØ­Ø¯ÙŠØ« Ø§Ø³Ù… Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…: {AGENT_USERNAME}")
+    bot.send_message(message.from_user.id, f"✅ تم تحديث اسم المستخدم: {AGENT_USERNAME}")
     user_states.pop(message.from_user.id, None)
 
 
@@ -840,12 +846,12 @@ def handle_admin_agent_username(message):
 def handle_admin_agent_password(message):
     global AGENT_PASSWORD
     AGENT_PASSWORD = message.text.strip()
-    bot.send_message(message.from_user.id, "ðŸ”’ ØªÙ… ØªØ­Ø¯ÙŠØ« ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ±. Ø¬Ø§Ø±ÙŠ Ø¥Ø¹Ø§Ø¯Ø© ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„...")
+    bot.send_message(message.from_user.id, "🔒 تم تحديث كلمة المرور. جاري إعادة تسجيل الدخول...")
     if do_signin():
         get_agent_affiliate_id()
-        bot.send_message(message.from_user.id, "âœ… ØªÙ… Ø¥Ø¹Ø§Ø¯Ø© ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„ Ø¨Ù†Ø¬Ø§Ø­.")
+        bot.send_message(message.from_user.id, "✅ تم إعادة تسجيل الدخول بنجاح.")
     else:
-        bot.send_message(message.from_user.id, "âŒ ÙØ´Ù„ Ø¥Ø¹Ø§Ø¯Ø© ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„. ØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª.")
+        bot.send_message(message.from_user.id, "❌ فشل إعادة تسجيل الدخول. تحقق من البيانات.")
     user_states.pop(message.from_user.id, None)
 
 
@@ -853,7 +859,7 @@ def handle_admin_agent_password(message):
 def handle_admin_sham_wallet(message):
     global SHAM_CASH_WALLET
     SHAM_CASH_WALLET = message.text.strip()
-    bot.send_message(message.from_user.id, f"âœ… ØªÙ… ØªØ­Ø¯ÙŠØ« Ù…Ø­ÙØ¸Ø© Ø´Ø§Ù… ÙƒØ§Ø´: {SHAM_CASH_WALLET}")
+    bot.send_message(message.from_user.id, f"✅ تم تحديث محفظة شام كاش: {SHAM_CASH_WALLET}")
     user_states.pop(message.from_user.id, None)
 
 
@@ -861,7 +867,7 @@ def handle_admin_sham_wallet(message):
 def handle_admin_syriatel_code(message):
     global SYRIATEL_CASH_CODE
     SYRIATEL_CASH_CODE = message.text.strip()
-    bot.send_message(message.from_user.id, f"âœ… ØªÙ… ØªØ­Ø¯ÙŠØ« ÙƒÙˆØ¯ Ø³ÙŠØ±ÙŠØ§ØªÙŠÙ„: {SYRIATEL_CASH_CODE}")
+    bot.send_message(message.from_user.id, f"✅ تم تحديث كود سيرياتيل: {SYRIATEL_CASH_CODE}")
     user_states.pop(message.from_user.id, None)
 
 
@@ -874,12 +880,12 @@ def handle_admin_broadcast(message):
     logger.info(f"Broadcasting to {len(all_recipients)} users...")
     for uid in all_recipients:
         try:
-            bot.send_message(int(uid), f"ðŸ“¢ Ø¥Ø°Ø§Ø¹Ø©:\n\n{text}")
+            bot.send_message(int(uid), f"📢 إذاعة:\n\n{text}")
             success += 1
         except Exception as e:
             logger.error(f"Broadcast failed for {uid}: {e}")
             failed += 1
-    bot.send_message(message.chat.id, f"âœ… ØªÙ… Ø§Ù„Ø¥Ø±Ø³Ø§Ù„: {success} | âŒ ÙØ´Ù„: {failed} | ðŸ“Š Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø´ØªØ±ÙƒÙŠÙ†: {len(all_recipients)}")
+    bot.send_message(message.chat.id, f"✅ تم الإرسال: {success} | ❌ فشل: {failed} | 📊 إجمالي المشتركين: {len(all_recipients)}")
     user_states.pop(message.from_user.id, None)
 
 
@@ -889,7 +895,7 @@ def handle_admin_add_owner(message):
     if uid not in owners_list:
         owners_list.append(uid)
         save_list_to_file(OWNERS_FILE, owners_list)
-    bot.send_message(message.from_user.id, f"âœ… ØªÙ…Øª Ø¥Ø¶Ø§ÙØ© Ø§Ù„Ù…Ø§Ù„Ùƒ: {uid}")
+    bot.send_message(message.from_user.id, f"✅ تمت إضافة المالك: {uid}")
     user_states.pop(message.from_user.id, None)
 
 
@@ -899,7 +905,7 @@ def handle_admin_add_admin(message):
     if uid not in admins_list:
         admins_list.append(uid)
         save_list_to_file(ADMINS_FILE, admins_list)
-    bot.send_message(message.from_user.id, f"âœ… ØªÙ…Øª Ø¥Ø¶Ø§ÙØ© Ø§Ù„Ù…Ø´Ø±Ù: {uid}")
+    bot.send_message(message.from_user.id, f"✅ تمت إضافة المشرف: {uid}")
     user_states.pop(message.from_user.id, None)
 
 
@@ -909,9 +915,9 @@ def handle_admin_remove_owner(message):
     if uid in owners_list:
         owners_list.remove(uid)
         save_list_to_file(OWNERS_FILE, owners_list)
-        bot.send_message(message.from_user.id, f"âœ… ØªÙ…Øª Ø¥Ø²Ø§Ù„Ø© Ø§Ù„Ù…Ø§Ù„Ùƒ: {uid}")
+        bot.send_message(message.from_user.id, f"✅ تمت إزالة المالك: {uid}")
     else:
-        bot.send_message(message.from_user.id, f"âŒ Ø§Ù„Ù…Ø§Ù„Ùƒ {uid} ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ ÙÙŠ Ø§Ù„Ù‚Ø§Ø¦Ù…Ø©.")
+        bot.send_message(message.from_user.id, f"❌ المالك {uid} غير موجود في القائمة.")
     user_states.pop(message.from_user.id, None)
 
 
@@ -921,9 +927,9 @@ def handle_admin_remove_admin(message):
     if uid in admins_list:
         admins_list.remove(uid)
         save_list_to_file(ADMINS_FILE, admins_list)
-        bot.send_message(message.from_user.id, f"âœ… ØªÙ…Øª Ø¥Ø²Ø§Ù„Ø© Ø§Ù„Ù…Ø´Ø±Ù: {uid}")
+        bot.send_message(message.from_user.id, f"✅ تمت إزالة المشرف: {uid}")
     else:
-        bot.send_message(message.from_user.id, f"âŒ Ø§Ù„Ù…Ø´Ø±Ù {uid} ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ ÙÙŠ Ø§Ù„Ù‚Ø§Ø¦Ù…Ø©.")
+        bot.send_message(message.from_user.id, f"❌ المشرف {uid} غير موجود في القائمة.")
     user_states.pop(message.from_user.id, None)
 
 # =============================================================================
@@ -931,13 +937,13 @@ def handle_admin_remove_admin(message):
 # =============================================================================
 @bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
 def cb_back_to_main(call):
-    bot.send_message(call.from_user.id, "ðŸ”™ ØªÙ… Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©.", reply_markup=main_menu_markup(call.from_user.id))
+    bot.send_message(call.from_user.id, "🔙 تم العودة للقائمة الرئيسية.", reply_markup=main_menu_markup(call.from_user.id))
     bot.answer_callback_query(call.id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data in ["wd_back", "cancel_wd"])
 def cb_wd_back(call):
-    bot.send_message(call.from_user.id, "ðŸ”™ ØªÙ… Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©.", reply_markup=main_menu_markup(call.from_user.id))
+    bot.send_message(call.from_user.id, "🔙 تم العودة للقائمة الرئيسية.", reply_markup=main_menu_markup(call.from_user.id))
     bot.answer_callback_query(call.id)
 
 
@@ -945,7 +951,7 @@ def cb_wd_back(call):
 def cb_create_account(call):
     add_user(call.from_user.id)
     user_states[call.from_user.id] = "WAITING_REG_USERNAME"
-    bot.send_message(call.from_user.id, "ðŸ“ ÙŠØ±Ø¬Ù‰ Ø¥Ø±Ø³Ø§Ù„ Ø§Ø³Ù… Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ø§Ù„Ù…Ø·Ù„ÙˆØ¨:", reply_markup=back_markup())
+    bot.send_message(call.from_user.id, "📝 يرجى إرسال اسم المستخدم المطلوب:", reply_markup=back_markup())
     bot.answer_callback_query(call.id)
 
 
@@ -954,7 +960,7 @@ def cb_wd_method(call):
     method = call.data.split(":")[1]
     state_data[call.from_user.id] = {"method": method}
     user_states[call.from_user.id] = "WAITING_WITHDRAW_AMOUNT"
-    bot.edit_message_text("ðŸ’° ÙŠØ±Ø¬Ù‰ ÙƒØªØ§Ø¨Ø© Ø§Ù„Ù…Ø¨Ù„Øº Ø§Ù„Ù…Ø±Ø§Ø¯ Ø³Ø­Ø¨Ù‡:", call.message.chat.id, call.message.message_id)
+    bot.edit_message_text("💰 يرجى كتابة المبلغ المراد سحبه:", call.message.chat.id, call.message.message_id)
     bot.answer_callback_query(call.id)
 
 
@@ -965,26 +971,26 @@ def cb_confirm_wd(call):
     amount = data.get("amount", 0)
     phone = data.get("phone", "")
     method = data.get("method", "")
-    method_name = "Ø´Ø§Ù… ÙƒØ§Ø´" if method == "sham" else "Ø³ÙŠØ±ÙŠØ§ØªÙŠÙ„ ÙƒØ§Ø´"
+    method_name = "شام كاش" if method == "sham" else "سيرياتيل كاش"
     commission = amount * 0.10
     net = amount - commission
     caption = (
-        f"ðŸ“¤ <b>Ø·Ù„Ø¨ Ø³Ø­Ø¨ Ø¬Ø¯ÙŠØ¯</b>\n\n"
-        f"ðŸ‘¤ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…: <code>{chat_id}</code>\n"
-        f"ðŸ’° Ø§Ù„Ù…Ø¨Ù„Øº: {amount}\n"
-        f"ðŸ“‰ Ø§Ù„Ø¹Ù…ÙˆÙ„Ø©: {commission}\n"
-        f"ðŸ“¨ Ø§Ù„ØµØ§ÙÙŠ: {net}\n"
-        f"ðŸ“± Ø§Ù„Ø±Ù‚Ù…: {phone}\n"
-        f"ðŸ’³ Ø§Ù„Ø·Ø±ÙŠÙ‚Ø©: {method_name}"
+        f"📤 <b>طلب سحب جديد</b>\n\n"
+        f"👤 المستخدم: <code>{chat_id}</code>\n"
+        f"💰 المبلغ: {amount}\n"
+        f"📉 العمولة: {commission}\n"
+        f"📨 الصافي: {net}\n"
+        f"📱 الرقم: {phone}\n"
+        f"💳 الطريقة: {method_name}"
     )
     markup = InlineKeyboardMarkup(row_width=2)
     markup.add(
-        InlineKeyboardButton("âœ… Ù…ÙˆØ§ÙÙ‚Ø©", callback_data="approve_wd"),
-        InlineKeyboardButton("âŒ Ø±ÙØ¶", callback_data="reject_wd")
+        InlineKeyboardButton("✅ موافقة", callback_data="approve_wd"),
+        InlineKeyboardButton("❌ رفض", callback_data="reject_wd")
     )
     sent = bot.send_message(ADMIN_GROUP_ID, caption, reply_markup=markup, parse_mode="HTML")
     pending_withdrawals[sent.message_id] = {"user_id": chat_id, "amount": amount}
-    bot.send_message(chat_id, "ðŸ“¤ ØªÙ… Ø¥Ø±Ø³Ø§Ù„ Ø·Ù„Ø¨ Ø§Ù„Ø³Ø­Ø¨ Ù„Ù„Ù…Ø±Ø§Ø¬Ø¹Ø©.", reply_markup=main_menu_markup(chat_id))
+    bot.send_message(chat_id, "📤 تم إرسال طلب السحب للمراجعة.", reply_markup=main_menu_markup(chat_id))
     bot.answer_callback_query(call.id)
     user_states.pop(chat_id, None)
     state_data.pop(chat_id, None)
@@ -999,9 +1005,9 @@ def cb_reply_support(call):
     active_support_replies[admin_id] = user_id
     bot.send_message(
         ADMIN_GROUP_ID,
-        f"ðŸ“ Ø§Ù„Ù…Ø´Ø±Ù {admin_id} Ø¯Ø®Ù„ ÙˆØ¶Ø¹ Ø§Ù„Ø±Ø¯ Ø¹Ù„Ù‰ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… {user_id}.\n"
-        f"âœï¸ Ø§ÙƒØªØ¨ Ø£ÙŠ Ø±Ø³Ø§Ù„Ø© Ø§Ù„Ø¢Ù† (Ù†ØµØŒ ØµÙˆØ±Ø©ØŒ ÙÙŠØ¯ÙŠÙˆØŒ Ù…Ù„Ù...) ÙˆØ³ÙŠØªÙ… Ø¥Ø±Ø³Ø§Ù„Ù‡Ø§ Ù…Ø¨Ø§Ø´Ø±Ø© Ù„Ù„Ù…Ø³ØªØ®Ø¯Ù….\n"
-        f"ðŸ”š Ø§ÙƒØªØ¨ 'ØªÙ…' Ø£Ùˆ 'done' Ø£Ùˆ 'Ø¥Ù†Ù‡Ø§Ø¡' Ù„Ù„Ø®Ø±ÙˆØ¬ Ù…Ù† ÙˆØ¶Ø¹ Ø§Ù„Ø±Ø¯."
+        f"📝 المشرف {admin_id} دخل وضع الرد على المستخدم {user_id}.\n"
+        f"✍️ اكتب أي رسالة الآن (نص، صورة، فيديو، ملف...) وسيتم إرسالها مباشرة للمستخدم.\n"
+        f"🔚 اكتب 'تم' أو 'done' أو 'إنهاء' للخروج من وضع الرد."
     )
     bot.answer_callback_query(call.id)
 
@@ -1012,7 +1018,7 @@ def cb_reply_support(call):
 def cb_admin_panel(call):
     uid = str(call.from_user.id)
     if uid not in owners_list and uid != str(OWNER_ID):
-        bot.answer_callback_query(call.id, "â›”ï¸ Ù„ÙŠØ³ Ù„Ø¯ÙŠÙƒ ØµÙ„Ø§Ø­ÙŠØ©!")
+        bot.answer_callback_query(call.id, "⛔️ ليس لديك صلاحية!")
         return
 
     data = call.data
@@ -1020,77 +1026,77 @@ def cb_admin_panel(call):
     if data == "admin_agent_data":
         markup = InlineKeyboardMarkup()
         markup.add(
-            InlineKeyboardButton("ØªØ¹Ø¯ÙŠÙ„ Ø§Ø³Ù… Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…", callback_data="edit_agent_username"),
-            InlineKeyboardButton("ØªØ¹Ø¯ÙŠÙ„ ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ±", callback_data="edit_agent_password"),
-            InlineKeyboardButton("ðŸ”™ Ø±Ø¬ÙˆØ¹", callback_data="admin_back_to_menu")
+            InlineKeyboardButton("تعديل اسم المستخدم", callback_data="edit_agent_username"),
+            InlineKeyboardButton("تعديل كلمة المرور", callback_data="edit_agent_password"),
+            InlineKeyboardButton("🔙 رجوع", callback_data="admin_back_to_menu")
         )
-        bot.edit_message_text("ðŸ’¼ Ø§Ø®ØªØ± Ù…Ø§ ØªØ±ÙŠØ¯ ØªØ¹Ø¯ÙŠÙ„Ù‡:", call.message.chat.id, call.message.message_id, reply_markup=markup)
+        bot.edit_message_text("💼 اختر ما تريد تعديله:", call.message.chat.id, call.message.message_id, reply_markup=markup)
         bot.answer_callback_query(call.id)
 
     elif data == "edit_agent_username":
         user_states[call.from_user.id] = "WAITING_ADMIN_AGENT_USERNAME"
-        bot.send_message(call.from_user.id, "ðŸ“ Ø£Ø±Ø³Ù„ Ø§Ø³Ù… Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ø§Ù„Ø¬Ø¯ÙŠØ¯ Ù„Ù„ÙˆÙƒÙŠÙ„:")
+        bot.send_message(call.from_user.id, "📝 أرسل اسم المستخدم الجديد للوكيل:")
         bot.answer_callback_query(call.id)
 
     elif data == "edit_agent_password":
         user_states[call.from_user.id] = "WAITING_ADMIN_AGENT_PASSWORD"
-        bot.send_message(call.from_user.id, "ðŸ”’ Ø£Ø±Ø³Ù„ ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ± Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø© Ù„Ù„ÙˆÙƒÙŠÙ„:")
+        bot.send_message(call.from_user.id, "🔒 أرسل كلمة المرور الجديدة للوكيل:")
         bot.answer_callback_query(call.id)
 
     elif data == "admin_sham_wallet":
         user_states[call.from_user.id] = "WAITING_ADMIN_SHAM_WALLET"
-        bot.send_message(call.from_user.id, "ðŸ’° Ø£Ø±Ø³Ù„ Ø¹Ù†ÙˆØ§Ù† Ù…Ø­ÙØ¸Ø© Ø´Ø§Ù… ÙƒØ§Ø´ Ø§Ù„Ø¬Ø¯ÙŠØ¯:")
+        bot.send_message(call.from_user.id, "💰 أرسل عنوان محفظة شام كاش الجديد:")
         bot.answer_callback_query(call.id)
 
     elif data == "admin_syriatel_code":
         user_states[call.from_user.id] = "WAITING_ADMIN_SYRIATEL_CODE"
-        bot.send_message(call.from_user.id, "ðŸ“± Ø£Ø±Ø³Ù„ ÙƒÙˆØ¯ Ø³ÙŠØ±ÙŠØ§ØªÙŠÙ„ ÙƒØ§Ø´ Ø§Ù„Ø¬Ø¯ÙŠØ¯:")
+        bot.send_message(call.from_user.id, "📱 أرسل كود سيرياتيل كاش الجديد:")
         bot.answer_callback_query(call.id)
 
     elif data == "admin_balance":
         result = api_request("POST", "global/api/UserApi/getAgentAllWallets", {}, auth=True)
         if result and result.get("status") and result.get("result"):
             balances = result["result"]
-            text = "ðŸ“Š Ø£Ø±ØµØ¯Ø© Ø§Ù„Ø®Ø²Ù†Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ©:\n\n"
+            text = "📊 أرصدة الخزنة الحالية:\n\n"
             for bal in balances:
-                text += f"ðŸ’µ {bal.get('currencyName', 'Unknown')} ({bal.get('currencyCode', 'N/A')}):\n"
-                text += f"   Ø§Ù„Ø±ØµÙŠØ¯: {bal.get('balance', 0)}\n"
-                text += f"   Ø§Ù„Ù…ØªØ§Ø­: {bal.get('availability', 0)}\n"
-                text += f"   Ø§Ù„Ø¨ÙˆÙ†Ø³: {bal.get('bonus', 0)}\n\n"
+                text += f"💵 {bal.get('currencyName', 'Unknown')} ({bal.get('currencyCode', 'N/A')}):\n"
+                text += f"   الرصيد: {bal.get('balance', 0)}\n"
+                text += f"   المتاح: {bal.get('availability', 0)}\n"
+                text += f"   البونص: {bal.get('bonus', 0)}\n\n"
             bot.edit_message_text(text, call.message.chat.id, call.message.message_id)
         else:
-            bot.edit_message_text("âŒ ÙØ´Ù„ ÙÙŠ Ø¬Ù„Ø¨ Ø§Ù„Ø£Ø±ØµØ¯Ø©.", call.message.chat.id, call.message.message_id)
+            bot.edit_message_text("❌ فشل في جلب الأرصدة.", call.message.chat.id, call.message.message_id)
         bot.answer_callback_query(call.id)
 
     elif data == "admin_broadcast":
         user_states[call.from_user.id] = "WAITING_ADMIN_BROADCAST"
-        bot.send_message(call.from_user.id, "ðŸ“¢ Ø£Ø±Ø³Ù„ Ø§Ù„Ø±Ø³Ø§Ù„Ø© Ø§Ù„ØªÙŠ ØªØ±ÙŠØ¯ Ø¨Ø«Ù‡Ø§ Ù„Ù„Ø¬Ù…ÙŠØ¹:")
+        bot.send_message(call.from_user.id, "📢 أرسل الرسالة التي تريد بثها للجميع:")
         bot.answer_callback_query(call.id)
 
     elif data == "admin_add_owner":
         user_states[call.from_user.id] = "WAITING_ADMIN_ADD_OWNER"
-        bot.send_message(call.from_user.id, "âž• Ø£Ø±Ø³Ù„ Ù…Ø¹Ø±Ù Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… (User ID) Ù„Ù„Ù…Ø§Ù„Ùƒ Ø§Ù„Ø¬Ø¯ÙŠØ¯:")
+        bot.send_message(call.from_user.id, "➕ أرسل معرف المستخدم (User ID) للمالك الجديد:")
         bot.answer_callback_query(call.id)
 
     elif data == "admin_add_admin":
         user_states[call.from_user.id] = "WAITING_ADMIN_ADD_ADMIN"
-        bot.send_message(call.from_user.id, "âž• Ø£Ø±Ø³Ù„ Ù…Ø¹Ø±Ù Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… (User ID) Ù„Ù„Ù…Ø´Ø±Ù Ø§Ù„Ø¬Ø¯ÙŠØ¯:")
+        bot.send_message(call.from_user.id, "➕ أرسل معرف المستخدم (User ID) للمشرف الجديد:")
         bot.answer_callback_query(call.id)
 
     elif data == "admin_remove_owner":
         user_states[call.from_user.id] = "WAITING_ADMIN_REMOVE_OWNER"
-        current = "\n".join(owners_list) if owners_list else "(Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ù…Ø§Ù„ÙƒÙŠÙ†)"
-        bot.send_message(call.from_user.id, f"âž– Ø£Ø±Ø³Ù„ Ù…Ø¹Ø±Ù Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… (User ID) Ù„Ù„Ù…Ø§Ù„Ùƒ Ø§Ù„Ù…Ø±Ø§Ø¯ Ø¥Ø²Ø§Ù„ØªÙ‡.\n\nØ§Ù„Ù…Ø§Ù„ÙƒÙŠÙ† Ø§Ù„Ø­Ø§Ù„ÙŠÙŠÙ†:\n{current}")
+        current = "\n".join(owners_list) if owners_list else "(لا يوجد مالكين)"
+        bot.send_message(call.from_user.id, f"➖ أرسل معرف المستخدم (User ID) للمالك المراد إزالته.\n\nالمالكين الحاليين:\n{current}")
         bot.answer_callback_query(call.id)
 
     elif data == "admin_remove_admin":
         user_states[call.from_user.id] = "WAITING_ADMIN_REMOVE_ADMIN"
-        current = "\n".join(admins_list) if admins_list else "(Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ù…Ø´Ø±ÙÙŠÙ†)"
-        bot.send_message(call.from_user.id, f"âž– Ø£Ø±Ø³Ù„ Ù…Ø¹Ø±Ù Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… (User ID) Ù„Ù„Ù…Ø´Ø±Ù Ø§Ù„Ù…Ø±Ø§Ø¯ Ø¥Ø²Ø§Ù„ØªÙ‡.\n\nØ§Ù„Ù…Ø´Ø±ÙÙŠÙ† Ø§Ù„Ø­Ø§Ù„ÙŠÙŠÙ†:\n{current}")
+        current = "\n".join(admins_list) if admins_list else "(لا يوجد مشرفين)"
+        bot.send_message(call.from_user.id, f"➖ أرسل معرف المستخدم (User ID) للمشرف المراد إزالته.\n\nالمشرفين الحاليين:\n{current}")
         bot.answer_callback_query(call.id)
 
     elif data == "admin_back":
-        bot.send_message(call.from_user.id, "ðŸ”™ ØªÙ… Ø¥ØºÙ„Ø§Ù‚ Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ….", reply_markup=main_menu_markup(call.from_user.id))
+        bot.send_message(call.from_user.id, "🔙 تم إغلاق لوحة التحكم.", reply_markup=main_menu_markup(call.from_user.id))
         bot.answer_callback_query(call.id)
 
     elif data == "admin_back_to_menu":
@@ -1104,7 +1110,7 @@ def cb_admin_panel(call):
 def cb_deposit_action(call):
     msg_id = call.message.message_id
     if msg_id not in pending_deposits:
-        bot.answer_callback_query(call.id, "âŒ Ø·Ù„Ø¨ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ Ø£Ùˆ ØªÙ… Ù…Ø¹Ø§Ù„Ø¬ØªÙ‡.")
+        bot.answer_callback_query(call.id, "❌ طلب غير موجود أو تم معالجته.")
         return
 
     dep = pending_deposits.pop(msg_id)
@@ -1114,7 +1120,7 @@ def cb_deposit_action(call):
     if call.data == "approve_dep":
         player_info = players_db.get(str(user_id))
         if not player_info:
-            bot.send_message(call.message.chat.id, f"âŒ Ù„Ù… ÙŠØªÙ… Ø§Ù„Ø¹Ø«ÙˆØ± Ø¹Ù„Ù‰ Ø±Ø¨Ø· Ø­Ø³Ø§Ø¨ Ø§Ù„Ù„Ø§Ø¹Ø¨ Ù„Ù„Ù…Ø³ØªØ®Ø¯Ù… {user_id}")
+            bot.send_message(call.message.chat.id, f"❌ لم يتم العثور على ربط حساب اللاعب للمستخدم {user_id}")
             bot.answer_callback_query(call.id)
             return
 
@@ -1136,12 +1142,12 @@ def cb_deposit_action(call):
         result = api_request("POST", "global/api/UserApi/depositToPlayer", payload, auth=True)
         if result and result.get("status"):
             try:
-                bot.send_message(user_id, f"âœ… ØªÙ… Ø§Ø¹ØªÙ…Ø§Ø¯ Ø¥ÙŠØµØ§Ù„Ùƒ ÙˆØ´Ø­Ù† Ø±ØµÙŠØ¯Ùƒ Ø¨Ù…Ø¨Ù„Øº {amount} {currency} Ø¨Ù†Ø¬Ø§Ø­!")
+                bot.send_message(user_id, f"✅ تم اعتماد إيصالك وشحن رصيدك بمبلغ {amount} {currency} بنجاح!")
             except Exception as e:
                 logger.error(f"Failed to notify user {user_id}: {e}")
             try:
                 bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
-                new_caption = call.message.caption + "\n\nâœ… ØªÙ…Øª Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø©: Ù…Ø¹ØªÙ…Ø¯ ÙˆØ´Ø­Ù†."
+                new_caption = call.message.caption + "\n\n✅ تمت المعالجة: معتمد وشحن."
                 bot.edit_message_caption(new_caption, call.message.chat.id, call.message.message_id)
             except Exception as e:
                 logger.error(f"Failed to edit deposit message: {e}")
@@ -1149,15 +1155,15 @@ def cb_deposit_action(call):
             error_msg = "Unknown error"
             if result and result.get("notification"):
                 error_msg = result["notification"][0].get("content", "Unknown error")
-            bot.send_message(call.message.chat.id, f"âŒ ÙØ´Ù„ ÙÙŠ Ø§Ù„Ø´Ø­Ù†: {error_msg}")
+            bot.send_message(call.message.chat.id, f"❌ فشل في الشحن: {error_msg}")
     else:
         try:
-            bot.send_message(user_id, "âŒ ØªÙ… Ø±ÙØ¶ Ø¥ÙŠØµØ§Ù„ Ø§Ù„Ø¥ÙŠØ¯Ø§Ø¹. ÙŠØ±Ø¬Ù‰ Ø§Ù„ØªÙˆØ§ØµÙ„ Ù…Ø¹ Ø§Ù„Ø¯Ø¹Ù… Ø§Ù„ÙÙ†ÙŠ.")
+            bot.send_message(user_id, "❌ تم رفض إيصال الإيداع. يرجى التواصل مع الدعم الفني.")
         except Exception as e:
             logger.error(f"Failed to notify user {user_id}: {e}")
         try:
             bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
-            new_caption = call.message.caption + "\n\nâŒ ØªÙ…Øª Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø©: Ù…Ø±ÙÙˆØ¶."
+            new_caption = call.message.caption + "\n\n❌ تمت المعالجة: مرفوض."
             bot.edit_message_caption(new_caption, call.message.chat.id, call.message.message_id)
         except Exception as e:
             logger.error(f"Failed to edit deposit message: {e}")
@@ -1171,7 +1177,7 @@ def cb_deposit_action(call):
 def cb_withdraw_action(call):
     msg_id = call.message.message_id
     if msg_id not in pending_withdrawals:
-        bot.answer_callback_query(call.id, "âŒ Ø·Ù„Ø¨ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ Ø£Ùˆ ØªÙ… Ù…Ø¹Ø§Ù„Ø¬ØªÙ‡.")
+        bot.answer_callback_query(call.id, "❌ طلب غير موجود أو تم معالجته.")
         return
 
     wd = pending_withdrawals.pop(msg_id)
@@ -1181,7 +1187,7 @@ def cb_withdraw_action(call):
     if call.data == "approve_wd":
         player_info = players_db.get(str(user_id))
         if not player_info:
-            bot.send_message(call.message.chat.id, f"âŒ Ù„Ù… ÙŠØªÙ… Ø§Ù„Ø¹Ø«ÙˆØ± Ø¹Ù„Ù‰ Ø±Ø¨Ø· Ø­Ø³Ø§Ø¨ Ø§Ù„Ù„Ø§Ø¹Ø¨ Ù„Ù„Ù…Ø³ØªØ®Ø¯Ù… {user_id}")
+            bot.send_message(call.message.chat.id, f"❌ لم يتم العثور على ربط حساب اللاعب للمستخدم {user_id}")
             bot.answer_callback_query(call.id)
             return
 
@@ -1203,12 +1209,12 @@ def cb_withdraw_action(call):
         result = api_request("POST", "global/api/UserApi/withdrawFromPlayer", payload, auth=True)
         if result and result.get("status"):
             try:
-                bot.send_message(user_id, "âœ… ØªÙ…Øª Ø¹Ù…Ù„ÙŠØ© Ø§Ù„Ø³Ø­Ø¨ Ø¨Ù†Ø¬Ø§Ø­! ØªÙ… Ø®ØµÙ… Ø§Ù„Ù…Ø¨Ù„Øº Ù…Ù† Ø±ØµÙŠØ¯Ùƒ.")
+                bot.send_message(user_id, "✅ تمت عملية السحب بنجاح! تم خصم المبلغ من رصيدك.")
             except Exception as e:
                 logger.error(f"Failed to notify user {user_id}: {e}")
             try:
                 bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
-                new_text = call.message.text + "\n\nâœ… ØªÙ…Øª Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø©: ØªÙ… Ø§Ù„ØªØ­ÙˆÙŠÙ„ ÙˆØ§Ù„Ø®ØµÙ…."
+                new_text = call.message.text + "\n\n✅ تمت المعالجة: تم التحويل والخصم."
                 bot.edit_message_text(new_text, call.message.chat.id, call.message.message_id)
             except Exception as e:
                 logger.error(f"Failed to edit withdraw message: {e}")
@@ -1216,15 +1222,15 @@ def cb_withdraw_action(call):
             error_msg = "Unknown error"
             if result and result.get("notification"):
                 error_msg = result["notification"][0].get("content", "Unknown error")
-            bot.send_message(call.message.chat.id, f"âŒ ÙØ´Ù„ ÙÙŠ Ø§Ù„Ø®ØµÙ…: {error_msg}")
+            bot.send_message(call.message.chat.id, f"❌ فشل في الخصم: {error_msg}")
     else:
         try:
-            bot.send_message(user_id, "âŒ ØªÙ… Ø±ÙØ¶ Ø·Ù„Ø¨ Ø§Ù„Ø³Ø­Ø¨. ÙŠØ±Ø¬Ù‰ Ø§Ù„ØªÙˆØ§ØµÙ„ Ù…Ø¹ Ø§Ù„Ø¯Ø¹Ù… Ø§Ù„ÙÙ†ÙŠ.")
+            bot.send_message(user_id, "❌ تم رفض طلب السحب. يرجى التواصل مع الدعم الفني.")
         except Exception as e:
             logger.error(f"Failed to notify user {user_id}: {e}")
         try:
             bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
-            new_text = call.message.text + "\n\nâŒ ØªÙ…Øª Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø©: Ù…Ø±ÙÙˆØ¶."
+            new_text = call.message.text + "\n\n❌ تمت المعالجة: مرفوض."
             bot.edit_message_text(new_text, call.message.chat.id, call.message.message_id)
         except Exception as e:
             logger.error(f"Failed to edit withdraw message: {e}")
