@@ -35,13 +35,13 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
 ADMIN_GROUP_ID = -1003983996094
-PANEL_BASE = "https://texas4win.com"
+PANEL_BASE = "https://agents.texas4win.com"
 RENDER_URL = "https://onrender.com"
 
 AGENT_USERNAME = "Bero@yahoo.com"
 AGENT_PASSWORD = "Aazzam@318"
 SHAM_CASH_WALLET = "a18758d5324eb7595d4463ca355ad221"
-SYRIATEL_CASH_CODE = "481 22120"
+SYRIATEL_CASH_CODE = "48122120"
 
 OWNERS_FILE = "owners.txt"
 ADMINS_FILE = "admins.txt"
@@ -62,6 +62,7 @@ if tls_client:
     except Exception as e:
         logging.getLogger(__name__).warning(f"tls_client Session failed: {e}")
         session = None
+
 access_token = None
 refresh_token = None
 agent_affiliate_id = None
@@ -195,8 +196,8 @@ def api_request(method, endpoint, payload=None, auth=False):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "en-US,en;q=0.9",
-        "Origin": "https://texas4win.com",
-        "Referer": "https://texas4win.com/"
+        "Origin": "https://agents.texas4win.com",
+        "Referer": "https://agents.texas4win.com"
     }
     if auth and access_token:
         headers["Authorization"] = f"Bearer {access_token}"
