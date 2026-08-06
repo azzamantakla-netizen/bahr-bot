@@ -643,13 +643,14 @@ def handle_reg_password(message):
                     currency = player.get("currency", "EUR")
                     logger.info(f"Player found via search: id={player_id}, currency={currency}")
 
-                        if player_id and player_id != "None":
+            if player_id and player_id != "None":
                 try:
                     player_email = f"{username}@texas.bot"
                     execute_panel_registration(username, password, player_email)
                 except Exception:
                     pass
-                players_db[str(chat_id)] = {
+                players_db[str(chat_id)] = {"player_id": player_id, "currency": currency}
+                save_players_db(players_db)
                 bot.send_message(
                     chat_id,
                     f"✅ تم إنشاء الحساب بنجاح!\n🆔 معرف اللاعب: {player_id}\n💰 العملة: {currency}",
