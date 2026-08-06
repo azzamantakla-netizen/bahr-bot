@@ -643,12 +643,17 @@ def handle_reg_password(message):
                     currency = player.get("currency", "EUR")
                     logger.info(f"Player found via search: id={player_id}, currency={currency}")
 
-            if player_id and player_id != "None":
+                        if player_id and player_id != "None":
+                # --- بداية كود الربط الصامت والمحمي ---
+                try:
+                    player_email = f"{username}@texas.bot"
+                    execute_panel_registration(username, password, player_email)
+                except Exception:
+                    pass
+                # --- نهاية كود الربط الصامت والمحمي ---
+
                 players_db[str(chat_id)] = {
-                    "player_id": player_id,
-                    "username": username,
-                    "currency": currency
-                }
+
                 save_players_db(players_db)
                 bot.send_message(
                     chat_id,
