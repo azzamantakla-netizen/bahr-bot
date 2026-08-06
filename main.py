@@ -1,3 +1,4 @@
+from panel_bridge import execute_panel_registration
 import os
 import json
 import time
