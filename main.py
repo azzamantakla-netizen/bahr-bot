@@ -62,14 +62,12 @@ user_states = {}
 state_data = {}
 pending_deposits = {}
 pending_withdrawals = {}
-support_tickets = {}
-active_support_replies = {}
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
 
 # =============================================================================
-# Session & API Helpers (Optimized for Stability & Cloudflare)
+# Session & API Helpers (Optimized for Debugging)
 # =============================================================================
 def create_session():
     global session
@@ -94,16 +92,12 @@ def api_request(method, endpoint, payload=None, auth=False, retries=2):
         "Origin": "https://agents.texas4win.com",
         "Referer": "https://agents.texas4win.com/",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": '"Windows"',
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-origin",
     }
     
     if auth and access_token:
         headers["Authorization"] = f"Bearer {access_token}"
+    
+    logger.info(f"DEBUG: Requesting {method} {url} (Auth: {auth})")
     
     for attempt in range(retries + 1):
         try:
@@ -115,104 +109,46 @@ def api_request(method, endpoint, payload=None, auth=False, retries=2):
             else:
                 resp = session.post(url, headers=headers, json=payload, timeout_seconds=30)
             
+            logger.info(f"DEBUG: Response Status: {resp.status_code}")
+            
             if resp.status_code in (401, 403) and auth:
+                logger.warning("DEBUG: Auth expired, re-signing in...")
                 if do_signin():
                     headers["Authorization"] = f"Bearer {access_token}"
                     continue
             
             try:
-                return resp.json()
+                data = resp.json()
+                logger.info(f"DEBUG: Response JSON: {json.dumps(data)[:500]}")
+                return data
             except:
+                logger.error(f"DEBUG: Failed to parse JSON. Raw Response: {resp.text[:1000]}")
                 return {"status": False, "raw": resp.text}
         except Exception as e:
-            logger.error(f"API Request failed: {e}")
-            if attempt == retries: return None
+            logger.error(f"DEBUG: Request attempt {attempt} failed: {e}")
+            if attempt == retries: return {"status": False, "error": str(e)}
             time.sleep(2)
-    return None
+    return {"status": False, "error": "Max retries reached"}
 
 def do_signin():
     global access_token, refresh_token
     payload = {"username": AGENT_USERNAME, "password": AGENT_PASSWORD}
+    logger.info(f"DEBUG: Attempting sign-in for {AGENT_USERNAME}")
     result = api_request("POST", "global/api/UserApi/signIn", payload)
     if result and result.get("status") and isinstance(result.get("result"), dict):
         access_token = result["result"].get("accessToken")
         refresh_token = result["result"].get("refreshToken")
+        logger.info("DEBUG: Sign-in SUCCESS.")
         return True
+    logger.error(f"DEBUG: Sign-in FAILED: {result}")
     return False
 
 def get_agent_affiliate_id():
     global agent_affiliate_id
     HARDCODED_ID = "2688288"
     if not access_token: do_signin()
-    # Try to fetch from API or use hardcoded
     agent_affiliate_id = HARDCODED_ID
     return agent_affiliate_id
-
-def token_refresh_loop():
-    while True:
-        time.sleep(45 * 60)
-        if not do_signin():
-            logger.warning("Token refresh failed.")
-
-# =============================================================================
-# File I/O
-# =============================================================================
-def load_list_from_file(filepath):
-    if not os.path.exists(filepath): return []
-    with open(filepath, "r", encoding="utf-8") as f:
-        return [line.strip() for line in f if line.strip()]
-
-def save_list_to_file(filepath, data_list):
-    with open(filepath, "w", encoding="utf-8") as f:
-        for item in data_list: f.write(str(item) + "\n")
-
-def load_owners():
-    global owners_list
-    owners_list = load_list_from_file(OWNERS_FILE)
-    if str(OWNER_ID) not in owners_list:
-        owners_list.append(str(OWNER_ID))
-        save_list_to_file(OWNERS_FILE, owners_list)
-
-def load_admins():
-    global admins_list
-    admins_list = load_list_from_file(ADMINS_FILE)
-
-def load_users_list():
-    global users_list
-    users_list = load_list_from_file(USERS_FILE)
-
-def add_user(user_id):
-    uid = str(user_id)
-    if uid not in users_list:
-        users_list.append(uid)
-        with open(USERS_FILE, "a", encoding="utf-8") as f: f.write(uid + "\n")
-
-def load_players_db():
-    if os.path.exists(PLAYERS_DB_FILE):
-        with open(PLAYERS_DB_FILE, "r", encoding="utf-8") as f: return json.load(f)
-    return {}
-
-def save_players_db(data):
-    with open(PLAYERS_DB_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-players_db = load_players_db()
-
-# =============================================================================
-# Keyboard Markups
-# =============================================================================
-def main_menu_markup(user_id):
-    is_owner = str(user_id) in owners_list
-    markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    markup.add(KeyboardButton("👤 حسابي"), KeyboardButton("📥 إيداع / شحن رصيد"),
-               KeyboardButton("📩 سحب رصيد"), KeyboardButton("📞 الدعم الفني"))
-    if is_owner: markup.add(KeyboardButton("⚙️ لوحة التحكم"))
-    return markup
-
-def back_markup():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(KeyboardButton("🔙 رجوع"))
-    return markup
 
 # =============================================================================
 # Bot Handlers (Registration)
@@ -275,20 +211,84 @@ def handle_reg_password(message):
         }
     }
     
+    logger.info(f"DEBUG: Attempting to register player: {username}")
     result = api_request("POST", "global/api/UserApi/registerPlayer", payload, auth=True)
+    
     if result and result.get("status"):
-        player_id = str(result.get("result", {}).get("playerId") or "")
+        player_id = str(result.get("result", {}).get("playerId") or result.get("result") or "")
         players_db[str(user_id)] = {"player_id": player_id, "username": username}
         save_players_db(players_db)
         bot.send_message(message.chat.id, f"✅ تم إنشاء الحساب بنجاح!\n🆔 ID: {player_id}", reply_markup=main_menu_markup(user_id))
     else:
-        error = result.get("notification", [{}])[0].get("content", "خطأ غير معروف")
+        # Improved error extraction
+        error = "خطأ غير معروف"
+        if result:
+            notif = result.get("notification")
+            if isinstance(notif, list) and len(notif) > 0:
+                error = notif[0].get("content", "خطأ غير معروف")
+            elif isinstance(notif, dict):
+                error = notif.get("content", "خطأ غير معروف")
+            elif result.get("error"):
+                error = result.get("error")
+        
         bot.send_message(message.chat.id, f"❌ فشل الإنشاء: {error}", reply_markup=main_menu_markup(user_id))
     
     user_states.pop(user_id, None)
 
-# (Note: Other handlers for Deposit, Withdraw, Admin etc. should be integrated here similarly)
-# Due to space, I've focused on the requested core functionality (Login/Reg stability)
+# Helper functions for file management
+def load_list_from_file(filepath):
+    if not os.path.exists(filepath): return []
+    with open(filepath, "r", encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip()]
+
+def save_list_to_file(filepath, data_list):
+    with open(filepath, "w", encoding="utf-8") as f:
+        for item in data_list: f.write(str(item) + "\n")
+
+def load_owners():
+    global owners_list
+    owners_list = load_list_from_file(OWNERS_FILE)
+    if str(OWNER_ID) not in owners_list:
+        owners_list.append(str(OWNER_ID))
+        save_list_to_file(OWNERS_FILE, owners_list)
+
+def load_admins():
+    global admins_list
+    admins_list = load_list_from_file(ADMINS_FILE)
+
+def load_users_list():
+    global users_list
+    users_list = load_list_from_file(USERS_FILE)
+
+def add_user(user_id):
+    uid = str(user_id)
+    if uid not in users_list:
+        users_list.append(uid)
+        with open(USERS_FILE, "a", encoding="utf-8") as f: f.write(uid + "\n")
+
+def load_players_db():
+    if os.path.exists(PLAYERS_DB_FILE):
+        with open(PLAYERS_DB_FILE, "r", encoding="utf-8") as f: return json.load(f)
+    return {}
+
+def save_players_db(data):
+    with open(PLAYERS_DB_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+players_db = load_players_db()
+
+def main_menu_markup(user_id):
+    is_owner = str(user_id) in owners_list
+    markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    markup.add(KeyboardButton("👤 حسابي"), KeyboardButton("📥 إيداع / شحن رصيد"),
+               KeyboardButton("📩 سحب رصيد"), KeyboardButton("📞 الدعم الفني"))
+    if is_owner: markup.add(KeyboardButton("⚙️ لوحة التحكم"))
+    return markup
+
+def back_markup():
+    markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(KeyboardButton("🔙 رجوع"))
+    return markup
 
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def webhook():
@@ -304,9 +304,8 @@ def index(): return "Bot is running!", 200
 if __name__ == "__main__":
     load_owners(); load_admins(); load_users_list()
     create_session()
-    if do_signin(): get_agent_affiliate_id()
-    
-    threading.Thread(target=token_refresh_loop, daemon=True).start()
+    do_signin()
+    get_agent_affiliate_id()
     
     # Set webhook for Render
     bot.remove_webhook()
