@@ -1,6 +1,9 @@
-pyTelegramBotAPI==4.26.0
+tls_client
 requests
-Flask
-tls-client
-typing-extensions
-gunicorn
+fastapi
+uvicorn
+PyJWT
+pydantic[email]
+pyTelegramBotAPI
+flask
+python-dotenv
