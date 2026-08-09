@@ -331,9 +331,9 @@ def _request_with_curl_cffi(url, headers, payload, method):
         proxies = proxy
         logger.info(f"curl_cffi using Canadian proxy: {CANADIAN_PROXY}")
         if method.upper() == "GET":
-            resp = sess.get(url, headers=headers, json=payload, timeout=15, verify=False, proxies=proxies)
+            resp = sess.get(url, headers=headers, json=payload, timeout=45, verify=False, proxies=proxies)
         else:
-            resp = sess.post(url, headers=headers, json=payload, timeout=15, verify=False, proxies=proxies)
+            resp = sess.post(url, headers=headers, json=payload, timeout=45, verify=False, proxies=proxies)
         sess.close()
         return resp
     except Exception as e:
