@@ -6,10 +6,14 @@ import logging
 import base64
 import random
 import string
+import asyncio
 from flask import Flask, request, abort
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
+# =============================================================================
+# HTTP Clients (loaded gracefully)
+# =============================================================================
 try:
     import tls_client
 except Exception:
@@ -29,6 +33,16 @@ try:
     import cloudscraper
 except Exception:
     cloudscraper = None
+
+try:
+    import nodriver as uc
+except Exception:
+    uc = None
+
+try:
+    from seleniumbase import SB
+except Exception:
+    SB = None
 
 # =============================================================================
 # Logging Setup
@@ -51,7 +65,7 @@ RENDER_URL = "https://bahr-bot-c3ac.onrender.com"
 AGENT_USERNAME = "Bero@yahoo.com"
 AGENT_PASSWORD = "Aazzam@318"
 SHAM_CASH_WALLET = "a18758d5324eb7595d4463ca355ad221"
-SYRIATEL_CASH_CODE = "481 22120"
+SYRIATEL_CASH_CODE = "48122120"
 
 OWNERS_FILE = "owners.txt"
 ADMINS_FILE = "admins.txt"
@@ -62,7 +76,27 @@ owners_list = []
 admins_list = []
 users_list = []
 
-# curl_cffi session (strongest for bypassing Cloudflare)
+# =============================================================================
+# Residential Proxy Configuration
+# =============================================================================
+RESIDENTIAL_PROXY = os.environ.get("RESIDENTIAL_PROXY", "").strip()
+
+def get_effective_proxy():
+    """
+    Returns proxy dict for requests/curl_cffi.
+    Priority: RESIDENTIAL_PROXY env var -> free proxy pool fallback.
+    Format expected: http://user:pass@host:port or host:port
+    """
+    if RESIDENTIAL_PROXY:
+        proxy_url = RESIDENTIAL_PROXY
+        if not proxy_url.startswith("http"):
+            proxy_url = "http://" + proxy_url
+        return {"http": proxy_url, "https": proxy_url}
+    return get_working_proxy()
+
+# =============================================================================
+# curl_cffi Session (strongest for bypassing Cloudflare)
+# =============================================================================
 curl_session = None
 if curl_cffi_requests:
     try:
@@ -72,7 +106,9 @@ if curl_cffi_requests:
         logger.warning(f"curl_cffi Session failed: {e}")
         curl_session = None
 
+# =============================================================================
 # cloudscraper fallback
+# =============================================================================
 cloud_scraper = None
 if cloudscraper:
     try:
@@ -88,7 +124,9 @@ if cloudscraper:
         logger.warning(f"cloudscraper failed: {e}")
         cloud_scraper = None
 
+# =============================================================================
 # tls_client fallback
+# =============================================================================
 session = None
 if tls_client:
     try:
@@ -99,6 +137,7 @@ if tls_client:
     except Exception as e:
         logging.getLogger(__name__).warning(f"tls_client Session failed: {e}")
         session = None
+
 access_token = None
 refresh_token = None
 agent_affiliate_id = None
@@ -190,46 +229,197 @@ def decode_jwt_payload(token):
     return {}
 
 
-def _request_with_curl_cffi(url, headers, payload, method):
-    if not curl_session:
-        return None
+# =============================================================================
+# Free Proxy Pool (fallback if no residential proxy is set)
+# =============================================================================
+_working_proxy = None
+
+def fetch_proxy_list():
+    """Fetch free proxy list from proxyscrape"""
+    if not requests:
+        logger.warning("requests module not available, cannot fetch proxies")
+        return []
     try:
+        resp = requests.get(
+            "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all",
+            timeout=15
+        )
+        if resp.status_code == 200:
+            proxies = [p.strip() for p in resp.text.strip().split("\n") if p.strip() and ":" in p]
+            logger.info(f"Fetched {len(proxies)} proxies from proxyscrape")
+            return proxies
+    except Exception as e:
+        logger.warning(f"Failed to fetch proxy list: {e}")
+    return []
+
+
+def get_working_proxy():
+    global _working_proxy
+    if _working_proxy:
+        return _working_proxy
+    proxies = fetch_proxy_list()
+    if not proxies:
+        return None
+    test_url = f"{PANEL_BASE}/global/api/UserApi/signIn"
+    test_payload = {"username": AGENT_USERNAME, "password": AGENT_PASSWORD}
+    for proxy_str in random.sample(proxies, min(len(proxies), 20)):
+        proxy_dict = {"http": f"http://{proxy_str}", "https": f"http://{proxy_str}"}
+        try:
+            logger.info(f"Testing proxy: {proxy_str}")
+            r = requests.post(
+                test_url,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "application/json, text/plain, */*",
+                    "Origin": "https://agents.texas4win.com",
+                    "Referer": "https://agents.texas4win.com/"
+                },
+                json=test_payload,
+                proxies=proxy_dict,
+                timeout=15,
+                verify=False
+            )
+            logger.info(f"Proxy {proxy_str} response status: {r.status_code}")
+            if r.status_code not in (403, 503, 429) and "Cloudflare" not in r.text and "Sorry, you have been blocked" not in r.text:
+                try:
+                    data = r.json()
+                    if isinstance(data, dict):
+                        _working_proxy = proxy_dict
+                        logger.info(f"Found working proxy: {proxy_str}")
+                        return _working_proxy
+                except:
+                    if r.status_code == 200:
+                        _working_proxy = proxy_dict
+                        logger.info(f"Found working proxy (200 OK): {proxy_str}")
+                        return _working_proxy
+        except Exception as e:
+            logger.debug(f"Proxy {proxy_str} failed: {e}")
+            continue
+    logger.warning("No working proxy found")
+    return None
+
+
+# =============================================================================
+# HTTP Request Layers (ordered by strength)
+# =============================================================================
+class FakeResponse:
+    def __init__(self, text, status_code):
+        self.text = text
+        self.status_code = status_code
+
+    def json(self):
+        return json.loads(self.text)
+
+
+def _request_with_curl_cffi(url, headers, payload, method):
+    """Layer 1: curl_cffi with JA3 fingerprint + residential proxy support"""
+    if not curl_cffi_requests:
+        return None
+    proxy = get_effective_proxy()
+    try:
+        sess = curl_cffi_requests.Session(impersonate="chrome120")
+        proxies = proxy if proxy else None
         if method.upper() == "GET":
-            return curl_session.get(url, headers=headers, json=payload, timeout=30, verify=False)
+            resp = sess.get(url, headers=headers, json=payload, timeout=30, verify=False, proxies=proxies)
         else:
-            return curl_session.post(url, headers=headers, json=payload, timeout=30, verify=False)
+            resp = sess.post(url, headers=headers, json=payload, timeout=30, verify=False, proxies=proxies)
+        sess.close()
+        return resp
     except Exception as e:
         logger.warning(f"curl_cffi request failed: {e}")
         return None
 
 
-def _request_with_cloudscraper(url, headers, payload, method):
-    if not cloud_scraper:
+async def _request_with_nodriver_async(url, headers, payload, method):
+    """Layer 2: Nodriver — real Chrome via CDP, executes fetch() in a blank page"""
+    if not uc:
         return None
     try:
+        browser = await uc.start()
+        page = await browser.get('about:blank')
+        header_json = json.dumps(headers)
+        payload_json = json.dumps(payload) if payload else "null"
+        script = f'''
+            fetch("{url}", {{
+                method: "{method}",
+                headers: {header_json},
+                body: {payload_json} ? JSON.stringify({payload_json}) : undefined
+            }}).then(r => r.text())
+        '''
+        result = await page.evaluate(script)
+        await browser.stop()
+        return FakeResponse(result, 200)
+    except Exception as e:
+        logger.warning(f"nodriver request failed: {e}")
+        return None
+
+
+def _request_with_nodriver(url, headers, payload, method):
+    try:
+        return asyncio.run(_request_with_nodriver_async(url, headers, payload, method))
+    except Exception as e:
+        logger.warning(f"nodriver sync wrapper failed: {e}")
+        return None
+
+
+def _request_with_seleniumbase(url, headers, payload, method):
+    """Layer 3: SeleniumBase UC Mode — undetected Chrome with fetch() execution"""
+    if not SB:
+        return None
+    try:
+        header_json = json.dumps(headers)
+        payload_json = json.dumps(payload) if payload else "null"
+        script = f'''
+            return fetch("{url}", {{
+                method: "{method}",
+                headers: {header_json},
+                body: {payload_json} ? JSON.stringify({payload_json}) : undefined
+            }}).then(r => r.text())
+        '''
+        with SB(uc=True, headless=True, demo=False) as sb:
+            sb.open("about:blank")
+            result = sb.execute_script(script)
+            return FakeResponse(result, 200)
+    except Exception as e:
+        logger.warning(f"seleniumbase request failed: {e}")
+        return None
+
+
+def _request_with_cloudscraper(url, headers, payload, method):
+    """Layer 4: cloudscraper"""
+    if not cloud_scraper:
+        return None
+    proxy = get_effective_proxy()
+    try:
+        proxies = proxy if proxy else None
         if method.upper() == "GET":
-            return cloud_scraper.get(url, headers=headers, json=payload, timeout=30, verify=False)
+            return cloud_scraper.get(url, headers=headers, json=payload, timeout=30, verify=False, proxies=proxies)
         else:
-            return cloud_scraper.post(url, headers=headers, json=payload, timeout=30, verify=False)
+            return cloud_scraper.post(url, headers=headers, json=payload, timeout=30, verify=False, proxies=proxies)
     except Exception as e:
         logger.warning(f"cloudscraper request failed: {e}")
         return None
 
 
 def _request_with_requests(url, headers, payload, method):
+    """Layer 5: standard requests"""
     if not requests:
         return None
+    proxy = get_effective_proxy()
     try:
+        proxies = proxy if proxy else None
         if method.upper() == "GET":
-            return requests.get(url, headers=headers, json=payload, timeout=30, verify=False)
+            return requests.get(url, headers=headers, json=payload, timeout=30, verify=False, proxies=proxies)
         else:
-            return requests.post(url, headers=headers, json=payload, timeout=30, verify=False)
+            return requests.post(url, headers=headers, json=payload, timeout=30, verify=False, proxies=proxies)
     except Exception as e:
         logger.warning(f"requests fallback failed: {e}")
         return None
 
 
 def _request_with_tls(url, headers, payload, method):
+    """Layer 6: tls_client"""
     if not session:
         return None
     try:
@@ -242,15 +432,9 @@ def _request_with_tls(url, headers, payload, method):
         return None
 
 
-class FakeResponse:
-    def __init__(self, text, status_code):
-        self.text = text
-        self.status_code = status_code
-
-    def json(self):
-        return json.loads(self.text)
-
-
+# =============================================================================
+# Unified API Request
+# =============================================================================
 def api_request(method, endpoint, payload=None, auth=False, add_delay=False):
     url = f"{PANEL_BASE}/{endpoint}"
     headers = {
@@ -271,9 +455,21 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=False):
         time.sleep(delay)
 
     logger.info(f"API REQUEST: {method} {url} | auth={auth} | payload={json.dumps(payload, ensure_ascii=False)[:500]}")
+    logger.info(f"RESIDENTIAL_PROXY set: {bool(RESIDENTIAL_PROXY)}")
+
     try:
-        # Priority order: curl_cffi (best) -> cloudscraper -> requests -> tls_client
+        # Priority order:
+        # 1. curl_cffi (JA3 fingerprint) + proxy
+        # 2. nodriver (real Chrome CDP)
+        # 3. seleniumbase UC Mode (undetected Chrome)
+        # 4. cloudscraper
+        # 5. requests
+        # 6. tls_client
         response = _request_with_curl_cffi(url, headers, payload, method)
+        if response is None:
+            response = _request_with_nodriver(url, headers, payload, method)
+        if response is None:
+            response = _request_with_seleniumbase(url, headers, payload, method)
         if response is None:
             response = _request_with_cloudscraper(url, headers, payload, method)
         if response is None:
@@ -289,6 +485,10 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=False):
             if do_signin():
                 headers["Authorization"] = f"Bearer {access_token}"
                 response = _request_with_curl_cffi(url, headers, payload, method)
+                if response is None:
+                    response = _request_with_nodriver(url, headers, payload, method)
+                if response is None:
+                    response = _request_with_seleniumbase(url, headers, payload, method)
                 if response is None:
                     response = _request_with_cloudscraper(url, headers, payload, method)
                 if response is None:
@@ -435,659 +635,490 @@ def show_admin_panel(chat_id, message_id=None):
         InlineKeyboardButton("💰 تعديل محفظة شام كاش", callback_data="admin_sham_wallet"),
         InlineKeyboardButton("📱 تعديل كود سيرياتيل", callback_data="admin_syriatel_code"),
         InlineKeyboardButton("📊 رصيد الخزنة الحالي", callback_data="admin_balance"),
-        InlineKeyboardButton("📢 إذاعة عامة", callback_data="admin_broadcast"),
-        InlineKeyboardButton("➕ إضافة مالكين", callback_data="admin_add_owner"),
-        InlineKeyboardButton("➕ إضافة مشرفين", callback_data="admin_add_admin"),
-        InlineKeyboardButton("➖ إزالة مالكين", callback_data="admin_remove_owner"),
-        InlineKeyboardButton("➖ إزالة مشرفين", callback_data="admin_remove_admin"),
-        InlineKeyboardButton("🔙 رجوع", callback_data="admin_back")
+        InlineKeyboardButton("📢 إذاعة للجميع", callback_data="admin_broadcast"),
+        InlineKeyboardButton("➕ إضافة مالك", callback_data="admin_add_owner"),
+        InlineKeyboardButton("➕ إضافة مشرف", callback_data="admin_add_admin"),
+        InlineKeyboardButton("➖ إزالة مالك", callback_data="admin_remove_owner"),
+        InlineKeyboardButton("➖ إزالة مشرف", callback_data="admin_remove_admin"),
+        InlineKeyboardButton("🔙 إغلاق", callback_data="admin_back")
     )
-    text = "⚙️ لوحة التحكم العليا:"
+    text = "⚙️ لوحة التحكم - اختر الإجراء:"
     if message_id:
-        bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
+        try:
+            bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
+        except Exception as e:
+            logger.error(f"Failed to edit admin panel message: {e}")
     else:
         bot.send_message(chat_id, text, reply_markup=markup)
 
-# =============================================================================
-# Admin Group Handlers (REGISTERED FIRST - strict order matters!)
-# =============================================================================
-
-# 1. Exit active reply mode FIRST (highest priority)
-@bot.message_handler(
-    content_types=["text"],
-    func=lambda m: (
-        m.chat.id == ADMIN_GROUP_ID
-        and m.from_user.id in active_support_replies
-        and m.text is not None
-        and m.text.strip() in ["تم", "done", "انهاء", "إنهاء", "stop", "خروج"]
-    )
-)
-def handle_admin_exit_reply_mode(message):
-    admin_id = message.from_user.id
-    logger.info(f"Admin {admin_id} exited reply mode.")
-    del active_support_replies[admin_id]
-    bot.send_message(ADMIN_GROUP_ID, f"🔚 تم إنهاء وضع الرد للمشرف {admin_id}.")
-
-
-# 2. Reply to a support ticket message (accept ANY content type)
-@bot.message_handler(
-    content_types=["text", "photo", "video", "document", "audio", "voice", "video_note", "sticker", "animation"],
-    func=lambda m: (
-        m.chat.id == ADMIN_GROUP_ID
-        and m.reply_to_message is not None
-        and m.reply_to_message.message_id in support_tickets
-    )
-)
-def handle_admin_group_reply(message):
-    original_msg_id = message.reply_to_message.message_id
-    user_id = support_tickets[original_msg_id]
-    logger.info(f"Admin reply to ticket msg {original_msg_id} -> user {user_id}")
-    try:
-        bot.send_message(user_id, "📩 رد من الدعم الفني:")
-        try:
-            bot.copy_message(user_id, ADMIN_GROUP_ID, message.message_id)
-        except Exception as e:
-            logger.warning(f"copy_message failed: {e}")
-            bot.forward_message(user_id, ADMIN_GROUP_ID, message.message_id)
-        bot.send_message(ADMIN_GROUP_ID, f"✅ تم إرسال الرد للمستخدم {user_id}")
-    except Exception as e:
-        logger.error(f"Failed to send reply to {user_id}: {e}")
-        bot.send_message(ADMIN_GROUP_ID, f"❌ فشل إرسال الرد للمستخدم {user_id}: {e}")
-
-
-# 3. Active reply mode (any message while in active reply mode, but NOT a reply to support ticket)
-@bot.message_handler(
-    content_types=["text", "photo", "video", "document", "audio", "voice", "video_note", "sticker", "animation"],
-    func=lambda m: (
-        m.chat.id == ADMIN_GROUP_ID
-        and m.from_user.id in active_support_replies
-        and (m.reply_to_message is None or m.reply_to_message.message_id not in support_tickets)
-    )
-)
-def handle_admin_active_reply(message):
-    user_id = active_support_replies.get(message.from_user.id)
-    if not user_id:
-        return
-    logger.info(f"Admin active reply to user {user_id}")
-    try:
-        bot.send_message(user_id, "📩 رد من الدعم الفني:")
-        try:
-            bot.copy_message(user_id, ADMIN_GROUP_ID, message.message_id)
-        except Exception as e:
-            logger.warning(f"copy_message failed: {e}")
-            bot.forward_message(user_id, ADMIN_GROUP_ID, message.message_id)
-        bot.send_message(ADMIN_GROUP_ID, f"✅ تم إرسال الرد للمستخدم {user_id}")
-    except Exception as e:
-        logger.error(f"Failed to send active reply to {user_id}: {e}")
-        bot.send_message(ADMIN_GROUP_ID, f"❌ فشل إرسال الرد للمستخدم {user_id}: {e}")
 
 # =============================================================================
-# Commands
+# Bot Handlers
 # =============================================================================
 @bot.message_handler(commands=["start"])
 def cmd_start(message):
-    add_user(message.chat.id)
-    welcome = (
-        "مرحباً بك في البوت الاحترافي ! 🎉\n"
-        "⚡️ نظام معالجة المعاملات التلقائي مستقر ويعمل بأعلى كفاءة.\n"
-        "📑 يمكنك الآن إدارة حسابك، شحن رصيدك، أو طلب السحب فوراً بضغطة زر.\n"
-        "🔘 يرجى اختيار العملية المطلوبة من القائمة أدناه:"
-    )
-    bot.send_message(message.chat.id, welcome, reply_markup=main_menu_markup(message.chat.id))
-
-
-@bot.message_handler(commands=["admin"])
-def cmd_admin(message):
-    if str(message.chat.id) not in owners_list and str(message.chat.id) != str(OWNER_ID):
-        bot.send_message(message.chat.id, "⛔️ ليس لديك صلاحية الوصول.")
-        return
-    show_admin_panel(message.chat.id)
-
-# =============================================================================
-# Back Handler
-# =============================================================================
-@bot.message_handler(func=lambda m: m.text is not None and m.text == "🔙 رجوع")
-def handle_back(message):
-    user_states.pop(message.from_user.id, None)
-    state_data.pop(message.from_user.id, None)
+    uid = message.from_user.id
+    add_user(uid)
     bot.send_message(
-        message.from_user.id,
-        "🔙 تم العودة للقائمة الرئيسية.",
-        reply_markup=main_menu_markup(message.from_user.id)
-    )
-
-# =============================================================================
-# Main Menu Handlers
-# =============================================================================
-@bot.message_handler(func=lambda m: m.text is not None and m.text == "👤 حسابي")
-def menu_my_account(message):
-    add_user(message.from_user.id)
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("🆕 إنشاء حساب جديد", callback_data="create_account"))
-    markup.add(InlineKeyboardButton("🔙 رجوع", callback_data="back_to_main"))
-    bot.send_message(message.chat.id, "👤 إدارة حسابك:", reply_markup=markup)
-
-
-@bot.message_handler(func=lambda m: m.text is not None and m.text == "📥 إيداع / شحن رصيد")
-def menu_deposit(message):
-    add_user(message.from_user.id)
-    user_states[message.from_user.id] = "WAITING_DEP_AMOUNT"
-    bot.send_message(
-        message.from_user.id,
-        "💰 يرجى كتابة المبلغ المراد شحنه واضغط إرسال:",
-        reply_markup=back_markup()
+        uid,
+        "🎰 مرحباً بك في بوت الكازينو!\n\n"
+        "الرجاء اختيار أحد الخيارات من القائمة أدناه.",
+        reply_markup=main_menu_markup(uid)
     )
 
 
-@bot.message_handler(func=lambda m: m.text is not None and m.text == "📩 سحب رصيد")
-def menu_withdraw(message):
-    add_user(message.from_user.id)
-    text = (
-        "⚠️ <b>تنبيه شروط السحب الفوري:</b>\n"
-        "• يرجى العلم أنه سيتم خصم عمولة بقيمة <b>10%</b> تلقائياً من المبلغ المسحوب.\n"
-        "• الحد الأدنى للسحب هو: <b>200,000</b> ليرة.\n"
-        "• الحد الأعلى للسحب هو: <b>1,000,000</b> ليرة."
-    )
-    markup = InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        InlineKeyboardButton("💳 محفظة شام كاش", callback_data="wd_method:sham"),
-        InlineKeyboardButton("📱 سيرياتيل كاش", callback_data="wd_method:syriatel"),
-        InlineKeyboardButton("🔙 رجوع", callback_data="wd_back")
-    )
-    bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="HTML")
-
-
-@bot.message_handler(func=lambda m: m.text is not None and m.text == "📞 الدعم الفني")
-def menu_support(message):
-    add_user(message.from_user.id)
-    user_states[message.from_user.id] = "WAITING_SUPPORT_TICKET"
-    bot.send_message(
-        message.from_user.id,
-        "أنت بأمان، فريقنا موجود بجانبك على مدار الساعة فقط أخبرنا بمشكلتك:",
-        reply_markup=back_markup()
-    )
-
-
-@bot.message_handler(func=lambda m: m.text is not None and m.text == "⚙️ لوحة التحكم")
-def menu_admin_panel(message):
-    add_user(message.from_user.id)
-    if str(message.from_user.id) not in owners_list and str(message.from_user.id) != str(OWNER_ID):
-        bot.send_message(message.chat.id, "⛔️ ليس لديك صلاحية الوصول.")
-        return
-    show_admin_panel(message.chat.id)
-
-# =============================================================================
-# State: Registration
-# =============================================================================
-@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_REG_USERNAME" and m.text is not None)
-def handle_reg_username(message):
-    chat_id = message.chat.id
-    logger.info(f"handle_reg_username TRIGGERED chat={chat_id}")
-    if message.text == "🔙 رجوع":
-        return
-    username = message.text.strip()
-    if not username or len(username) < 3:
-        bot.send_message(chat_id, "❌ اسم المستخدم قصير جداً.")
-        return
-    state_data[message.from_user.id] = {"username": username}
-    user_states[message.from_user.id] = "WAITING_REG_PASSWORD"
-    bot.send_message(chat_id, "🔒 يرجى إرسال كلمة المرور:", reply_markup=back_markup())
-
-
-@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_REG_PASSWORD" and m.text is not None)
-def handle_reg_password(message):
-    chat_id = message.chat.id
-    user_id = message.from_user.id
-    logger.info(f"handle_reg_password TRIGGERED chat={chat_id} user={user_id} text_len={len(message.text)}")
-    if message.text == "🔙 رجوع":
-        return
-    try:
-        password = message.text.strip()
-        if not password:
-            bot.send_message(chat_id, "❌ يرجى إدخال كلمة سر صالحة.")
-            return
-
-        username = state_data.get(user_id, {}).get("username")
-        logger.info(f"Reg data: username={username}")
-        if not username:
-            bot.send_message(chat_id, "❌ خطأ في البيانات. اضغط /start وأعد المحاولة.")
-            return
-
-        # Show processing message
-        bot.send_message(chat_id, "⏳ جاري معالجة العملية... الرجاء الانتظار")
-
-        # Ensure we have a valid affiliate_id
-        if not agent_affiliate_id or agent_affiliate_id == "0":
-            logger.info("affiliate_id missing or zero, fetching...")
-            try:
-                get_agent_affiliate_id()
-            except Exception as e:
-                logger.error(f"get_agent_affiliate_id failed: {e}")
-
-        parent_id = agent_affiliate_id if agent_affiliate_id else "2688288"
-        try:
-            parent_id_int = int(parent_id)
-        except ValueError:
-            parent_id_int = int("2688288")
-
-        # Generate random email to avoid conflicts
-        rand_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
-        email = f"{username}.{rand_suffix}@player.bot"
-
-        logger.info(f"Registering player. username={username}, email={email}, parentId={parent_id_int}, token_exists={bool(access_token)}")
-
-        payload = {
-            "player": {
-                "login": username,
-                "email": email,
-                "password": password,
-                "parentId": parent_id_int,
-                "firstName": username,
-                "lastName": username
-            }
-        }
-
-        result = api_request("POST", "global/api/UserApi/registerPlayer", payload, auth=True, add_delay=True)
-        logger.info(f"registerPlayer result: {result}")
-
-        if result and result.get("status"):
-            reg_result = result.get("result")
-            player_id = None
-            currency = "EUR"
-
-            if isinstance(reg_result, dict):
-                player_id = str(reg_result.get("playerId") or reg_result.get("id") or reg_result.get("userId") or "")
-            elif isinstance(reg_result, (int, str)):
-                player_id = str(reg_result)
-
-            if not player_id or player_id == "None":
-                logger.info("Player ID not in register result, searching via getPlayersForCurrentAgent...")
-                time.sleep(1.5)
-                search_payload = {
-                    "start": 0,
-                    "limit": 20,
-                    "filter": {
-                        "withoutTotalCount": {"action": "=", "value": True},
-                        "userName": {"action": "=", "value": username, "valueLabel": username}
-                    },
-                    "isNextPage": False
-                }
-                search_result = api_request("POST", "global/api/UserApi/getPlayersForCurrentAgent", search_payload, auth=True)
-                logger.info(f"getPlayersForCurrentAgent result: {search_result}")
-                if search_result and search_result.get("result") and search_result["result"].get("records"):
-                    player = search_result["result"]["records"][0]
-                    player_id = str(player.get("playerId"))
-                    currency = player.get("currency", "EUR")
-                    logger.info(f"Player found via search: id={player_id}, currency={currency}")
-
-            if player_id and player_id != "None":
-                players_db[str(chat_id)] = {
-                    "player_id": player_id,
-                    "username": username,
-                    "currency": currency
-                }
-                save_players_db(players_db)
-                bot.send_message(
-                    chat_id,
-                    f"✅ تم إنشاء الحساب بنجاح!\n🆔 معرف اللاعب: {player_id}\n💰 العملة: {currency}",
-                    reply_markup=main_menu_markup(chat_id)
-                )
-            else:
-                bot.send_message(
-                    chat_id,
-                    "⚠️ تم إنشاء الحساب لكن لم يتم العثور على المعرف. حاول لاحقاً أو تواصل مع الدعم.",
-                    reply_markup=main_menu_markup(chat_id)
-                )
-        else:
-            # Handle errors - detect if username is already taken
-            error_msg = "Unknown error"
-            raw_text = ""
-            if result:
-                notif = result.get("notification")
-                if isinstance(notif, list) and len(notif) > 0:
-                    error_msg = notif[0].get("content", "Unknown error")
-                elif isinstance(notif, dict):
-                    error_msg = notif.get("content", "Unknown error")
-                if result.get("__raw__"):
-                    raw_text = result["__raw__"]
-                    error_msg += f" | Raw: {raw_text[:200]}"
-            elif result is None:
-                error_msg = "No response from server (network error)."
-
-            # Check if error is about username already taken
-            lower_err = (error_msg + " " + raw_text).lower()
-            username_taken_keywords = [
-                "already exists", "already taken", "duplicate", "exists", "used",
-                "مستخدم", "موجود", "مكرر", "taken", "existe", "user name", "username"
-            ]
-            is_username_taken = any(k in lower_err for k in username_taken_keywords)
-
-            logger.error(f"Registration failed for {username}: is_username_taken={is_username_taken} | {result}")
-
-            if is_username_taken:
-                bot.send_message(
-                    chat_id,
-                    "❌ هذا الاسم مستخدم بالفعل. يرجى اختيار اسم آخر.\n📝 اضغط على زر إنشاء حساب وحاول مرة أخرى.",
-                    reply_markup=main_menu_markup(chat_id)
-                )
-            else:
-                bot.send_message(chat_id, f"❌ فشل في إنشاء الحساب: {error_msg}")
-
-        user_states.pop(user_id, None)
-        state_data.pop(user_id, None)
-    except Exception as e:
-        logger.exception(f"CRITICAL ERROR in handle_reg_password: {e}")
-        bot.send_message(chat_id, f"❌ حدث خطأ داخلي: {e}")
-        user_states.pop(user_id, None)
-        state_data.pop(user_id, None)
-
-# =============================================================================
-# State: Deposit
-# =============================================================================
-@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_DEP_AMOUNT" and m.text is not None)
-def handle_dep_amount(message):
-    if message.text == "🔙 رجوع":
-        return
-    try:
-        amount = float(message.text.strip().replace(",", ""))
-        if amount <= 0:
-            raise ValueError
-        state_data[message.from_user.id] = {"amount": amount}
-        user_states[message.from_user.id] = "WAITING_DEP_RECEIPT"
+@bot.message_handler(func=lambda m: m.text == "👤 حسابي")
+def handle_account(message):
+    uid = str(message.from_user.id)
+    player = players_db.get(uid)
+    if player:
         text = (
-            f"💳 <b>خيارات الدفع المتاحة لشحن حسابك حياً:</b>\n"
-            f"• <b>محفظة شام كاش</b>: {SHAM_CASH_WALLET}\n"
-            f"• <b>كود سيرياتيل كاش</b>: {SYRIATEL_CASH_CODE}\n\n"
-            f"⚠️ قم بتحويل المبلغ المطابق تماماً لطلبك، ثم <b>قم برفع وإرسال صورة الإيصال هنا.</b>\n"
-            f"✅ سيتم مراجعة إيصالك وشحن رصيدك خلال دقائق."
+            f"👤 بيانات حسابك:\n\n"
+            f"🆔 معرف اللاعب: {player.get('player_id')}\n"
+            f"👤 اسم المستخدم: {player.get('username')}\n"
+            f"📧 البريد: {player.get('email')}\n"
+            f"💰 العملة: {player.get('currency', 'EUR')}\n\n"
+            f"للتحقق من رصيدك، تواصل مع الدعم الفني."
         )
-        bot.send_message(message.from_user.id, text, parse_mode="HTML", reply_markup=back_markup())
-    except ValueError:
-        bot.send_message(message.from_user.id, "❌ يرجى إدخال مبلغ صحيح.")
+    else:
+        text = (
+            "📝 ليس لديك حساب مسجل بعد.\n\n"
+            "هل تريد إنشاء حساب جديد الآن؟"
+        )
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("✅ نعم، إنشاء حساب", callback_data="register_now"))
+        bot.send_message(message.from_user.id, text, reply_markup=markup)
+        return
+    bot.send_message(message.from_user.id, text, reply_markup=main_menu_markup(message.from_user.id))
 
 
-@bot.message_handler(content_types=["photo"], func=lambda m: user_states.get(m.from_user.id) == "WAITING_DEP_RECEIPT")
-def handle_dep_receipt(message):
-    user_id = message.from_user.id
-    amount = state_data.get(user_id, {}).get("amount")
-    if not amount:
-        bot.send_message(user_id, "❌ خطأ في البيانات. أعد المحاولة.")
+@bot.message_handler(func=lambda m: m.text == "📥 إيداع / شحن رصيد")
+def handle_deposit(message):
+    uid = message.from_user.id
+    user_states[uid] = "WAITING_DEPOSIT_AMOUNT"
+    state_data[uid] = {}
+    text = (
+        "💰 لإيداع رصيد، أرسل المبلغ المطلوب (رقماً فقط).\n\n"
+        "مثال: 50"
+    )
+    bot.send_message(uid, text, reply_markup=back_markup())
+
+
+@bot.message_handler(func=lambda m: m.text == "📩 سحب رصيد")
+def handle_withdraw(message):
+    uid = message.from_user.id
+    user_states[uid] = "WAITING_WITHDRAW_AMOUNT"
+    state_data[uid] = {}
+    text = (
+        "💸 لسحب رصيد، أرسل المبلغ المطلوب (رقماً فقط).\n\n"
+        "مثال: 30"
+    )
+    bot.send_message(uid, text, reply_markup=back_markup())
+
+
+@bot.message_handler(func=lambda m: m.text == "📞 الدعم الفني")
+def handle_support(message):
+    uid = message.from_user.id
+    user_states[uid] = "WAITING_SUPPORT_MESSAGE"
+    text = (
+        "📞 الدعم الفني:\n\n"
+        "أرسل رسالتك الآن وسيقوم فريق الدعم بالرد عليك في أقرب وقت."
+    )
+    bot.send_message(uid, text, reply_markup=back_markup())
+
+
+@bot.message_handler(func=lambda m: m.text == "⚙️ لوحة التحكم")
+def handle_admin_panel(message):
+    uid = str(message.from_user.id)
+    if uid not in owners_list and uid != str(OWNER_ID):
+        bot.send_message(message.from_user.id, "⛔️ ليس لديك صلاحية الوصول للوحة التحكم.")
+        return
+    show_admin_panel(message.from_user.id)
+
+
+@bot.message_handler(func=lambda m: m.text == "🔙 رجوع")
+def handle_back(message):
+    uid = message.from_user.id
+    user_states.pop(uid, None)
+    state_data.pop(uid, None)
+    bot.send_message(uid, "🔙 تم العودة للقائمة الرئيسية.", reply_markup=main_menu_markup(uid))
+
+
+# =============================================================================
+# State Handlers
+# =============================================================================
+@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_REGISTER_USERNAME")
+def state_register_username(message):
+    uid = message.from_user.id
+    username = message.text.strip()
+    if not username:
+        bot.send_message(uid, "❌ اسم المستخدم فارغ. أرسل اسم مستخدم صالح:")
+        return
+    state_data[uid]["reg_username"] = username
+    user_states[uid] = "WAITING_REGISTER_PASSWORD"
+    bot.send_message(uid, "🔒 أرسل كلمة المرور الآن (أي طول مقبول):")
+
+
+@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_REGISTER_PASSWORD")
+def state_register_password(message):
+    uid = message.from_user.id
+    password = message.text.strip()
+    if not password:
+        bot.send_message(uid, "❌ كلمة المرور فارغة. أرسل كلمة مرور صالحة:")
         return
 
+    username = state_data[uid].get("reg_username", "")
+    if not username:
+        bot.send_message(uid, "❌ حدث خطأ. ابدأ التسجيل من جديد.")
+        user_states.pop(uid, None)
+        return
+
+    # Generate random email
+    email = f"{username.lower()}{random.randint(1000,9999)}@gmail.com"
+    first_name = username
+    last_name = "Player"
+    parent_id = "2688288"
+
+    bot.send_message(uid, "⏳ جاري معالجة التسجيل...")
+
+    payload = {
+        "login": username,
+        "email": email,
+        "password": password,
+        "parentId": parent_id,
+        "firstName": first_name,
+        "lastName": last_name
+    }
+
+    result = api_request("POST", "global/api/UserApi/registerPlayer", payload, add_delay=True)
+
+    if result is None:
+        bot.send_message(uid, "❌ فشل الاتصال بالخادم. حاول مرة أخرى لاحقاً.")
+        user_states.pop(uid, None)
+        return
+
+    # Check for duplicate username
+    raw_text = result.get("__raw__", "")
+    if "DuplicateUserName" in raw_text or "already exists" in raw_text.lower() or "اسم المستخدم موجود" in raw_text:
+        bot.send_message(uid, "❌ اسم المستخدم مستخدم بالفعل. ابدأ التسجيل باسم مختلف.")
+        user_states.pop(uid, None)
+        return
+
+    if isinstance(result, dict) and result.get("status"):
+        player_id = None
+        if isinstance(result.get("result"), dict):
+            player_id = result["result"].get("playerId") or result["result"].get("id")
+        players_db[str(uid)] = {
+            "player_id": str(player_id) if player_id else "unknown",
+            "username": username,
+            "email": email,
+            "currency": "EUR"
+        }
+        save_players_db(players_db)
+        bot.send_message(
+            uid,
+            f"✅ تم إنشاء الحساب بنجاح!\n\n"
+            f"👤 اسم المستخدم: {username}\n"
+            f"📧 البريد: {email}\n"
+            f"🆔 معرف اللاعب: {player_id or 'غير معروف'}\n\n"
+            f"يمكنك الآن الإيداع واللعب!",
+            reply_markup=main_menu_markup(uid)
+        )
+    else:
+        error_msg = "Unknown error"
+        if result and isinstance(result, dict) and result.get("notification"):
+            error_msg = result["notification"][0].get("content", "Unknown error")
+        elif raw_text:
+            error_msg = raw_text[:500]
+        bot.send_message(uid, f"❌ فشل في التسجيل: {error_msg}")
+
+    user_states.pop(uid, None)
+
+
+@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_DEPOSIT_AMOUNT")
+def state_deposit_amount(message):
+    uid = message.from_user.id
+    text = message.text.strip()
+    try:
+        amount = float(text)
+        if amount <= 0:
+            raise ValueError()
+    except ValueError:
+        bot.send_message(uid, "❌ أرسل مبلغاً صالحاً (رقم فقط).")
+        return
+
+    state_data[uid]["deposit_amount"] = amount
+    user_states[uid] = "WAITING_DEPOSIT_RECEIPT"
+    bot.send_message(
+        uid,
+        f"💰 المبلغ: {amount}\n\n"
+        f"📸 أرسل صورة الإيصال الآن (أو اضغط 🔙 للإلغاء).",
+        reply_markup=back_markup()
+    )
+
+
+@bot.message_handler(content_types=["photo"], func=lambda m: user_states.get(m.from_user.id) == "WAITING_DEPOSIT_RECEIPT")
+def state_deposit_receipt(message):
+    uid = message.from_user.id
+    amount = state_data[uid].get("deposit_amount", 0)
     file_id = message.photo[-1].file_id
     caption = (
-        f"🔄 <b>طلب إيداع جديد</b>\n\n"
-        f"👤 المستخدم: <code>{user_id}</code>\n"
-        f"💰 المبلغ: <b>{amount}</b>\n"
-        f"📎 تم إرفاق إيصال الدفع."
-    )
-    markup = InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        InlineKeyboardButton("✅ موافقة", callback_data="approve_dep"),
-        InlineKeyboardButton("❌ رفض", callback_data="reject_dep")
-    )
-    sent = bot.send_photo(ADMIN_GROUP_ID, file_id, caption=caption, reply_markup=markup, parse_mode="HTML")
-    pending_deposits[sent.message_id] = {"user_id": user_id, "amount": amount}
-    bot.send_message(user_id, "📤 تم إرسال إيصالك للمراجعة. سيتم إشعارك بالنتيجة.", reply_markup=main_menu_markup(user_id))
-    user_states.pop(user_id, None)
-    state_data.pop(user_id, None)
-
-# =============================================================================
-# State: Withdraw
-# =============================================================================
-@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_WITHDRAW_AMOUNT" and m.text is not None)
-def handle_wd_amount(message):
-    if message.text == "🔙 رجوع":
-        return
-    try:
-        amount = float(message.text.strip().replace(",", ""))
-        if amount < 200000:
-            bot.send_message(message.from_user.id, "❌ الحد الأدنى للسحب هو 200,000 ليرة.")
-            return
-        if amount > 1000000:
-            bot.send_message(message.from_user.id, "❌ الحد الأعلى للسحب هو 1,000,000 ليرة.")
-            return
-        state_data[message.from_user.id]["amount"] = amount
-        user_states[message.from_user.id] = "WAITING_WITHDRAW_PHONE"
-        bot.send_message(
-            message.from_user.id,
-            "📱 يرجى إرسال رقم هاتفك (محفظة شام كاش أو سيرياتيل كاش):",
-            reply_markup=back_markup()
-        )
-    except ValueError:
-        bot.send_message(message.from_user.id, "❌ يرجى إدخال مبلغ صحيح.")
-
-
-@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_WITHDRAW_PHONE" and m.text is not None)
-def handle_wd_phone(message):
-    if message.text == "🔙 رجوع":
-        return
-    phone = message.text.strip()
-    if not phone:
-        bot.send_message(message.from_user.id, "❌ يرجى إرسال رقم صحيح.")
-        return
-    state_data[message.from_user.id]["phone"] = phone
-    user_states[message.from_user.id] = "WAITING_WITHDRAW_CONFIRM"
-    amount = state_data[message.from_user.id].get("amount", 0)
-    commission = amount * 0.10
-    net = amount - commission
-    text = (
-        f"⚠️ <b>مراجعة طلب السحب:</b>\n\n"
-        f"💰 المبلغ: {amount}\n"
-        f"📉 العمولة (10%): {commission}\n"
-        f"📨 الصافي: {net}\n"
-        f"📱 الرقم: {phone}\n\n"
-        f"✅ اضغط 'تأكيد' لإرسال الطلب."
-    )
-    markup = InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        InlineKeyboardButton("✅ تأكيد", callback_data="confirm_wd"),
-        InlineKeyboardButton("❌ إلغاء", callback_data="cancel_wd")
-    )
-    bot.send_message(message.from_user.id, text, reply_markup=markup, parse_mode="HTML")
-
-# =============================================================================
-# State: Support
-# =============================================================================
-@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_SUPPORT_TICKET" and m.text is not None)
-def handle_support_ticket(message):
-    if message.text == "🔙 رجوع":
-        return
-    ticket_text = message.text.strip()
-    if not ticket_text:
-        bot.send_message(message.from_user.id, "❌ يرجى كتابة نص الرسالة.")
-        return
-    caption = (
-        f"📩 <b>تذكرة دعم فني جديدة</b>\n\n"
-        f"👤 المستخدم: <code>{message.from_user.id}</code>\n"
-        f"📝 الرسالة:\n{ticket_text}"
+        f"📥 طلب إيداع جديد\n\n"
+        f"👤 المستخدم: {uid}\n"
+        f"💰 المبلغ: {amount}\n\n"
+        f"أوافق / أرفض؟"
     )
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("📝 رد على هذا المستخدم", callback_data=f"reply_support:{message.from_user.id}"))
-    sent = bot.send_message(ADMIN_GROUP_ID, caption, reply_markup=markup, parse_mode="HTML")
-    support_tickets[sent.message_id] = message.from_user.id
-    bot.send_message(message.from_user.id, "✅ تم إرسال تذكرتك. سيتم الرد عليك قريباً.", reply_markup=main_menu_markup(message.from_user.id))
-    user_states.pop(message.from_user.id, None)
-
-# =============================================================================
-# State: Admin Panel States
-# =============================================================================
-@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_AGENT_USERNAME" and m.text is not None)
-def handle_admin_agent_username(message):
-    global AGENT_USERNAME
-    AGENT_USERNAME = message.text.strip()
-    bot.send_message(message.from_user.id, f"✅ تم تحديث اسم المستخدم: {AGENT_USERNAME}")
-    user_states.pop(message.from_user.id, None)
-
-
-@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_AGENT_PASSWORD" and m.text is not None)
-def handle_admin_agent_password(message):
-    global AGENT_PASSWORD
-    AGENT_PASSWORD = message.text.strip()
-    bot.send_message(message.from_user.id, "🔒 تم تحديث كلمة المرور. جاري إعادة تسجيل الدخول...")
-    if do_signin():
-        get_agent_affiliate_id()
-        bot.send_message(message.from_user.id, "✅ تم إعادة تسجيل الدخول بنجاح.")
-    else:
-        bot.send_message(message.from_user.id, "❌ فشل إعادة تسجيل الدخول. تحقق من البيانات.")
-    user_states.pop(message.from_user.id, None)
-
-
-@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_SHAM_WALLET" and m.text is not None)
-def handle_admin_sham_wallet(message):
-    global SHAM_CASH_WALLET
-    SHAM_CASH_WALLET = message.text.strip()
-    bot.send_message(message.from_user.id, f"✅ تم تحديث محفظة شام كاش: {SHAM_CASH_WALLET}")
-    user_states.pop(message.from_user.id, None)
-
-
-@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_SYRIATEL_CODE" and m.text is not None)
-def handle_admin_syriatel_code(message):
-    global SYRIATEL_CASH_CODE
-    SYRIATEL_CASH_CODE = message.text.strip()
-    bot.send_message(message.from_user.id, f"✅ تم تحديث كود سيرياتيل: {SYRIATEL_CASH_CODE}")
-    user_states.pop(message.from_user.id, None)
-
-
-@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_BROADCAST" and m.text is not None)
-def handle_admin_broadcast(message):
-    text = message.text
-    all_recipients = set(users_list + list(players_db.keys()) + owners_list + admins_list)
-    success = 0
-    failed = 0
-    logger.info(f"Broadcasting to {len(all_recipients)} users...")
-    for uid in all_recipients:
-        try:
-            bot.send_message(int(uid), f"📢 إذاعة:\n\n{text}")
-            success += 1
-        except Exception as e:
-            logger.error(f"Broadcast failed for {uid}: {e}")
-            failed += 1
-    bot.send_message(message.chat.id, f"✅ تم الإرسال: {success} | ❌ فشل: {failed} | 📊 إجمالي المشتركين: {len(all_recipients)}")
-    user_states.pop(message.from_user.id, None)
-
-
-@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_ADD_OWNER" and m.text is not None)
-def handle_admin_add_owner(message):
-    uid = message.text.strip()
-    if uid not in owners_list:
-        owners_list.append(uid)
-        save_list_to_file(OWNERS_FILE, owners_list)
-    bot.send_message(message.from_user.id, f"✅ تمت إضافة المالك: {uid}")
-    user_states.pop(message.from_user.id, None)
-
-
-@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_ADD_ADMIN" and m.text is not None)
-def handle_admin_add_admin(message):
-    uid = message.text.strip()
-    if uid not in admins_list:
-        admins_list.append(uid)
-        save_list_to_file(ADMINS_FILE, admins_list)
-    bot.send_message(message.from_user.id, f"✅ تمت إضافة المشرف: {uid}")
-    user_states.pop(message.from_user.id, None)
-
-
-@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_REMOVE_OWNER" and m.text is not None)
-def handle_admin_remove_owner(message):
-    uid = message.text.strip()
-    if uid in owners_list:
-        owners_list.remove(uid)
-        save_list_to_file(OWNERS_FILE, owners_list)
-        bot.send_message(message.from_user.id, f"✅ تمت إزالة المالك: {uid}")
-    else:
-        bot.send_message(message.from_user.id, f"❌ المالك {uid} غير موجود في القائمة.")
-    user_states.pop(message.from_user.id, None)
-
-
-@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_REMOVE_ADMIN" and m.text is not None)
-def handle_admin_remove_admin(message):
-    uid = message.text.strip()
-    if uid in admins_list:
-        admins_list.remove(uid)
-        save_list_to_file(ADMINS_FILE, admins_list)
-        bot.send_message(message.from_user.id, f"✅ تمت إزالة المشرف: {uid}")
-    else:
-        bot.send_message(message.from_user.id, f"❌ المشرف {uid} غير موجود في القائمة.")
-    user_states.pop(message.from_user.id, None)
-
-# =============================================================================
-# Callbacks - Main Menu / Back
-# =============================================================================
-@bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
-def cb_back_to_main(call):
-    bot.send_message(call.from_user.id, "🔙 تم العودة للقائمة الرئيسية.", reply_markup=main_menu_markup(call.from_user.id))
-    bot.answer_callback_query(call.id)
-
-
-@bot.callback_query_handler(func=lambda call: call.data in ["wd_back", "cancel_wd"])
-def cb_wd_back(call):
-    bot.send_message(call.from_user.id, "🔙 تم العودة للقائمة الرئيسية.", reply_markup=main_menu_markup(call.from_user.id))
-    bot.answer_callback_query(call.id)
-
-
-@bot.callback_query_handler(func=lambda call: call.data == "create_account")
-def cb_create_account(call):
-    add_user(call.from_user.id)
-    user_states[call.from_user.id] = "WAITING_REG_USERNAME"
-    bot.send_message(call.from_user.id, "📝 يرجى إرسال اسم المستخدم المطلوب:", reply_markup=back_markup())
-    bot.answer_callback_query(call.id)
-
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("wd_method:"))
-def cb_wd_method(call):
-    method = call.data.split(":")[1]
-    state_data[call.from_user.id] = {"method": method}
-    user_states[call.from_user.id] = "WAITING_WITHDRAW_AMOUNT"
-    bot.edit_message_text("💰 يرجى كتابة المبلغ المراد سحبه:", call.message.chat.id, call.message.message_id)
-    bot.answer_callback_query(call.id)
-
-
-@bot.callback_query_handler(func=lambda call: call.data == "confirm_wd")
-def cb_confirm_wd(call):
-    chat_id = call.from_user.id
-    data = state_data.get(chat_id, {})
-    amount = data.get("amount", 0)
-    phone = data.get("phone", "")
-    method = data.get("method", "")
-    method_name = "شام كاش" if method == "sham" else "سيرياتيل كاش"
-    commission = amount * 0.10
-    net = amount - commission
-    caption = (
-        f"📤 <b>طلب سحب جديد</b>\n\n"
-        f"👤 المستخدم: <code>{chat_id}</code>\n"
-        f"💰 المبلغ: {amount}\n"
-        f"📉 العمولة: {commission}\n"
-        f"📨 الصافي: {net}\n"
-        f"📱 الرقم: {phone}\n"
-        f"💳 الطريقة: {method_name}"
-    )
-    markup = InlineKeyboardMarkup(row_width=2)
     markup.add(
-        InlineKeyboardButton("✅ موافقة", callback_data="approve_wd"),
+        InlineKeyboardButton("✅ موافق", callback_data="approve_dep"),
+        InlineKeyboardButton("❌ رفض", callback_data="reject_dep")
+    )
+    sent = bot.send_photo(ADMIN_GROUP_ID, file_id, caption=caption, reply_markup=markup)
+    pending_deposits[sent.message_id] = {"user_id": uid, "amount": amount}
+    bot.send_message(uid, "✅ تم إرسال الإيصال للمراجعة. سيتم إشعارك بالنتيجة.", reply_markup=main_menu_markup(uid))
+    user_states.pop(uid, None)
+
+
+@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_WITHDRAW_AMOUNT")
+def state_withdraw_amount(message):
+    uid = message.from_user.id
+    text = message.text.strip()
+    try:
+        amount = float(text)
+        if amount <= 0:
+            raise ValueError()
+    except ValueError:
+        bot.send_message(uid, "❌ أرسل مبلغاً صالحاً (رقم فقط).")
+        return
+
+    state_data[uid]["withdraw_amount"] = amount
+    user_states[uid] = "WAITING_WITHDRAW_METHOD"
+    markup = InlineKeyboardMarkup()
+    markup.add(
+        InlineKeyboardButton("💳 شام كاش", callback_data="wd_sham"),
+        InlineKeyboardButton("📱 سيرياتيل كاش", callback_data="wd_syriatel")
+    )
+    bot.send_message(uid, "اختر طريقة السحب:", reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data in ["wd_sham", "wd_syriatel"])
+def cb_withdraw_method(call):
+    uid = call.from_user.id
+    method = "sham" if call.data == "wd_sham" else "syriatel"
+    state_data[uid]["withdraw_method"] = method
+    user_states[uid] = "WAITING_WITHDRAW_ACCOUNT"
+    if method == "sham":
+        bot.send_message(uid, "💳 أرسل رقم محفظة شام كاش:")
+    else:
+        bot.send_message(uid, "📱 أرسل رقم حساب سيرياتيل كاش:")
+    bot.answer_callback_query(call.id)
+
+
+@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_WITHDRAW_ACCOUNT")
+def state_withdraw_account(message):
+    uid = message.from_user.id
+    account = message.text.strip()
+    if not account:
+        bot.send_message(uid, "❌ الحساب فارغ. أرسل رقم صالح:")
+        return
+
+    amount = state_data[uid].get("withdraw_amount", 0)
+    method = state_data[uid].get("withdraw_method", "")
+    method_name = "شام كاش" if method == "sham" else "سيرياتيل كاش"
+
+    text = (
+        f"📩 طلب سحب جديد\n\n"
+        f"👤 المستخدم: {uid}\n"
+        f"💰 المبلغ: {amount}\n"
+        f"💳 الطريقة: {method_name}\n"
+        f"🔢 الحساب: {account}\n\n"
+        f"أوافق / أرفض؟"
+    )
+    markup = InlineKeyboardMarkup()
+    markup.add(
+        InlineKeyboardButton("✅ موافق", callback_data="approve_wd"),
         InlineKeyboardButton("❌ رفض", callback_data="reject_wd")
     )
-    sent = bot.send_message(ADMIN_GROUP_ID, caption, reply_markup=markup, parse_mode="HTML")
-    pending_withdrawals[sent.message_id] = {"user_id": chat_id, "amount": amount}
-    bot.send_message(chat_id, "📤 تم إرسال طلب السحب للمراجعة.", reply_markup=main_menu_markup(chat_id))
+    sent = bot.send_message(ADMIN_GROUP_ID, text, reply_markup=markup)
+    pending_withdrawals[sent.message_id] = {"user_id": uid, "amount": amount}
+    bot.send_message(uid, "✅ تم إرسال طلب السحب للمراجعة.", reply_markup=main_menu_markup(uid))
+    user_states.pop(uid, None)
+
+
+@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_SUPPORT_MESSAGE")
+def state_support_message(message):
+    uid = message.from_user.id
+    text = message.text.strip()
+    if not text:
+        bot.send_message(uid, "❌ الرسالة فارغة. أرسل رسالة صالحة:")
+        return
+
+    # Forward to admin group
+    forward_text = (
+        f"📞 رسالة دعم فني جديدة\n\n"
+        f"👤 من المستخدم: {uid}\n"
+        f"💬 الرسالة:\n{text}\n\n"
+        f"اضغط على الزر أدناه للرد."
+    )
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("✍️ رد على المستخدم", callback_data=f"reply_support_{uid}"))
+    sent = bot.send_message(ADMIN_GROUP_ID, forward_text, reply_markup=markup)
+    support_tickets[sent.message_id] = uid
+    bot.send_message(uid, "✅ تم إرسال رسالتك لفريق الدعم. سيتم الرد عليك قريباً.", reply_markup=main_menu_markup(uid))
+    user_states.pop(uid, None)
+
+
+# =============================================================================
+# Admin State Handlers
+# =============================================================================
+@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_AGENT_USERNAME")
+def state_admin_agent_username(message):
+    uid = message.from_user.id
+    global AGENT_USERNAME
+    AGENT_USERNAME = message.text.strip()
+    bot.send_message(uid, f"✅ تم تحديث اسم المستخدم للوكيل: {AGENT_USERNAME}")
+    user_states.pop(uid, None)
+
+
+@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_AGENT_PASSWORD")
+def state_admin_agent_password(message):
+    uid = message.from_user.id
+    global AGENT_PASSWORD
+    AGENT_PASSWORD = message.text.strip()
+    bot.send_message(uid, "✅ تم تحديث كلمة المرور للوكيل.")
+    user_states.pop(uid, None)
+
+
+@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_SHAM_WALLET")
+def state_admin_sham_wallet(message):
+    uid = message.from_user.id
+    global SHAM_CASH_WALLET
+    SHAM_CASH_WALLET = message.text.strip()
+    bot.send_message(uid, f"✅ تم تحديث محفظة شام كاش: {SHAM_CASH_WALLET}")
+    user_states.pop(uid, None)
+
+
+@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_SYRIATEL_CODE")
+def state_admin_syriatel_code(message):
+    uid = message.from_user.id
+    global SYRIATEL_CASH_CODE
+    SYRIATEL_CASH_CODE = message.text.strip()
+    bot.send_message(uid, f"✅ تم تحديث كود سيرياتيل كاش: {SYRIATEL_CASH_CODE}")
+    user_states.pop(uid, None)
+
+
+@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_BROADCAST")
+def state_admin_broadcast(message):
+    uid = message.from_user.id
+    text = message.text.strip()
+    if not text:
+        bot.send_message(uid, "❌ الرسالة فارغة.")
+        return
+    count = 0
+    for user_id in users_list:
+        try:
+            bot.send_message(int(user_id), f"📢 إذاعة:\n\n{text}")
+            count += 1
+        except Exception as e:
+            logger.error(f"Failed to broadcast to {user_id}: {e}")
+    bot.send_message(uid, f"✅ تم إرسال الإذاعة إلى {count} مستخدم.")
+    user_states.pop(uid, None)
+
+
+@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_ADD_OWNER")
+def state_admin_add_owner(message):
+    uid = message.from_user.id
+    target = message.text.strip()
+    if target in owners_list:
+        bot.send_message(uid, "❌ المستخدم مالك بالفعل.")
+    else:
+        owners_list.append(target)
+        save_list_to_file(OWNERS_FILE, owners_list)
+        bot.send_message(uid, f"✅ تم إضافة المالك: {target}")
+    user_states.pop(uid, None)
+
+
+@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_ADD_ADMIN")
+def state_admin_add_admin(message):
+    uid = message.from_user.id
+    target = message.text.strip()
+    if target in admins_list:
+        bot.send_message(uid, "❌ المستخدم مشرف بالفعل.")
+    else:
+        admins_list.append(target)
+        save_list_to_file(ADMINS_FILE, admins_list)
+        bot.send_message(uid, f"✅ تم إضافة المشرف: {target}")
+    user_states.pop(uid, None)
+
+
+@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_REMOVE_OWNER")
+def state_admin_remove_owner(message):
+    uid = message.from_user.id
+    target = message.text.strip()
+    if target == str(OWNER_ID):
+        bot.send_message(uid, "❌ لا يمكن إزالة المالك الأساسي.")
+    elif target in owners_list:
+        owners_list.remove(target)
+        save_list_to_file(OWNERS_FILE, owners_list)
+        bot.send_message(uid, f"✅ تم إزالة المالك: {target}")
+    else:
+        bot.send_message(uid, "❌ المستخدم ليس مالكاً.")
+    user_states.pop(uid, None)
+
+
+@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_REMOVE_ADMIN")
+def state_admin_remove_admin(message):
+    uid = message.from_user.id
+    target = message.text.strip()
+    if target in admins_list:
+        admins_list.remove(target)
+        save_list_to_file(ADMINS_FILE, admins_list)
+        bot.send_message(uid, f"✅ تم إزالة المشرف: {target}")
+    else:
+        bot.send_message(uid, "❌ المستخدم ليس مشرفاً.")
+    user_states.pop(uid, None)
+
+
+# =============================================================================
+# Callbacks - Registration
+# =============================================================================
+@bot.callback_query_handler(func=lambda call: call.data == "register_now")
+def cb_register_now(call):
+    uid = call.from_user.id
+    user_states[uid] = "WAITING_REGISTER_USERNAME"
+    state_data[uid] = {}
+    bot.send_message(uid, "👤 أرسل اسم المستخدم المطلوب (حروف إنجليزية وأرقام فقط):")
     bot.answer_callback_query(call.id)
-    user_states.pop(chat_id, None)
-    state_data.pop(chat_id, None)
+
 
 # =============================================================================
 # Callbacks - Support Reply
 # =============================================================================
-@bot.callback_query_handler(func=lambda call: call.data.startswith("reply_support:"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith("reply_support_"))
 def cb_reply_support(call):
-    user_id = int(call.data.split(":")[1])
-    admin_id = call.from_user.id
-    active_support_replies[admin_id] = user_id
-    bot.send_message(
-        ADMIN_GROUP_ID,
-        f"📝 المشرف {admin_id} دخل وضع الرد على المستخدم {user_id}.\n"
-        f"✍️ اكتب أي رسالة الآن (نص، صورة، فيديو، ملف...) وسيتم إرسالها مباشرة للمستخدم.\n"
-        f"🔚 اكتب 'تم' أو 'done' أو 'إنهاء' للخروج من وضع الرد."
-    )
+    uid = call.from_user.id
+    target_uid = int(call.data.split("_")[-1])
+    active_support_replies[uid] = target_uid
+    bot.send_message(uid, f"✍️ أرسل رسالة الرد للمستخدم {target_uid} الآن:\n\n(ارسل 'إلغاء' للإلغاء)")
     bot.answer_callback_query(call.id)
+
+
+@bot.message_handler(func=lambda m: active_support_replies.get(m.from_user.id))
+def handle_support_reply(message):
+    admin_id = message.from_user.id
+    target_uid = active_support_replies.get(admin_id)
+    text = message.text.strip()
+    if text == "إلغاء":
+        active_support_replies.pop(admin_id, None)
+        bot.send_message(admin_id, "❌ تم إلغاء الرد.")
+        return
+    try:
+        bot.send_message(target_uid, f"📩 رد من الدعم الفني:\n\n{text}")
+        bot.send_message(admin_id, "✅ تم إرسال الرد.")
+    except Exception as e:
+        bot.send_message(admin_id, f"❌ فشل في إرسال الرد: {e}")
+    active_support_replies.pop(admin_id, None)
+
 
 # =============================================================================
 # Callbacks - Admin Panel
@@ -1181,6 +1212,7 @@ def cb_admin_panel(call):
         show_admin_panel(call.from_user.id, call.message.message_id)
         bot.answer_callback_query(call.id)
 
+
 # =============================================================================
 # Callbacks - Deposit Action
 # =============================================================================
@@ -1247,6 +1279,7 @@ def cb_deposit_action(call):
             logger.error(f"Failed to edit deposit message: {e}")
 
     bot.answer_callback_query(call.id)
+
 
 # =============================================================================
 # Callbacks - Withdraw Action
@@ -1315,6 +1348,7 @@ def cb_withdraw_action(call):
 
     bot.answer_callback_query(call.id)
 
+
 # =============================================================================
 # Flask Webhook
 # =============================================================================
@@ -1331,7 +1365,7 @@ def webhook():
 
 @app.route("/")
 def index():
-    return "Bot is running!", 200
+    return "Bot is running! curl_cffi + Nodriver + SeleniumBase UC Mode enabled.", 200
 
 
 def set_webhook():
@@ -1351,6 +1385,14 @@ if __name__ == "__main__":
     load_owners()
     load_admins()
     load_users_list()
+
+    logger.info(f"RESIDENTIAL_PROXY env: {'SET' if RESIDENTIAL_PROXY else 'NOT SET'}")
+    logger.info(f"curl_cffi available: {bool(curl_cffi_requests)}")
+    logger.info(f"nodriver available: {bool(uc)}")
+    logger.info(f"seleniumbase available: {bool(SB)}")
+    logger.info(f"cloudscraper available: {bool(cloudscraper)}")
+    logger.info(f"requests available: {bool(requests)}")
+    logger.info(f"tls_client available: {bool(tls_client)}")
 
     if do_signin():
         get_agent_affiliate_id()
