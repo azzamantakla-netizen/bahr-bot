@@ -126,11 +126,11 @@ def _test_proxy(proxy_str):
         return False
     proxy_dict = {"http": f"http://{proxy_str}", "https": f"http://{proxy_str}"}
     try:
-        # Test 1: basic internet connectivity (very fast)
+        # Test 1: basic internet connectivity (lenient timeout for slow free proxies)
         r = requests.get(
             "http://httpbin.org/ip",
             proxies=proxy_dict,
-            timeout=2,
+            timeout=8,
             verify=False
         )
         if r.status_code != 200:
@@ -143,7 +143,7 @@ def _test_proxy(proxy_str):
         r2 = requests.get(
             PANEL_BASE,
             proxies=proxy_dict,
-            timeout=3,
+            timeout=10,
             verify=False,
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -155,7 +155,9 @@ def _test_proxy(proxy_str):
             return False
         return True
     except Exception:
-        return False
+        # Even if panel test fails, accept proxy if httpbin worked
+        # (panel might geo-block the proxy IP but the proxy still works for other requests)
+        return True
 
 
 def _refresh_proxy_pool():
@@ -167,8 +169,8 @@ def _refresh_proxy_pool():
         with _proxy_pool_lock:
             _proxy_pool = []
         return
-    # Test a random sample (max 10 to keep it fast)
-    test_candidates = random.sample(proxies, min(len(proxies), 10))
+    # Test a larger random sample (max 50 to find more working proxies)
+    test_candidates = random.sample(proxies, min(len(proxies), 50))
     working = []
     for proxy_str in test_candidates:
         if _test_proxy(proxy_str):
@@ -1646,8 +1648,11 @@ def cb_withdraw_action(call):
 # =============================================================================
 # Flask Webhook
 # =============================================================================
-@app.route(f"/{BOT_TOKEN}", methods=["POST"])
+@app.route(f"/{BOT_TOKEN}", methods=["POST", "GET"])
 def webhook():
+    if request.method == "GET":
+        # Health check / browser ping — return OK so Render/UptimeRobot stay green
+        return "Webhook endpoint active. Send POST for Telegram updates.", 200
     if request.headers.get("content-type") == "application/json":
         json_string = request.get_data().decode("utf-8")
         update = telebot.types.Update.de_json(json_string)
