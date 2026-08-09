@@ -450,6 +450,18 @@ def _is_html_response(response):
     )
 
 
+def _is_bad_response(response):
+    """Detect if a response is unusable (HTML, empty body, or server error)."""
+    if response is None:
+        return True
+    # Check for server errors (5xx) or empty body
+    if hasattr(response, "status_code") and response.status_code >= 500:
+        return True
+    if hasattr(response, "text") and not (response.text or "").strip():
+        return True
+    return _is_html_response(response)
+
+
 # =============================================================================
 # Unified API Request
 # =============================================================================
@@ -484,18 +496,18 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=False):
         # 5. requests
         # 6. tls_client
         response = _request_with_curl_cffi(url, headers, payload, method)
-        if response is None or _is_html_response(response):
+        if _is_bad_response(response):
             response = _request_with_nodriver(url, headers, payload, method)
-        if response is None or _is_html_response(response):
+        if _is_bad_response(response):
             response = _request_with_seleniumbase(url, headers, payload, method)
-        if response is None or _is_html_response(response):
+        if _is_bad_response(response):
             response = _request_with_cloudscraper(url, headers, payload, method)
-        if response is None or _is_html_response(response):
+        if _is_bad_response(response):
             response = _request_with_requests(url, headers, payload, method)
-        if response is None or _is_html_response(response):
+        if _is_bad_response(response):
             response = _request_with_tls(url, headers, payload, method)
-        if response is None or _is_html_response(response):
-            raise Exception("All request methods failed to connect (or returned HTML)")
+        if _is_bad_response(response):
+            raise Exception("All request methods failed (None, HTML, empty body, or server error)")
 
         # Auto-retry on auth failure
         if auth and response.status_code in (401, 403):
@@ -503,18 +515,18 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=False):
             if do_signin():
                 headers["Authorization"] = f"Bearer {access_token}"
                 response = _request_with_curl_cffi(url, headers, payload, method)
-                if response is None or _is_html_response(response):
+                if _is_bad_response(response):
                     response = _request_with_nodriver(url, headers, payload, method)
-                if response is None or _is_html_response(response):
+                if _is_bad_response(response):
                     response = _request_with_seleniumbase(url, headers, payload, method)
-                if response is None or _is_html_response(response):
+                if _is_bad_response(response):
                     response = _request_with_cloudscraper(url, headers, payload, method)
-                if response is None or _is_html_response(response):
+                if _is_bad_response(response):
                     response = _request_with_requests(url, headers, payload, method)
-                if response is None or _is_html_response(response):
+                if _is_bad_response(response):
                     response = _request_with_tls(url, headers, payload, method)
-                if response is None or _is_html_response(response):
-                    raise Exception("All request methods failed on retry (or returned HTML)")
+                if _is_bad_response(response):
+                    raise Exception("All request methods failed on retry (None, HTML, empty body, or server error)")
             else:
                 logger.error("Re-signin failed after auth error.")
 
@@ -848,6 +860,23 @@ def state_register_password(message):
     # Check for duplicate username
     if "DuplicateUserName" in raw_text or "already exists" in raw_text.lower() or "اسم المستخدم موجود" in raw_text:
         bot.send_message(uid, "❌ اسم المستخدم مستخدم بالفعل. ابدأ التسجيل باسم مختلف.")
+        user_states.pop(uid, None)
+        return
+
+    # Check for empty or failed response (non-JSON, server error, etc.)
+    if isinstance(result, dict) and "__raw__" in result:
+        if not raw_text.strip():
+            bot.send_message(
+                uid,
+                "❌ فشل في التسجيل: الخادم رد بخطأ داخلي (500) أو الرد فارغ.\n"
+                "قد تكون المشكلة مؤقتة من طرف الخادم. يرجى المحاولة بعد قليل."
+            )
+        else:
+            bot.send_message(
+                uid,
+                f"❌ فشل في التسجيل: رد غير متوقع من الخادم.\n\n"
+                f"{raw_text[:800]}"
+            )
         user_states.pop(uid, None)
         return
 
