@@ -80,16 +80,29 @@ users_list = []
 _signin_lock = threading.Lock()
 
 # =============================================================================
-# Residential Proxy Configuration
+# Canadian Residential Proxy (hardcoded for direct use)
 # =============================================================================
+# استبدل القيمة أدناه ببروكسي السكني الكندي الخاص بك
+# مثال: "http://user:pass@ca.proxy-provider.com:8080"
+CANADIAN_PROXY = "https://108.181.123.113:3128"
+
 RESIDENTIAL_PROXY = os.environ.get("RESIDENTIAL_PROXY", "").strip()
+
+def get_canadian_proxy():
+    """Returns the hardcoded Canadian proxy dict for curl_cffi."""
+    proxy_url = CANADIAN_PROXY
+    if not proxy_url.startswith("http"):
+        proxy_url = "http://" + proxy_url
+    return {"http": proxy_url, "https": proxy_url}
 
 def get_effective_proxy():
     """
     Returns proxy dict for requests/curl_cffi.
-    Priority: RESIDENTIAL_PROXY env var -> free proxy pool fallback.
+    Priority: CANADIAN_PROXY (hardcoded) -> RESIDENTIAL_PROXY env var -> free proxy pool fallback.
     Format expected: http://user:pass@host:port or host:port
     """
+    if CANADIAN_PROXY and "example.com" not in CANADIAN_PROXY:
+        return get_canadian_proxy()
     if RESIDENTIAL_PROXY:
         proxy_url = RESIDENTIAL_PROXY
         if not proxy_url.startswith("http"):
@@ -308,13 +321,15 @@ class FakeResponse:
 
 
 def _request_with_curl_cffi(url, headers, payload, method):
-    """Layer 1: curl_cffi with JA3 fingerprint + residential proxy support"""
+    """Layer 1: curl_cffi with JA3 fingerprint + Canadian proxy (forced)"""
     if not curl_cffi_requests:
         return None
-    proxy = get_effective_proxy()
+    # Force Canadian proxy for curl_cffi only
+    proxy = get_canadian_proxy()
     try:
         sess = curl_cffi_requests.Session(impersonate="chrome120")
-        proxies = proxy if proxy else None
+        proxies = proxy
+        logger.info(f"curl_cffi using Canadian proxy: {CANADIAN_PROXY}")
         if method.upper() == "GET":
             resp = sess.get(url, headers=headers, json=payload, timeout=15, verify=False, proxies=proxies)
         else:
