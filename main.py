@@ -76,6 +76,9 @@ owners_list = []
 admins_list = []
 users_list = []
 
+# Lock to serialize signin attempts across threads
+_signin_lock = threading.Lock()
+
 # =============================================================================
 # Residential Proxy Configuration
 # =============================================================================
@@ -260,9 +263,9 @@ def get_working_proxy():
     proxies = fetch_proxy_list()
     if not proxies:
         return None
+    # Use a lightweight endpoint to test proxies (faster than signIn)
     test_url = f"{PANEL_BASE}/global/api/UserApi/signIn"
-    test_payload = {"username": AGENT_USERNAME, "password": AGENT_PASSWORD}
-    for proxy_str in random.sample(proxies, min(len(proxies), 20)):
+    for proxy_str in random.sample(proxies, min(len(proxies), 5)):
         proxy_dict = {"http": f"http://{proxy_str}", "https": f"http://{proxy_str}"}
         try:
             logger.info(f"Testing proxy: {proxy_str}")
@@ -275,24 +278,16 @@ def get_working_proxy():
                     "Origin": "https://agents.texas4win.com",
                     "Referer": "https://agents.texas4win.com/"
                 },
-                json=test_payload,
+                json={"username": "", "password": ""},
                 proxies=proxy_dict,
-                timeout=15,
+                timeout=5,
                 verify=False
             )
             logger.info(f"Proxy {proxy_str} response status: {r.status_code}")
-            if r.status_code not in (403, 503, 429) and "Cloudflare" not in r.text and "Sorry, you have been blocked" not in r.text:
-                try:
-                    data = r.json()
-                    if isinstance(data, dict):
-                        _working_proxy = proxy_dict
-                        logger.info(f"Found working proxy: {proxy_str}")
-                        return _working_proxy
-                except:
-                    if r.status_code == 200:
-                        _working_proxy = proxy_dict
-                        logger.info(f"Found working proxy (200 OK): {proxy_str}")
-                        return _working_proxy
+            if r.status_code not in (403, 503, 429, 500) and "Cloudflare" not in r.text and "Sorry, you have been blocked" not in r.text:
+                _working_proxy = proxy_dict
+                logger.info(f"Found working proxy: {proxy_str}")
+                return _working_proxy
         except Exception as e:
             logger.debug(f"Proxy {proxy_str} failed: {e}")
             continue
@@ -321,9 +316,9 @@ def _request_with_curl_cffi(url, headers, payload, method):
         sess = curl_cffi_requests.Session(impersonate="chrome120")
         proxies = proxy if proxy else None
         if method.upper() == "GET":
-            resp = sess.get(url, headers=headers, json=payload, timeout=30, verify=False, proxies=proxies)
+            resp = sess.get(url, headers=headers, json=payload, timeout=15, verify=False, proxies=proxies)
         else:
-            resp = sess.post(url, headers=headers, json=payload, timeout=30, verify=False, proxies=proxies)
+            resp = sess.post(url, headers=headers, json=payload, timeout=15, verify=False, proxies=proxies)
         sess.close()
         return resp
     except Exception as e:
@@ -394,9 +389,9 @@ def _request_with_cloudscraper(url, headers, payload, method):
     try:
         proxies = proxy if proxy else None
         if method.upper() == "GET":
-            return cloud_scraper.get(url, headers=headers, json=payload, timeout=30, verify=False, proxies=proxies)
+            return cloud_scraper.get(url, headers=headers, json=payload, timeout=15, verify=False, proxies=proxies)
         else:
-            return cloud_scraper.post(url, headers=headers, json=payload, timeout=30, verify=False, proxies=proxies)
+            return cloud_scraper.post(url, headers=headers, json=payload, timeout=15, verify=False, proxies=proxies)
     except Exception as e:
         logger.warning(f"cloudscraper request failed: {e}")
         return None
@@ -410,9 +405,9 @@ def _request_with_requests(url, headers, payload, method):
     try:
         proxies = proxy if proxy else None
         if method.upper() == "GET":
-            return requests.get(url, headers=headers, json=payload, timeout=30, verify=False, proxies=proxies)
+            return requests.get(url, headers=headers, json=payload, timeout=15, verify=False, proxies=proxies)
         else:
-            return requests.post(url, headers=headers, json=payload, timeout=30, verify=False, proxies=proxies)
+            return requests.post(url, headers=headers, json=payload, timeout=15, verify=False, proxies=proxies)
     except Exception as e:
         logger.warning(f"requests fallback failed: {e}")
         return None
@@ -424,9 +419,9 @@ def _request_with_tls(url, headers, payload, method):
         return None
     try:
         if method.upper() == "GET":
-            return session.get(url, headers=headers, timeout_seconds=30)
+            return session.get(url, headers=headers, timeout_seconds=15)
         else:
-            return session.post(url, headers=headers, json=payload, timeout_seconds=30)
+            return session.post(url, headers=headers, json=payload, timeout_seconds=15)
     except Exception as e:
         logger.warning(f"tls_client request failed: {e}")
         return None
@@ -546,26 +541,27 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=False):
 
 def do_signin():
     global access_token, refresh_token
-    payload = {"username": AGENT_USERNAME, "password": AGENT_PASSWORD}
-    logger.info(f"Signing in with username: {AGENT_USERNAME}")
-    result = api_request("POST", "global/api/UserApi/signIn", payload)
-    if result is None:
-        logger.error("Sign in failed: API returned None (all clients failed or returned HTML)")
+    with _signin_lock:
+        payload = {"username": AGENT_USERNAME, "password": AGENT_PASSWORD}
+        logger.info(f"Signing in with username: {AGENT_USERNAME}")
+        result = api_request("POST", "global/api/UserApi/signIn", payload)
+        if result is None:
+            logger.error("Sign in failed: API returned None (all clients failed or returned HTML)")
+            return False
+        if isinstance(result, dict) and result.get("__raw__"):
+            raw_text = result["__raw__"]
+            if _is_html_response(raw_text):
+                logger.error(f"Sign in failed: API returned HTML instead of JSON (WAF/Cloudflare block detected). First 500 chars: {raw_text[:500]}")
+            else:
+                logger.error(f"Sign in failed: API returned non-JSON response: {raw_text[:500]}")
+            return False
+        if result and result.get("status") and isinstance(result.get("result"), dict):
+            access_token = result["result"].get("accessToken")
+            refresh_token = result["result"].get("refreshToken")
+            logger.info(f"Sign in OK. Token prefix: {access_token[:30] if access_token else 'None'}...")
+            return True
+        logger.error(f"Sign in failed: unexpected result: {result}")
         return False
-    if isinstance(result, dict) and result.get("__raw__"):
-        raw_text = result["__raw__"]
-        if _is_html_response(raw_text):
-            logger.error(f"Sign in failed: API returned HTML instead of JSON (WAF/Cloudflare block detected). First 500 chars: {raw_text[:500]}")
-        else:
-            logger.error(f"Sign in failed: API returned non-JSON response: {raw_text[:500]}")
-        return False
-    if result and result.get("status") and isinstance(result.get("result"), dict):
-        access_token = result["result"].get("accessToken")
-        refresh_token = result["result"].get("refreshToken")
-        logger.info(f"Sign in OK. Token prefix: {access_token[:30] if access_token else 'None'}...")
-        return True
-    logger.error(f"Sign in failed: unexpected result: {result}")
-    return False
 
 
 def get_agent_affiliate_id():
@@ -1524,6 +1520,14 @@ def set_webhook():
 # =============================================================================
 # Main
 # =============================================================================
+def _init_background():
+    """Background initialization: signin + affiliate ID fetch."""
+    if do_signin():
+        get_agent_affiliate_id()
+    else:
+        logger.error("Initial signin failed. API calls may fail until signin succeeds.")
+
+
 if __name__ == "__main__":
     load_owners()
     load_admins()
@@ -1537,10 +1541,10 @@ if __name__ == "__main__":
     logger.info(f"requests available: {bool(requests)}")
     logger.info(f"tls_client available: {bool(tls_client)}")
 
-    if do_signin():
-        get_agent_affiliate_id()
-    else:
-        logger.error("Initial signin failed. API calls may fail until signin succeeds.")
+    # Start server immediately so Render detects the port.
+    # Do signin in background to avoid blocking webhook health checks.
+    init_thread = threading.Thread(target=_init_background, daemon=True)
+    init_thread.start()
 
     refresh_thread = threading.Thread(target=token_refresh_loop, daemon=True)
     refresh_thread.start()
