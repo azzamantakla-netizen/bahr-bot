@@ -80,35 +80,153 @@ users_list = []
 _signin_lock = threading.Lock()
 
 # =============================================================================
-# Canadian Residential Proxy (hardcoded for direct use)
+# Dynamic Free Proxy Pool (auto-rotating, continuously refreshed)
 # =============================================================================
-# استبدل القيمة أدناه ببروكسي السكني الكندي الخاص بك
-# مثال: "http://user:pass@ca.proxy-provider.com:8080"
-CANADIAN_PROXY = "https://108.181.123.113:3128"
-
 RESIDENTIAL_PROXY = os.environ.get("RESIDENTIAL_PROXY", "").strip()
 
-def get_canadian_proxy():
-    """Returns the hardcoded Canadian proxy dict for curl_cffi."""
-    proxy_url = CANADIAN_PROXY
-    if not proxy_url.startswith("http"):
-        proxy_url = "http://" + proxy_url
-    return {"http": proxy_url, "https": proxy_url}
+# ---- Proxy pool globals ----
+_proxy_pool = []
+_proxy_pool_lock = threading.Lock()
+_proxy_pool_index = 0
+_proxy_last_refresh = 0
+_proxy_refresh_thread = None
+_proxy_refresh_interval = 45  # seconds between refreshes
+
+PROXY_SOURCES = [
+    "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=all&ssl=all&anonymity=all",
+    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
+    "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt",
+]
+
+
+def _fetch_proxy_sources():
+    """Fetch fresh proxies from multiple free sources."""
+    all_proxies = set()
+    if not requests:
+        logger.warning("requests module not available, cannot fetch proxies")
+        return []
+    for url in PROXY_SOURCES:
+        try:
+            resp = requests.get(url, timeout=10)
+            if resp.status_code == 200:
+                lines = [p.strip() for p in resp.text.strip().splitlines() if p.strip() and ":" in p]
+                all_proxies.update(lines)
+                logger.info(f"Fetched {len(lines)} proxies from {url[:60]}...")
+        except Exception as e:
+            logger.warning(f"Proxy source failed {url[:60]}: {e}")
+    proxies = list(all_proxies)
+    logger.info(f"Total unique proxies fetched: {len(proxies)}")
+    return proxies
+
+
+def _test_proxy(proxy_str):
+    """Quick health check: can the proxy reach the internet and the panel?"""
+    if not requests:
+        return False
+    proxy_dict = {"http": f"http://{proxy_str}", "https": f"http://{proxy_str}"}
+    try:
+        # Test 1: basic internet connectivity (very fast)
+        r = requests.get(
+            "http://httpbin.org/ip",
+            proxies=proxy_dict,
+            timeout=2,
+            verify=False
+        )
+        if r.status_code != 200:
+            return False
+    except Exception:
+        return False
+
+    # Test 2: can it touch the panel without being blocked?
+    try:
+        r2 = requests.get(
+            PANEL_BASE,
+            proxies=proxy_dict,
+            timeout=3,
+            verify=False,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+        )
+        if r2.status_code in (403, 429, 503):
+            return False
+        if "Cloudflare" in r2.text or "blocked" in r2.text.lower():
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def _refresh_proxy_pool():
+    """Refresh the working proxy pool in background."""
+    global _proxy_pool, _proxy_last_refresh
+    proxies = _fetch_proxy_sources()
+    if not proxies:
+        logger.warning("No proxies fetched from any source")
+        with _proxy_pool_lock:
+            _proxy_pool = []
+        return
+    # Test a random sample (max 10 to keep it fast)
+    test_candidates = random.sample(proxies, min(len(proxies), 10))
+    working = []
+    for proxy_str in test_candidates:
+        if _test_proxy(proxy_str):
+            working.append({"http": f"http://{proxy_str}", "https": f"http://{proxy_str}"})
+    with _proxy_pool_lock:
+        _proxy_pool = working
+        _proxy_last_refresh = time.time()
+    logger.info(f"Proxy pool refreshed: {len(working)} working proxies out of {len(test_candidates)} tested")
+
+
+def _proxy_refresh_loop():
+    """Daemon thread that keeps the proxy pool hot and auto-updated."""
+    while True:
+        try:
+            _refresh_proxy_pool()
+        except Exception as e:
+            logger.error(f"Proxy refresh loop error: {e}")
+        time.sleep(_proxy_refresh_interval)
+
+
+def _init_proxy_pool():
+    """Start the background proxy refresh thread."""
+    global _proxy_refresh_thread
+    if _proxy_refresh_thread is None or not _proxy_refresh_thread.is_alive():
+        _proxy_refresh_thread = threading.Thread(target=_proxy_refresh_loop, daemon=True)
+        _proxy_refresh_thread.start()
+        logger.info("Dynamic proxy refresh thread started (interval: 45s)")
+
+
+def get_next_proxy():
+    """Get next working proxy from the pool (round-robin)."""
+    global _proxy_pool_index
+    with _proxy_pool_lock:
+        if not _proxy_pool:
+            return None
+        proxy = _proxy_pool[_proxy_pool_index % len(_proxy_pool)]
+        _proxy_pool_index += 1
+        return proxy
+
 
 def get_effective_proxy():
     """
     Returns proxy dict for requests/curl_cffi.
-    Priority: CANADIAN_PROXY (hardcoded) -> RESIDENTIAL_PROXY env var -> free proxy pool fallback.
-    Format expected: http://user:pass@host:port or host:port
+    Priority: RESIDENTIAL_PROXY env var -> dynamic proxy pool -> direct connection.
     """
-    if CANADIAN_PROXY and "example.com" not in CANADIAN_PROXY:
-        return get_canadian_proxy()
     if RESIDENTIAL_PROXY:
         proxy_url = RESIDENTIAL_PROXY
         if not proxy_url.startswith("http"):
             proxy_url = "http://" + proxy_url
         return {"http": proxy_url, "https": proxy_url}
-    return get_working_proxy()
+    proxy = get_next_proxy()
+    if proxy:
+        return proxy
+    return None
+
+
+def get_working_proxy():
+    """Legacy alias for get_effective_proxy."""
+    return get_effective_proxy()
 
 # =============================================================================
 # curl_cffi Session (strongest for bypassing Cloudflare)
@@ -246,69 +364,6 @@ def decode_jwt_payload(token):
 
 
 # =============================================================================
-# Free Proxy Pool (fallback if no residential proxy is set)
-# =============================================================================
-_working_proxy = None
-
-def fetch_proxy_list():
-    """Fetch free proxy list from proxyscrape"""
-    if not requests:
-        logger.warning("requests module not available, cannot fetch proxies")
-        return []
-    try:
-        resp = requests.get(
-            "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all",
-            timeout=15
-        )
-        if resp.status_code == 200:
-            proxies = [p.strip() for p in resp.text.strip().split("\n") if p.strip() and ":" in p]
-            logger.info(f"Fetched {len(proxies)} proxies from proxyscrape")
-            return proxies
-    except Exception as e:
-        logger.warning(f"Failed to fetch proxy list: {e}")
-    return []
-
-
-def get_working_proxy():
-    global _working_proxy
-    if _working_proxy:
-        return _working_proxy
-    proxies = fetch_proxy_list()
-    if not proxies:
-        return None
-    # Use a lightweight endpoint to test proxies (faster than signIn)
-    test_url = f"{PANEL_BASE}/global/api/UserApi/signIn"
-    for proxy_str in random.sample(proxies, min(len(proxies), 5)):
-        proxy_dict = {"http": f"http://{proxy_str}", "https": f"http://{proxy_str}"}
-        try:
-            logger.info(f"Testing proxy: {proxy_str}")
-            r = requests.post(
-                test_url,
-                headers={
-                    "Content-Type": "application/json",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "Accept": "application/json, text/plain, */*",
-                    "Origin": "https://agents.texas4win.com",
-                    "Referer": "https://agents.texas4win.com/"
-                },
-                json={"username": "", "password": ""},
-                proxies=proxy_dict,
-                timeout=5,
-                verify=False
-            )
-            logger.info(f"Proxy {proxy_str} response status: {r.status_code}")
-            if r.status_code not in (403, 503, 429, 500) and "Cloudflare" not in r.text and "Sorry, you have been blocked" not in r.text:
-                _working_proxy = proxy_dict
-                logger.info(f"Found working proxy: {proxy_str}")
-                return _working_proxy
-        except Exception as e:
-            logger.debug(f"Proxy {proxy_str} failed: {e}")
-            continue
-    logger.warning("No working proxy found")
-    return None
-
-
-# =============================================================================
 # HTTP Request Layers (ordered by strength)
 # =============================================================================
 class FakeResponse:
@@ -321,15 +376,15 @@ class FakeResponse:
 
 
 def _request_with_curl_cffi(url, headers, payload, method):
-    """Layer 1: curl_cffi with JA3 fingerprint + Canadian proxy (forced)"""
+    """Layer 1: curl_cffi with JA3 fingerprint + auto-rotating free proxy"""
     if not curl_cffi_requests:
         return None
-    # Force Canadian proxy for curl_cffi only
-    proxy = get_canadian_proxy()
+    proxy = get_effective_proxy()
     try:
         sess = curl_cffi_requests.Session(impersonate="chrome120")
         proxies = proxy
-        logger.info(f"curl_cffi using Canadian proxy: {CANADIAN_PROXY}")
+        if proxy:
+            logger.info(f"curl_cffi using proxy: {proxy}")
         if method.upper() == "GET":
             resp = sess.get(url, headers=headers, json=payload, timeout=45, verify=False, proxies=proxies)
         else:
@@ -1555,6 +1610,9 @@ if __name__ == "__main__":
     logger.info(f"cloudscraper available: {bool(cloudscraper)}")
     logger.info(f"requests available: {bool(requests)}")
     logger.info(f"tls_client available: {bool(tls_client)}")
+
+    # Start proxy pool refresh immediately
+    _init_proxy_pool()
 
     # Start server immediately so Render detects the port.
     # Do signin in background to avoid blocking webhook health checks.
