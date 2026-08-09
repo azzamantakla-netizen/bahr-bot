@@ -7,6 +7,7 @@ import base64
 import random
 import string
 import asyncio
+import urllib.parse
 from flask import Flask, request, abort
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
@@ -483,6 +484,85 @@ def _request_with_requests(url, headers, payload, method):
         return None
 
 
+# =============================================================================
+# Cloud Gateways (AllOrigins + CORSProxy) — Steps 1-12
+# =============================================================================
+def _request_with_cloud_gateways(url, headers, payload, method):
+    """
+    Unified cloud gateway fallback using AllOrigins + CORSProxy.
+    Follows the 12-step structured approach for bypassing geo-blocks and CORS.
+    """
+    # Step 1: Endpoint already provided as 'url' parameter.
+    # Step 2: Build a list of cloud gateway configurations.
+    gateways = []
+    encoded_url = urllib.parse.quote(url, safe='')
+    if method.upper() == "GET":
+        gateways.append({
+            "name": "AllOrigins",
+            "url": f"https://api.allorigins.win/raw?url={encoded_url}",
+            "method": "GET"
+        })
+    else:
+        gateways.append({
+            "name": "AllOrigins",
+            "url": f"https://api.allorigins.win/post?url={encoded_url}",
+            "method": "POST"
+        })
+    gateways.append({
+        "name": "CORSProxy",
+        "url": f"https://corsproxy.io/?{encoded_url}",
+        "method": method.upper()
+    })
+
+    # Step 3: Prepare browser fingerprint and headers (simulating Chrome 110).
+    # Step 4: Auth token already embedded in the passed 'headers' dict.
+    req_headers = dict(headers)
+    req_headers["User-Agent"] = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/110.0.0.0 Safari/537.36"
+    )
+    req_headers["Accept"] = "application/json, text/plain, */*"
+    req_headers["Accept-Language"] = "en-US,en;q=0.9"
+    req_headers["Origin"] = "https://agents.texas4win.com"
+    req_headers["Referer"] = "https://agents.texas4win.com/"
+
+    # Step 5: Start the for-loop to iterate through each gateway sequentially.
+    for gw in gateways:
+        # Step 6: Print attempt event to the logs.
+        logger.info(f"[Cloud Gateway] Attempting {gw['name']} → {url[:120]}")
+        try:
+            # Step 7: Send the POST/GET request simulating Chrome 110.
+            # Step 8: Set short timeout of 15 seconds.
+            if gw["method"] == "GET":
+                response = requests.get(gw["url"], headers=req_headers, timeout=15, verify=False)
+            else:
+                response = requests.post(gw["url"], headers=req_headers, json=payload, timeout=15, verify=False)
+
+            # Step 9: Check for successful server response code 200.
+            if response.status_code == 200:
+                # Step 10: Convert / decode response data into JSON format.
+                try:
+                    json_data = response.json()
+                    logger.info(f"[Cloud Gateway] {gw['name']} succeeded — JSON parsed.")
+                    # Wrap parsed JSON inside a FakeResponse so it fits the existing layer architecture.
+                    return FakeResponse(json.dumps(json_data, ensure_ascii=False), 200)
+                except Exception:
+                    # If the body is not JSON but the status is 200, return the raw response object.
+                    logger.info(f"[Cloud Gateway] {gw['name']} succeeded — raw response.")
+                    return response
+            else:
+                logger.warning(f"[Cloud Gateway] {gw['name']} returned HTTP {response.status_code}")
+        # Step 11: Handle errors and skip to the next alternative gateway.
+        except Exception as e:
+            logger.warning(f"[Cloud Gateway] {gw['name']} failed: {e}")
+            continue
+
+    # Step 12: All gateways failed — return None.
+    logger.error("[Cloud Gateway] All cloud gateways failed after exhausting the list.")
+    return None
+
+
 def _request_with_tls(url, headers, payload, method):
     """Layer 6: tls_client"""
     if not session:
@@ -558,8 +638,9 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=False):
         # 2. nodriver (real Chrome CDP)
         # 3. seleniumbase UC Mode (undetected Chrome)
         # 4. cloudscraper
-        # 5. requests
-        # 6. tls_client
+        # 5. standard requests
+        # 6. Cloud Gateways (AllOrigins + CORSProxy) — unified Steps 1-12
+        # 7. tls_client
         response = _request_with_curl_cffi(url, headers, payload, method)
         if _is_bad_response(response):
             response = _request_with_nodriver(url, headers, payload, method)
@@ -569,6 +650,8 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=False):
             response = _request_with_cloudscraper(url, headers, payload, method)
         if _is_bad_response(response):
             response = _request_with_requests(url, headers, payload, method)
+        if _is_bad_response(response):
+            response = _request_with_cloud_gateways(url, headers, payload, method)
         if _is_bad_response(response):
             response = _request_with_tls(url, headers, payload, method)
         if _is_bad_response(response):
@@ -588,6 +671,8 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=False):
                     response = _request_with_cloudscraper(url, headers, payload, method)
                 if _is_bad_response(response):
                     response = _request_with_requests(url, headers, payload, method)
+                if _is_bad_response(response):
+                    response = _request_with_cloud_gateways(url, headers, payload, method)
                 if _is_bad_response(response):
                     response = _request_with_tls(url, headers, payload, method)
                 if _is_bad_response(response):
