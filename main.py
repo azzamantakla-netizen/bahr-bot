@@ -65,7 +65,7 @@ RENDER_URL = "https://bahr-bot-c3ac.onrender.com"
 AGENT_USERNAME = "Bero@yahoo.com"
 AGENT_PASSWORD = "Aazzam@318"
 SHAM_CASH_WALLET = "a18758d5324eb7595d4463ca355ad221"
-SYRIATEL_CASH_CODE = "48122120"
+SYRIATEL_CASH_CODE = "481 22120"
 
 OWNERS_FILE = "owners.txt"
 ADMINS_FILE = "admins.txt"
@@ -432,6 +432,24 @@ def _request_with_tls(url, headers, payload, method):
         return None
 
 
+def _is_html_response(response):
+    """Detect if a response body is HTML instead of expected JSON."""
+    if not response:
+        return False
+    if isinstance(response, str):
+        text = response.strip()
+    elif hasattr(response, "text"):
+        text = (response.text or "").strip()
+    else:
+        return False
+    return (
+        text.startswith("<")
+        or "<html" in text.lower()
+        or "<!doctype" in text.lower()
+        or "<head" in text.lower()
+    )
+
+
 # =============================================================================
 # Unified API Request
 # =============================================================================
@@ -466,18 +484,18 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=False):
         # 5. requests
         # 6. tls_client
         response = _request_with_curl_cffi(url, headers, payload, method)
-        if response is None:
+        if response is None or _is_html_response(response):
             response = _request_with_nodriver(url, headers, payload, method)
-        if response is None:
+        if response is None or _is_html_response(response):
             response = _request_with_seleniumbase(url, headers, payload, method)
-        if response is None:
+        if response is None or _is_html_response(response):
             response = _request_with_cloudscraper(url, headers, payload, method)
-        if response is None:
+        if response is None or _is_html_response(response):
             response = _request_with_requests(url, headers, payload, method)
-        if response is None:
+        if response is None or _is_html_response(response):
             response = _request_with_tls(url, headers, payload, method)
-        if response is None:
-            raise Exception("All request methods failed to connect")
+        if response is None or _is_html_response(response):
+            raise Exception("All request methods failed to connect (or returned HTML)")
 
         # Auto-retry on auth failure
         if auth and response.status_code in (401, 403):
@@ -485,18 +503,18 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=False):
             if do_signin():
                 headers["Authorization"] = f"Bearer {access_token}"
                 response = _request_with_curl_cffi(url, headers, payload, method)
-                if response is None:
+                if response is None or _is_html_response(response):
                     response = _request_with_nodriver(url, headers, payload, method)
-                if response is None:
+                if response is None or _is_html_response(response):
                     response = _request_with_seleniumbase(url, headers, payload, method)
-                if response is None:
+                if response is None or _is_html_response(response):
                     response = _request_with_cloudscraper(url, headers, payload, method)
-                if response is None:
+                if response is None or _is_html_response(response):
                     response = _request_with_requests(url, headers, payload, method)
-                if response is None:
+                if response is None or _is_html_response(response):
                     response = _request_with_tls(url, headers, payload, method)
-                if response is None:
-                    raise Exception("All request methods failed on retry")
+                if response is None or _is_html_response(response):
+                    raise Exception("All request methods failed on retry (or returned HTML)")
             else:
                 logger.error("Re-signin failed after auth error.")
 
@@ -519,12 +537,22 @@ def do_signin():
     payload = {"username": AGENT_USERNAME, "password": AGENT_PASSWORD}
     logger.info(f"Signing in with username: {AGENT_USERNAME}")
     result = api_request("POST", "global/api/UserApi/signIn", payload)
+    if result is None:
+        logger.error("Sign in failed: API returned None (all clients failed or returned HTML)")
+        return False
+    if isinstance(result, dict) and result.get("__raw__"):
+        raw_text = result["__raw__"]
+        if _is_html_response(raw_text):
+            logger.error(f"Sign in failed: API returned HTML instead of JSON (WAF/Cloudflare block detected). First 500 chars: {raw_text[:500]}")
+        else:
+            logger.error(f"Sign in failed: API returned non-JSON response: {raw_text[:500]}")
+        return False
     if result and result.get("status") and isinstance(result.get("result"), dict):
         access_token = result["result"].get("accessToken")
         refresh_token = result["result"].get("refreshToken")
         logger.info(f"Sign in OK. Token prefix: {access_token[:30] if access_token else 'None'}...")
         return True
-    logger.error(f"Sign in failed: {result}")
+    logger.error(f"Sign in failed: unexpected result: {result}")
     return False
 
 
@@ -680,6 +708,9 @@ def handle_account(message):
             f"💰 العملة: {player.get('currency', 'EUR')}\n\n"
             f"للتحقق من رصيدك، تواصل مع الدعم الفني."
         )
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("🗑️ حذف الحساب", callback_data="delete_account"))
+        bot.send_message(message.from_user.id, text, reply_markup=markup)
     else:
         text = (
             "📝 ليس لديك حساب مسجل بعد.\n\n"
@@ -688,8 +719,6 @@ def handle_account(message):
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("✅ نعم، إنشاء حساب", callback_data="register_now"))
         bot.send_message(message.from_user.id, text, reply_markup=markup)
-        return
-    bot.send_message(message.from_user.id, text, reply_markup=main_menu_markup(message.from_user.id))
 
 
 @bot.message_handler(func=lambda m: m.text == "📥 إيداع / شحن رصيد")
@@ -777,7 +806,8 @@ def state_register_password(message):
     email = f"{username.lower()}{random.randint(1000,9999)}@gmail.com"
     first_name = username
     last_name = "Player"
-    parent_id = "2688288"
+    # Use agent affiliate id as integer parentId
+    parent_id_val = int(agent_affiliate_id) if agent_affiliate_id else 2688288
 
     bot.send_message(uid, "⏳ جاري معالجة التسجيل...")
 
@@ -785,20 +815,37 @@ def state_register_password(message):
         "login": username,
         "email": email,
         "password": password,
-        "parentId": parent_id,
+        "parentId": parent_id_val,
         "firstName": first_name,
         "lastName": last_name
     }
 
-    result = api_request("POST", "global/api/UserApi/registerPlayer", payload, add_delay=True)
+    logger.info(f"REGISTER PAYLOAD: {json.dumps(payload, ensure_ascii=False)}")
+
+    # auth=True is required so the player is created under the logged-in agent
+    result = api_request("POST", "global/api/UserApi/registerPlayer", payload, auth=True, add_delay=True)
+
+    logger.info(f"REGISTER RESULT type={type(result)} | content={json.dumps(result, ensure_ascii=False) if isinstance(result, dict) else str(result)[:2000]}")
 
     if result is None:
         bot.send_message(uid, "❌ فشل الاتصال بالخادم. حاول مرة أخرى لاحقاً.")
         user_states.pop(uid, None)
         return
 
-    # Check for duplicate username
+    # Check for Cloudflare/WAF HTML block
     raw_text = result.get("__raw__", "")
+    if raw_text and (raw_text.strip().startswith("<") or "<html" in raw_text.lower()):
+        logger.warning(f"Cloudflare/WAF HTML block detected during registration for user {uid}")
+        bot.send_message(
+            uid,
+            "⚠️ تم حظر الطلب بواسطة جدار الحماية (Cloudflare).\n"
+            "الحساب قد لا يكون قد تم إنشاؤه فعلياً.\n\n"
+            "يرجى الانتظار قليلاً ثم المحاولة مرة أخرى."
+        )
+        user_states.pop(uid, None)
+        return
+
+    # Check for duplicate username
     if "DuplicateUserName" in raw_text or "already exists" in raw_text.lower() or "اسم المستخدم موجود" in raw_text:
         bot.send_message(uid, "❌ اسم المستخدم مستخدم بالفعل. ابدأ التسجيل باسم مختلف.")
         user_states.pop(uid, None)
@@ -806,10 +853,55 @@ def state_register_password(message):
 
     if isinstance(result, dict) and result.get("status"):
         player_id = None
-        if isinstance(result.get("result"), dict):
-            player_id = result["result"].get("playerId") or result["result"].get("id")
+        result_data = result.get("result")
+        if isinstance(result_data, dict):
+            player_id = result_data.get("playerId") or result_data.get("id")
+        elif isinstance(result_data, (int, str)):
+            player_id = result_data
+
+        if not player_id or str(player_id) in ("", "0", "None", "null"):
+            bot.send_message(
+                uid,
+                f"❌ فشل في التسجيل: الرد لا يحتوي على معرف لاعب صالح.\n\n"
+                f"رد الخادم: {json.dumps(result, ensure_ascii=False)[:800]}"
+            )
+            user_states.pop(uid, None)
+            return
+
+        # Verify player actually exists in agent panel
+        bot.send_message(uid, "🔍 جاري التحقق من إنشاء الحساب في لوحة التحكم...")
+        verify_payload = {
+            "start": 0,
+            "limit": 10,
+            "filter": {"login": username},
+            "isNextPage": False
+        }
+        verify_result = api_request("POST", "global/api/UserApi/getPlayersForCurrentAgent", verify_payload, auth=True)
+        logger.info(f"VERIFY RESULT for user {uid}: {json.dumps(verify_result, ensure_ascii=False) if isinstance(verify_result, dict) else str(verify_result)[:1000]}")
+
+        verified = False
+        if isinstance(verify_result, dict) and verify_result.get("status"):
+            v_data = verify_result.get("result", {})
+            if isinstance(v_data, dict):
+                records = v_data.get("records", [])
+                if isinstance(records, list):
+                    for rec in records:
+                        if isinstance(rec, dict) and rec.get("login") == username:
+                            verified = True
+                            break
+
+        if not verified:
+            bot.send_message(
+                uid,
+                "⚠️ تم استلام تأكيد من الخادم، لكن لم يتم العثور على الحساب في لوحة التحكم.\n"
+                "قد يكون هناك مشكلة مؤقتة أو تأخير في التحديث.\n\n"
+                "يرجى المحاولة مرة أخرى بعد بضع دقائق."
+            )
+            user_states.pop(uid, None)
+            return
+
         players_db[str(uid)] = {
-            "player_id": str(player_id) if player_id else "unknown",
+            "player_id": str(player_id),
             "username": username,
             "email": email,
             "currency": "EUR"
@@ -820,16 +912,20 @@ def state_register_password(message):
             f"✅ تم إنشاء الحساب بنجاح!\n\n"
             f"👤 اسم المستخدم: {username}\n"
             f"📧 البريد: {email}\n"
-            f"🆔 معرف اللاعب: {player_id or 'غير معروف'}\n\n"
+            f"🆔 معرف اللاعب: {player_id}\n\n"
             f"يمكنك الآن الإيداع واللعب!",
             reply_markup=main_menu_markup(uid)
         )
     else:
         error_msg = "Unknown error"
         if result and isinstance(result, dict) and result.get("notification"):
-            error_msg = result["notification"][0].get("content", "Unknown error")
+            notif = result["notification"]
+            if isinstance(notif, list) and len(notif) > 0:
+                error_msg = notif[0].get("content", "Unknown error")
+            elif isinstance(notif, dict):
+                error_msg = notif.get("content", "Unknown error")
         elif raw_text:
-            error_msg = raw_text[:500]
+            error_msg = raw_text[:800]
         bot.send_message(uid, f"❌ فشل في التسجيل: {error_msg}")
 
     user_states.pop(uid, None)
@@ -1089,6 +1185,24 @@ def cb_register_now(call):
     state_data[uid] = {}
     bot.send_message(uid, "👤 أرسل اسم المستخدم المطلوب (حروف إنجليزية وأرقام فقط):")
     bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "delete_account")
+def cb_delete_account(call):
+    uid = str(call.from_user.id)
+    if uid in players_db:
+        removed = players_db.pop(uid)
+        save_players_db(players_db)
+        bot.send_message(
+            call.from_user.id,
+            f"🗑️ تم حذف بيانات الحساب المحلية بنجاح.\n\n"
+            f"👤 اسم المستخدم المحذوف: {removed.get('username', 'غير معروف')}\n\n"
+            f"يمكنك الآن إنشاء حساب جديد إذا أردت."
+        )
+        bot.answer_callback_query(call.id, "✅ تم الحذف")
+    else:
+        bot.send_message(call.from_user.id, "❌ لا يوجد حساب مسجل لديك.")
+        bot.answer_callback_query(call.id, "❌ لا يوجد حساب")
 
 
 # =============================================================================
