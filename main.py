@@ -175,6 +175,78 @@ def admin_panel_markup():
     return markup
 
 # =============================================================================
+# Proxy Handling
+# =============================================================================
+PROXY_TYPE = os.environ.get("PROXY_TYPE", "").lower().strip()  # http, socks5, socks4
+
+def _detect_proxy_type(proxy_url):
+    """Auto-detect proxy type from URL scheme or port."""
+    if not proxy_url:
+        return "http"
+    p = proxy_url.lower()
+    if p.startswith("socks5://") or p.startswith("socks5h://"):
+        return "socks5"
+    if p.startswith("socks4://") or p.startswith("socks4a://"):
+        return "socks4"
+    if p.startswith("http://") or p.startswith("https://"):
+        return "http"
+    # Port-based detection
+    if ":9999" in p or ":1080" in p or ":1085" in p or ":4145" in p:
+        return "socks5"
+    return "http"
+
+def _normalize_proxy_url(proxy_url, force_type=None):
+    """Return (type, url) normalized for the library being used."""
+    if not proxy_url:
+        return None, None
+    ptype = force_type or PROXY_TYPE or _detect_proxy_type(proxy_url)
+    p = proxy_url.strip()
+    # Ensure scheme
+    if "//" not in p:
+        if ptype == "socks5":
+            p = f"socks5://{p}"
+        elif ptype == "socks4":
+            p = f"socks4://{p}"
+        else:
+            p = f"http://{p}"
+    return ptype, p
+
+def _mask_proxy_url(url):
+    """Mask credentials for safe logging."""
+    if not url:
+        return "none"
+    try:
+        # Replace user:pass@ with ***@
+        return re.sub(r"//[^:]+:[^@]+@", "//***@", url)
+    except Exception:
+        return url
+
+# Build normalized proxy list
+_NORMALIZED_PROXIES = []
+for _px in _BASE_PROXIES:
+    _t, _u = _normalize_proxy_url(_px)
+    if _u:
+        _NORMALIZED_PROXIES.append((_t, _u))
+
+if _NORMALIZED_PROXIES:
+    for _t, _u in _NORMALIZED_PROXIES:
+        logger.info(f"Proxy configured: {_mask_proxy_url(_u)} (type={_t})")
+    if any(t == "socks5" for t, u in _NORMALIZED_PROXIES):
+        logger.info("SOCKS5 proxy detected. curl_cffi will handle it natively.")
+else:
+    logger.warning("No proxy configured. Cloudflare may block your IP.")
+
+# Check if we have SOCKS5 and requests lacks support
+try:
+    import socks  # PySocks
+    PYSOCKS_AVAILABLE = True
+    logger.info("PySocks available — requests/cloudscraper can use SOCKS proxies")
+except Exception:
+    PYSOCKS_AVAILABLE = False
+    if any(t in ("socks5", "socks4") for t, u in _NORMALIZED_PROXIES):
+        logger.warning("PySocks NOT installed — requests/cloudscraper will fail with SOCKS proxy. Install: pip install requests[socks]")
+
+# =============================================================================
 # API Request
 # =============================================================================
 import cloudscraper
@@ -199,22 +271,23 @@ _scraper = cloudscraper.create_scraper(
 
 _proxy_rotation_index = 0
 
-def _get_proxies(rotate=False):
-    """Return proxy dict. If rotate=True, cycles through PROXY_LIST."""
+def _get_next_proxy():
+    """Return (type, url) tuple for the next proxy in rotation."""
     global _proxy_rotation_index
-    if not _BASE_PROXIES:
-        return {}
-    if rotate and len(_BASE_PROXIES) > 1:
-        proxy = _BASE_PROXIES[_proxy_rotation_index % len(_BASE_PROXIES)]
-        _proxy_rotation_index += 1
-    else:
-        proxy = _BASE_PROXIES[0]
-    return {"http": proxy, "https": proxy}
+    if not _NORMALIZED_PROXIES:
+        return None, None
+    ptype, purl = _NORMALIZED_PROXIES[_proxy_rotation_index % len(_NORMALIZED_PROXIES)]
+    _proxy_rotation_index += 1
+    return ptype, purl
 
-def _get_proxy_url():
-    """Return current proxy URL string for logging."""
-    proxies = _get_proxies()
-    return proxies.get("http", "none") if proxies else "none"
+def _proxy_to_requests_dict(ptype, purl):
+    """Convert proxy to requests-style dict."""
+    if not purl:
+        return {}
+    # For requests, SOCKS5 needs socks5:// prefix and PySocks
+    if ptype in ("socks5", "socks4") and not PYSOCKS_AVAILABLE:
+        logger.warning("SOCKS proxy configured but PySocks not installed. requests/cloudscraper will likely fail. Install: pip install requests[socks]")
+    return {"http": purl, "https": purl}
 
 # List of curl_cffi impersonations to try (in order)
 CURL_CFFI_IMPERSONATIONS = ["chrome120", "chrome119", "chrome116", "chrome110", "chrome107"]
@@ -230,9 +303,10 @@ def _create_curl_session(impersonate="chrome120"):
         logger.warning(f"curl_cffi impersonate '{impersonate}' failed: {e}")
         return None
 
-def _request_with_curl_cffi(method, url, headers, payload, proxies, timeout=30):
-    """Make request using curl_cffi with Chrome impersonation.
-    Tries multiple impersonation profiles in order."""
+def _request_with_curl_cffi(method, url, headers, payload, ptype, purl, timeout=30):
+    """Make request using curl_cffi with browser impersonation.
+    Tries multiple impersonation profiles in order.
+    Uses proxy string (singular) for curl_cffi compatibility."""
     if not CURL_CFFI_AVAILABLE:
         return None
     last_error = None
@@ -244,8 +318,10 @@ def _request_with_curl_cffi(method, url, headers, payload, proxies, timeout=30):
             kwargs = {"headers": headers, "timeout": timeout}
             if payload is not None:
                 kwargs["json"] = payload
-            if proxies:
-                kwargs["proxies"] = proxies
+            # curl_cffi uses 'proxy' (singular string) more reliably than 'proxies' dict
+            if purl:
+                kwargs["proxy"] = purl
+                logger.info(f"  curl_cffi using proxy={_mask_proxy_url(purl)}")
             if method.upper() == "GET":
                 resp = session.get(url, **kwargs)
             elif method.upper() == "POST":
@@ -289,22 +365,19 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
     # -------------------------------------------------------------------------
     # Try all configured proxies + no-proxy (if none configured)
     # -------------------------------------------------------------------------
-    proxy_candidates = []
-    if _BASE_PROXIES:
-        proxy_candidates = [p for p in _BASE_PROXIES]
-    else:
-        proxy_candidates = [None]  # no proxy
+    proxy_candidates = [(None, None)]  # always try no-proxy last
+    if _NORMALIZED_PROXIES:
+        proxy_candidates = [(t, u) for t, u in _NORMALIZED_PROXIES] + [(None, None)]
 
-    for proxy_url in proxy_candidates:
-        proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else {}
-        proxy_label = proxy_url if proxy_url else "no-proxy"
-        logger.info(f"Trying with proxy: {proxy_label}")
+    for ptype, purl in proxy_candidates:
+        proxy_label = _mask_proxy_url(purl) if purl else "no-proxy"
+        logger.info(f"Trying with proxy: {proxy_label} (type={ptype or 'direct'})")
 
-        # Strategy 1: curl_cffi with browser impersonation
+        # Strategy 1: curl_cffi with browser impersonation (BEST for Cloudflare)
         if CURL_CFFI_AVAILABLE:
             try:
                 logger.info(f"  → curl_cffi + {proxy_label}")
-                resp = _request_with_curl_cffi(method, url, headers, payload, proxies, timeout=30)
+                resp = _request_with_curl_cffi(method, url, headers, payload, ptype, purl, timeout=30)
                 if resp is not None:
                     if resp.status_code == 200:
                         logger.info(f"API response (curl_cffi/{proxy_label}): {resp.status_code}")
@@ -320,6 +393,7 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
         # Strategy 2: cloudscraper (with proxy if available)
         try:
             logger.info(f"  → cloudscraper + {proxy_label}")
+            proxies = _proxy_to_requests_dict(ptype, purl)
             resp = _scraper.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
             if resp.status_code == 200:
                 logger.info(f"API response (cloudscraper/{proxy_label}): {resp.status_code}")
@@ -345,10 +419,11 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
             logger.error(f"  cloudscraper error: {e}")
 
         # Strategy 3: plain requests with proxy
-        if proxies:
+        if purl:
             try:
                 logger.info(f"  → requests + {proxy_label}")
                 import requests
+                proxies = _proxy_to_requests_dict(ptype, purl)
                 resp = requests.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
                 logger.info(f"API response (requests/{proxy_label}): {resp.status_code}")
                 try:
@@ -366,10 +441,10 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
         if do_signin():
             headers["Authorization"] = f"Bearer {access_token}"
             # Try first proxy again after re-signin
-            best_proxy = _get_proxies()
+            ptype, purl = _get_next_proxy()
             if CURL_CFFI_AVAILABLE:
                 try:
-                    resp = _request_with_curl_cffi(method, url, headers, payload, best_proxy, timeout=30)
+                    resp = _request_with_curl_cffi(method, url, headers, payload, ptype, purl, timeout=30)
                     if resp is not None and resp.status_code == 200:
                         try:
                             return resp.json()
@@ -378,7 +453,8 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
                 except Exception:
                     pass
             try:
-                resp = _scraper.request(method, url, json=payload, headers=headers, proxies=best_proxy, timeout=30)
+                proxies = _proxy_to_requests_dict(ptype, purl)
+                resp = _scraper.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
                 if resp.status_code == 200:
                     try:
                         return resp.json()
@@ -389,11 +465,14 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
         else:
             logger.error("Re-signin failed")
 
-    logger.error("=" * 60)
-    logger.error("All request strategies failed on ALL proxies.")
-    logger.error("Cloudflare is blocking this IP — add RESIDENTIAL_PROXY.")
-    logger.error("Get a free proxy: https://www.webshare.io")
-    logger.error("=" * 60)
+    global _proxy_fail_logged
+    if not _proxy_fail_logged:
+        _proxy_fail_logged = True
+        logger.error("=" * 60)
+        logger.error("All request strategies failed on ALL proxies.")
+        logger.error("Cloudflare is blocking this IP — add RESIDENTIAL_PROXY.")
+        logger.error("Get a free proxy: https://www.webshare.io")
+        logger.error("=" * 60)
     return None
 
 
@@ -1248,12 +1327,13 @@ load_admins()
 load_users_list()
 load_players_db()
 
-_proxy_warn_logged = False
-
 logger.info(f"RESIDENTIAL_PROXY env: {'SET' if RESIDENTIAL_PROXY else 'NOT SET'}")
 logger.info(f"PROXY_LIST env: {len(PROXY_LIST)} proxies configured")
 logger.info(f"curl_cffi available: {CURL_CFFI_AVAILABLE}")
 logger.info("Bot initialized. Starting...")
+
+_proxy_warn_logged = False
+_proxy_fail_logged = False
 
 def _init_background():
     """Background initialization: signin + get affiliate ID."""
@@ -1265,16 +1345,33 @@ def _init_background():
         else:
             if not _proxy_warn_logged:
                 _proxy_warn_logged = True
-                logger.error(
-                    "=" * 70 + "\n"
-                    "  SIGNIN FAILED — Cloudflare is blocking your Render IP.\n"
-                    "  The ONLY way to fix this is to add a RESIDENTIAL PROXY.\n\n"
-                    "  1) Get a free proxy from https://www.webshare.io (free tier)\n"
-                    "  2) In Render Dashboard → Environment → add:\n"
-                    "     RESIDENTIAL_PROXY=http://user:pass@host:port\n"
-                    "  3) Redeploy\n"
-                    "=" * 70
-                )
+                if _NORMALIZED_PROXIES:
+                    proxy_info = ", ".join(f"{_mask_proxy_url(u)} ({t})" for t, u in _NORMALIZED_PROXIES)
+                    logger.error(
+                        "=" * 70 + "\n"
+                        "  SIGNIN FAILED — Proxy is configured but still blocked.\n"
+                        f"  Proxies: {proxy_info}\n"
+                        "  Possible causes:\n"
+                        "  • Proxy credentials are wrong\n"
+                        "  • Proxy IP is also blocked by Cloudflare\n"
+                        "  • SOCKS5 proxy needs PySocks (pip install requests[socks])\n"
+                        "  • Proxy is not rotating residential\n\n"
+                        "  Try a different residential proxy provider.\n"
+                        "=" * 70
+                    )
+                else:
+                    logger.error(
+                        "=" * 70 + "\n"
+                        "  SIGNIN FAILED — Cloudflare is blocking your Render IP.\n"
+                        "  The ONLY way to fix this is to add a RESIDENTIAL PROXY.\n\n"
+                        "  1) Get a free proxy from https://www.webshare.io (free tier)\n"
+                        "  2) In Render Dashboard → Environment → add:\n"
+                        "     RESIDENTIAL_PROXY=http://user:pass@host:port\n"
+                        "     OR for SOCKS5:\n"
+                        "     RESIDENTIAL_PROXY=socks5://user:pass@host:port\n"
+                        "  3) Redeploy\n"
+                        "=" * 70
+                    )
     except Exception as e:
         logger.error(f"Background init error: {e}")
 
