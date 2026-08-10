@@ -11,7 +11,24 @@ from datetime import datetime
 from flask import Flask, request, abort
 from telebot import TeleBot, types
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
-from retrying import retry
+import functools, time as _time
+
+def _retry(max_attempts=3, delay=1, backoff=2, max_delay=10):
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            attempt, current_delay = 1, delay
+            while True:
+                try:
+                    return fn(*args, **kwargs)
+                except Exception:
+                    if attempt >= max_attempts:
+                        raise
+                    _time.sleep(min(current_delay, max_delay))
+                    attempt += 1
+                    current_delay *= backoff
+        return wrapper
+    return decorator
 
 # =============================================================================
 # Logging
@@ -155,7 +172,7 @@ def admin_panel_markup():
 # =============================================================================
 # API Request
 # =============================================================================
-@retry(stop_max_attempt_number=3, wait_exponential_multiplier=1000, wait_exponential_max=10000)
+@_retry(max_attempts=3, delay=1, backoff=2, max_delay=10)
 def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
     global access_token
     import requests
