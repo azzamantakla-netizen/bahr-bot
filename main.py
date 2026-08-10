@@ -198,40 +198,51 @@ def _get_proxies():
         return {"http": RESIDENTIAL_PROXY, "https": RESIDENTIAL_PROXY}
     return {}
 
-def _create_curl_session():
+# List of curl_cffi impersonations to try (in order)
+CURL_CFFI_IMPERSONATIONS = ["chrome120", "chrome119", "chrome116", "chrome110", "chrome107"]
+
+def _create_curl_session(impersonate="chrome120"):
     """Create a curl_cffi session with browser impersonation."""
     if not CURL_CFFI_AVAILABLE:
         return None
     try:
-        session = curl_requests.Session(impersonate="chrome124")
+        session = curl_requests.Session(impersonate=impersonate)
         return session
     except Exception as e:
-        logger.error(f"Failed to create curl_cffi session: {e}")
+        logger.warning(f"curl_cffi impersonate '{impersonate}' failed: {e}")
         return None
 
 def _request_with_curl_cffi(method, url, headers, payload, proxies, timeout=30):
-    """Make request using curl_cffi with Chrome impersonation."""
+    """Make request using curl_cffi with Chrome impersonation.
+    Tries multiple impersonation profiles in order."""
     if not CURL_CFFI_AVAILABLE:
         return None
-    try:
-        session = _create_curl_session()
-        if not session:
-            return None
-        kwargs = {"headers": headers, "timeout": timeout}
-        if payload is not None:
-            kwargs["json"] = payload
-        if proxies:
-            kwargs["proxies"] = proxies
-        if method.upper() == "GET":
-            resp = session.get(url, **kwargs)
-        elif method.upper() == "POST":
-            resp = session.post(url, **kwargs)
-        else:
-            resp = session.request(method, url, **kwargs)
-        return resp
-    except Exception as e:
-        logger.error(f"curl_cffi request failed: {e}")
-        return None
+    last_error = None
+    for impersonate in CURL_CFFI_IMPERSONATIONS:
+        try:
+            session = _create_curl_session(impersonate)
+            if not session:
+                continue
+            kwargs = {"headers": headers, "timeout": timeout}
+            if payload is not None:
+                kwargs["json"] = payload
+            if proxies:
+                kwargs["proxies"] = proxies
+            if method.upper() == "GET":
+                resp = session.get(url, **kwargs)
+            elif method.upper() == "POST":
+                resp = session.post(url, **kwargs)
+            else:
+                resp = session.request(method, url, **kwargs)
+            logger.info(f"curl_cffi success with impersonate={impersonate}, status={resp.status_code}")
+            return resp
+        except Exception as e:
+            last_error = e
+            logger.warning(f"curl_cffi impersonate '{impersonate}' request failed: {e}")
+            continue
+    if last_error:
+        logger.error(f"curl_cffi all impersonations failed. Last error: {last_error}")
+    return None
 
 @_retry(max_attempts=3, delay=1, backoff=2, max_delay=10)
 def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
@@ -259,7 +270,26 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
     proxies = _get_proxies()
 
     # -------------------------------------------------------------------------
-    # Strategy 1: cloudscraper (with proxy if available)
+    # Strategy 1: curl_cffi with browser impersonation (best for Render / blocked IPs)
+    # -------------------------------------------------------------------------
+    if CURL_CFFI_AVAILABLE:
+        try:
+            logger.info("Trying curl_cffi with browser impersonation...")
+            resp = _request_with_curl_cffi(method, url, headers, payload, proxies, timeout=30)
+            if resp is not None:
+                if resp.status_code == 200:
+                    logger.info(f"API response (curl_cffi): {resp.status_code}")
+                    try:
+                        return resp.json()
+                    except Exception:
+                        return {"__raw__": resp.text}
+                else:
+                    logger.warning(f"curl_cffi got status: {resp.status_code}")
+        except Exception as e:
+            logger.error(f"curl_cffi error: {e}")
+
+    # -------------------------------------------------------------------------
+    # Strategy 2: cloudscraper (with proxy if available)
     # -------------------------------------------------------------------------
     try:
         resp = _scraper.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
@@ -287,25 +317,6 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
         logger.error(f"cloudscraper error: {e}")
 
     # -------------------------------------------------------------------------
-    # Strategy 2: curl_cffi with Chrome impersonation (often bypasses Cloudflare)
-    # -------------------------------------------------------------------------
-    if CURL_CFFI_AVAILABLE:
-        try:
-            logger.info("Trying curl_cffi with Chrome impersonation...")
-            resp = _request_with_curl_cffi(method, url, headers, payload, proxies, timeout=30)
-            if resp is not None:
-                if resp.status_code == 200:
-                    logger.info(f"API response (curl_cffi): {resp.status_code}")
-                    try:
-                        return resp.json()
-                    except Exception:
-                        return {"__raw__": resp.text}
-                else:
-                    logger.warning(f"curl_cffi got status: {resp.status_code}")
-        except Exception as e:
-            logger.error(f"curl_cffi error: {e}")
-
-    # -------------------------------------------------------------------------
     # Strategy 3: last resort — plain requests with full proxy (if proxy set)
     # -------------------------------------------------------------------------
     if proxies:
@@ -328,13 +339,24 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
         logger.warning("Auth failed, re-signing in...")
         if do_signin():
             headers["Authorization"] = f"Bearer {access_token}"
+            # Try all strategies again after re-signin
+            if CURL_CFFI_AVAILABLE:
+                try:
+                    resp = _request_with_curl_cffi(method, url, headers, payload, proxies, timeout=30)
+                    if resp is not None and resp.status_code == 200:
+                        try:
+                            return resp.json()
+                        except Exception:
+                            return {"__raw__": resp.text}
+                except Exception:
+                    pass
             try:
                 resp = _scraper.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
-                logger.info(f"API response (after re-signin): {resp.status_code}")
-                try:
-                    return resp.json()
-                except Exception:
-                    return {"__raw__": resp.text}
+                if resp.status_code == 200:
+                    try:
+                        return resp.json()
+                    except Exception:
+                        return {"__raw__": resp.text}
             except Exception as e:
                 logger.error(f"Re-signin request error: {e}")
         else:
