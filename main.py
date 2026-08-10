@@ -11,7 +11,7 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
 # =============================================================================
-# المكتبة الأساسية لتخطي الحماية (تغني عن كافة المكتبات الأخرى وتخترق كلافلير)
+# المحرك الفائق لتخطي حماية Cloudflare (بصمة متصفح حقيقية)
 # =============================================================================
 try:
     from curl_cffi import requests as curl_requests
@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# الإعدادات والتهيئة الأساسية
+# الإعدادات الحساسة والتهيئة الأساسية
 # =============================================================================
 BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
 OWNER_ID = 6693251012
@@ -51,7 +51,7 @@ bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
 
 # =============================================================================
-# مجمع البروكسيات المجاني التلقائي والذكي لحل مشكلة الـ IP
+# مجمع البروكسيات المجاني التلقائي لحل مشكلة حظر الـ IP
 # =============================================================================
 RESIDENTIAL_PROXY = os.environ.get("RESIDENTIAL_PROXY", "").strip()
 _proxy_pool = []
@@ -73,9 +73,10 @@ def _refresh_proxy_pool():
                 all_proxies.update([p.strip() for p in resp.text.splitlines() if ":" in p])
         except Exception:
             continue
-    with _proxy_pool_lock:
-        _proxy_pool = [{"http": f"http://{p}", "https": f"http://{p}"} for p in random.sample(list(all_proxies), min(len(all_proxies), 30))]
-    logger.info(f"تم تحديث مجمع البروكسيات بنجاح. عدد البروكسيات الشغالة: {len(_proxy_pool)}")
+    if all_proxies:
+        with _proxy_pool_lock:
+            _proxy_pool = [{"http": f"http://{p}", "https": f"http://{p}"} for p in random.sample(list(all_proxies), min(len(all_proxies), 30))]
+        logger.info(f"✓ تم تحديث مجمع البروكسيات. متاح حالياً: {len(_proxy_pool)}")
 
 def _proxy_refresh_loop():
     while True:
@@ -125,14 +126,15 @@ def decode_jwt_payload(token):
     try:
         parts = token.split(".")
         if len(parts) >= 2:
-            payload = parts[1] + "=" * (4 - len(parts[1]) % 4)
-            return json.loads(base64.b64decode(payload))
+            payload = parts[1]
+            payload += "=" * (4 - len(payload) % 4)
+            return json.loads(base64.b64decode(payload).decode('utf-8'))
     except Exception:
         pass
     return {}
 
 # =============================================================================
-# محرك الطلبات الموحد والفائق (خارج الصندوق لمواجهة Cloudflare)
+# محرك الطلبات الموحد والذكي لتجاوز حماية كلافلير بالتراجع التكيفي
 # =============================================================================
 def api_request(method, endpoint, payload=None, auth=False, add_delay=False):
     global access_token
@@ -150,14 +152,12 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=False):
         headers["Authorization"] = f"Bearer {access_token}"
         
     if add_delay:
-        time.sleep(random.uniform(2, 4)) # تأخير بشري تكيفي لمنع الحظر
+        time.sleep(random.uniform(2, 4))
         
     proxy = get_effective_proxy()
     
-    # استخدام محاكاة المتصفح الفائقة ومقاومة الحظر عبر التراجع الذكي
     for attempt in range(3):
         try:
-            # تدوير عشوائي لبيانات المتصفح لخداع كلافلير
             headers["User-Agent"] = f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{random.randint(118, 122)}.0.0.0 Safari/537.36"
             
             if hasattr(curl_requests, "Session"):
@@ -171,7 +171,7 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=False):
                 
             text = (resp.text or "").strip()
             if resp.status_code in (403, 429, 503) or "<html" in text.lower() or text.startswith("<"):
-                logger.warning(f"تم رصد جدار حماية في المحاولة {attempt+1}، جاري تبديل الـ IP وإعادة المحاولة...")
+                logger.warning(f"⚠️ تم رصد حماية كلافلير في المحاولة {attempt+1}، جاري تغيير الـ IP...")
                 proxy = get_effective_proxy()
                 time.sleep(2)
                 continue
@@ -183,29 +183,30 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=False):
                     
             return resp.json() if hasattr(resp, "json") else json.loads(text)
         except Exception as e:
-            logger.error(f"خطأ في إرسال الطلب: {e}")
+            logger.error(f"خطأ اتصال في المحاولة {attempt+1}: {e}")
             proxy = get_effective_proxy()
             time.sleep(1)
             
-    # الخيار السحابي الأخير عند تعطل كل شيء (AllOrigins Backup Gateway)
+    # البوابة السحابية الاحتياطية الأخيرة (AllOrigins Backend)
     try:
         encoded_url = urllib.parse.quote(url, safe='')
         gateway_url = f"https://allorigins.win{encoded_url}" if method.upper() == "GET" else f"https://allorigins.win{encoded_url}"
         r = curl_requests.post(gateway_url, headers=headers, json=payload, timeout=15, verify=False)
         return r.json()
     except Exception:
-        return {"__raw__": "All layers failed"}
+        return {"__raw__": "All request methods failed"}
 
 def do_signin():
     global access_token, refresh_token
     with _signin_lock:
-        logger.info(f"جاري تسجيل دخول الوكيل بضمير: {AGENT_USERNAME}")
+        logger.info(f"جاري تسجيل دخول حساب الوكيل بضمير: {AGENT_USERNAME}")
         res = api_request("POST", "global/api/UserApi/signIn", {"username": AGENT_USERNAME, "password": AGENT_PASSWORD})
         if res and isinstance(res, dict) and res.get("status") and isinstance(res.get("result"), dict):
             access_token = res["result"].get("accessToken")
             refresh_token = res["result"].get("refreshToken")
+            logger.info("✓ تم تسجيل الدخول بنجاح وتحديث الـ Token")
             return True
-        logger.error("فشل تسجيل الدخول التلقائي للوكيل.")
+        logger.error("❌ فشل تسجيل دخول الوكيل في لوحة التحكم.")
         return False
 
 def get_agent_affiliate_id():
@@ -220,11 +221,11 @@ def get_agent_affiliate_id():
 
 def token_refresh_loop():
     while True:
-        time.sleep(30 * 60) # تحديث كل 30 دقيقة لضمان عدم الانقطاع
+        time.sleep(30 * 60) # تحديث تلقائي آمن كل 30 من الدقائق لمنع الانقطاع
         do_signin()
 
 # =============================================================================
-# القوائم التفاعلية وأزرار البوت (تم تصحيح الترميز بالكامل)
+# تنظيف وتصحيح ترميز القوائم وأزرار التحكم
 # =============================================================================
 def main_menu_markup(user_id):
     is_owner = str(user_id) == str(OWNER_ID) or str(user_id) in owners_list
@@ -237,3 +238,5 @@ def back_markup():
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add(KeyboardButton("🔙 رجوع"))
     return markup
+
+def show_admin_panel(chat_id, message_id=None):
