@@ -1059,24 +1059,28 @@ def set_webhook():
 
 
 # =============================================================================
-# Main
+# Initialization (runs on module import — required for Gunicorn)
+# =============================================================================
+load_owners()
+load_admins()
+load_users_list()
+load_players_db()
+
+logger.info(f"RESIDENTIAL_PROXY env: {'SET' if RESIDENTIAL_PROXY else 'NOT SET'}")
+logger.info("Bot initialized. Starting...")
+
+init_thread = threading.Thread(target=lambda: do_signin() and get_agent_affiliate_id(), daemon=True)
+init_thread.start()
+
+refresh_thread = threading.Thread(target=token_refresh_loop, daemon=True)
+refresh_thread.start()
+
+set_webhook()
+logger.info("Webhook set. Ready for updates.")
+
+# =============================================================================
+# Main (local dev only — Gunicorn ignores this block)
 # =============================================================================
 if __name__ == "__main__":
-    load_owners()
-    load_admins()
-    load_users_list()
-    load_players_db()
-
-    logger.info(f"RESIDENTIAL_PROXY env: {'SET' if RESIDENTIAL_PROXY else 'NOT SET'}")
-    logger.info("Bot initialized. Starting...")
-
-    init_thread = threading.Thread(target=lambda: do_signin() and get_agent_affiliate_id(), daemon=True)
-    init_thread.start()
-
-    refresh_thread = threading.Thread(target=token_refresh_loop, daemon=True)
-    refresh_thread.start()
-
-    set_webhook()
-
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
