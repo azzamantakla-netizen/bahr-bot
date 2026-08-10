@@ -50,9 +50,13 @@ SHAM_CASH_WALLET = os.environ.get("SHAM_CASH_WALLET", "")
 SYRIATEL_CASH_CODE = os.environ.get("SYRIATEL_CASH_CODE", "")
 RESIDENTIAL_PROXY = os.environ.get("RESIDENTIAL_PROXY", "")
 PROXY_LIST = [p.strip() for p in os.environ.get("PROXY_LIST", "").split(",") if p.strip()]
+THORDATA_TOKEN = os.environ.get("THORDATA_TOKEN", "")
+THORDATA_RESIDENTIAL_PROXY = os.environ.get("THORDATA_RESIDENTIAL_PROXY", "")
 _BASE_PROXIES = []
 if RESIDENTIAL_PROXY:
     _BASE_PROXIES.append(RESIDENTIAL_PROXY)
+if THORDATA_RESIDENTIAL_PROXY:
+    _BASE_PROXIES.append(THORDATA_RESIDENTIAL_PROXY)
 _BASE_PROXIES.extend(PROXY_LIST)
 
 BASE_API = "https://agents.texas4win.com/"
@@ -236,6 +240,11 @@ if _NORMALIZED_PROXIES:
 else:
     logger.warning("No proxy configured. Cloudflare may block your IP.")
 
+if THORDATA_TOKEN:
+    logger.info("Thordata Web Unlocker token configured — will use as primary bypass")
+else:
+    logger.warning("THORDATA_TOKEN not set — Thordata Web Unlocker disabled")
+
 # Check if we have SOCKS5 and requests lacks support
 try:
     import socks  # PySocks
@@ -338,6 +347,70 @@ def _request_with_curl_cffi(method, url, headers, payload, ptype, purl, timeout=
         logger.error(f"curl_cffi all impersonations failed. Last error: {last_error}")
     return None
 
+
+# -------------------------------------------------------------------------
+# Thordata Web Unlocker (primary bypass strategy)
+# -------------------------------------------------------------------------
+def _thordata_unlocker_request(method, url, *, headers=None, payload=None, timeout=30):
+    """
+    Send a request via Thordata Web Unlocker API.
+    Uses POST https://universalapi.thordata.com/request with Bearer token.
+    Returns a minimal response object with status_code, text, json().
+    """
+    unlock_url = "https://universalapi.thordata.com/request"
+    thordata_headers = {
+        "Authorization": f"Bearer {THORDATA_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    post_data = {
+        "url": url,
+        "type": "html",
+        "js_render": True,
+        "header": False,
+        "country": "us",
+        "clean_content": "js,css",
+        "wait": 5000,
+    }
+    try:
+        import requests
+        resp = requests.post(unlock_url, json=post_data, headers=thordata_headers, timeout=timeout)
+    except Exception as e:
+        logger.error(f"Thordata Web Unlocker network error: {e}")
+        return None
+
+    if resp.status_code != 200:
+        logger.warning(f"Thordata Web Unlocker returned {resp.status_code}: {resp.text[:200]}")
+        return resp
+
+    # Thordata returns the target page in resp.text (HTML or JSON string)
+    raw_text = resp.text
+    status_code = 200
+
+    # Try to parse as JSON if the target API returns JSON
+    if raw_text.strip().startswith("{"):
+        class FakeResponse:
+            def __init__(self, status_code, text, json_data):
+                self.status_code = status_code
+                self.text = text
+                self._json_data = json_data
+            def json(self):
+                return self._json_data
+        try:
+            json_data = json.loads(raw_text)
+            return FakeResponse(200, raw_text, json_data)
+        except Exception:
+            pass
+
+    # For non-JSON responses wrap in a minimal fake response
+    class FakeResponse:
+        def __init__(self, status_code, text):
+            self.status_code = status_code
+            self.text = text
+        def json(self):
+            return json.loads(self.text)
+    return FakeResponse(200, raw_text)
+
+
 @_retry(max_attempts=3, delay=1, backoff=2, max_delay=10)
 def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
     global access_token
@@ -361,6 +434,25 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
         time.sleep(random.uniform(1, 3))
 
     logger.info(f"API {method} {url}")
+
+    # -------------------------------------------------------------------------
+    # Strategy 0: Thordata Web Unlocker (primary bypass)
+    # -------------------------------------------------------------------------
+    if THORDATA_TOKEN:
+        try:
+            logger.info(f"  → Thordata Web Unlocker (primary bypass)")
+            resp = _thordata_unlocker_request(method, url, headers=headers, payload=payload, timeout=30)
+            if resp is not None:
+                if resp.status_code == 200:
+                    logger.info(f"API response (Thordata Web Unlocker): {resp.status_code}")
+                    try:
+                        return resp.json()
+                    except Exception:
+                        return {"__raw__": resp.text}
+                else:
+                    logger.warning(f"  Thordata Web Unlocker got {resp.status_code}")
+        except Exception as e:
+            logger.error(f"  Thordata Web Unlocker error: {e}")
 
     # -------------------------------------------------------------------------
     # Try all configured proxies + no-proxy (if none configured)
@@ -470,7 +562,11 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
         _proxy_fail_logged = True
         logger.error("=" * 60)
         logger.error("All request strategies failed on ALL proxies.")
-        logger.error("Cloudflare is blocking this IP — add RESIDENTIAL_PROXY.")
+        if not THORDATA_TOKEN:
+            logger.error("Cloudflare is blocking this IP.")
+            logger.error("Add THORDATA_TOKEN for Web Unlocker bypass, or add RESIDENTIAL_PROXY.")
+        else:
+            logger.error("Thordata Web Unlocker also failed — check token validity or add RESIDENTIAL_PROXY fallback.")
         logger.error("Get a free proxy: https://www.webshare.io")
         logger.error("=" * 60)
     return None
@@ -1352,20 +1448,22 @@ def _init_background():
                         "  SIGNIN FAILED — Proxy is configured but still blocked.\n"
                         f"  Proxies: {proxy_info}\n"
                         "  Possible causes:\n"
+                        "  • Thordata token may be invalid or the Web Unlocker API is down\n"
                         "  • Proxy credentials are wrong\n"
                         "  • Proxy IP is also blocked by Cloudflare\n"
                         "  • SOCKS5 proxy needs PySocks (pip install requests[socks])\n"
                         "  • Proxy is not rotating residential\n\n"
-                        "  Try a different residential proxy provider.\n"
+                        "  Try adding THORDATA_TOKEN for Web Unlocker, or a different residential proxy.\n"
                         "=" * 70
                     )
                 else:
                     logger.error(
                         "=" * 70 + "\n"
                         "  SIGNIN FAILED — Cloudflare is blocking your Render IP.\n"
-                        "  The ONLY way to fix this is to add a RESIDENTIAL PROXY.\n\n"
-                        "  1) Get a free proxy from https://www.webshare.io (free tier)\n"
-                        "  2) In Render Dashboard → Environment → add:\n"
+                        "  The PRIMARY fix is to add a THORDATA_TOKEN for Web Unlocker.\n\n"
+                        "  1) In Render Dashboard → Environment → add:\n"
+                        "     THORDATA_TOKEN=your_token_here\n"
+                        "  2) Optionally also add a residential proxy as fallback:\n"
                         "     RESIDENTIAL_PROXY=http://user:pass@host:port\n"
                         "     OR for SOCKS5:\n"
                         "     RESIDENTIAL_PROXY=socks5://user:pass@host:port\n"
