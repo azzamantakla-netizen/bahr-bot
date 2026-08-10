@@ -1,7 +1,4 @@
-Flask>=2.3
-pyTelegramBotAPI>=4.14
-curl_cffi>=0.6
-cloudscraper>=1.2.71
-tls_client>=1.0
-nodriver>=0.29
-seleniumbase>=4.24
+pyTelegramBotAPI
+Flask
+curl_cffi
+requests
