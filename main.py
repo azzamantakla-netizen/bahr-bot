@@ -172,10 +172,20 @@ def admin_panel_markup():
 # =============================================================================
 # API Request
 # =============================================================================
+import cloudscraper
+
+# Cloudflare-aware session (reused across requests)
+_scraper = cloudscraper.create_scraper(
+    browser={
+        'browser': 'chrome',
+        'platform': 'windows',
+        'mobile': False
+    }
+)
+
 @_retry(max_attempts=3, delay=1, backoff=2, max_delay=10)
 def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
     global access_token
-    import requests
 
     url = f"{BASE_API}{endpoint}"
     headers = {
@@ -199,13 +209,26 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
         if RESIDENTIAL_PROXY:
             proxies = {"http": RESIDENTIAL_PROXY, "https": RESIDENTIAL_PROXY}
 
-        resp = requests.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
+        # Use cloudscraper to bypass Cloudflare challenges
+        resp = _scraper.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
 
-        if auth and resp.status_code in (401, 403):
+        # If blocked, refresh scraper session and retry once
+        if resp.status_code == 403 and "cloudflare" in resp.text.lower():
+            logger.warning("Cloudflare block detected, creating fresh session...")
+            fresh_scraper = cloudscraper.create_scraper(
+                browser={
+                    'browser': 'chrome',
+                    'platform': 'windows',
+                    'mobile': False
+                }
+            )
+            resp = fresh_scraper.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
+
+        if auth and resp.status_code in (401, 403) and "cloudflare" not in resp.text.lower():
             logger.warning("Auth failed, re-signing in...")
             if do_signin():
                 headers["Authorization"] = f"Bearer {access_token}"
-                resp = requests.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
+                resp = _scraper.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
             else:
                 logger.error("Re-signin failed")
 
