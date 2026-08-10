@@ -1,821 +1,166 @@
 import os
+import re
 import json
 import time
-import threading
-import logging
-import base64
 import random
-import string
-import asyncio
-import urllib.parse
+import logging
+import threading
+import base64
+import html
+from datetime import datetime
 from flask import Flask, request, abort
-import telebot
+from telebot import TeleBot, types
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from retrying import retry
 
 # =============================================================================
-# HTTP Clients (loaded gracefully)
+# Logging
 # =============================================================================
-try:
-    import tls_client
-except Exception:
-    tls_client = None
-
-try:
-    import requests
-except Exception:
-    requests = None
-
-try:
-    from curl_cffi import requests as curl_cffi_requests
-except Exception:
-    curl_cffi_requests = None
-
-try:
-    import cloudscraper
-except Exception:
-    cloudscraper = None
-
-try:
-    import nodriver as uc
-except Exception:
-    uc = None
-
-try:
-    from seleniumbase import SB
-except Exception:
-    SB = None
-
-# ---- Anti-Bot / Stealth libraries ----
-try:
-    import requests_random_user_agent
-except Exception:
-    requests_random_user_agent = None
-
-try:
-    import scrapling
-except Exception:
-    scrapling = None
-
-# ---- SOCKS proxy support for Tor ----
-try:
-    import urllib3.contrib.socks
-    SOCKS_AVAILABLE = True
-except Exception:
-    SOCKS_AVAILABLE = False
-
-try:
-    import socks
-    import socket
-    SOCKS_PY_AVAILABLE = True
-except Exception:
-    SOCKS_PY_AVAILABLE = False
-
-# ---- Tor subprocess support (auto-start tor if binary available) ----
-_tor_subprocess = None
-
-def _ensure_tor_proxy():
-    """
-    If TOR_SOCKS_PROXY is set, ensure it is reachable.
-    If not set and 'tor' binary is available, try to start a local tor subprocess.
-    Returns True if a Tor proxy is available, False otherwise.
-    """
-    global _tor_subprocess
-    if TOR_SOCKS_PROXY:
-        return True
-    try:
-        import subprocess, shutil
-        tor_bin = shutil.which("tor")
-        if not tor_bin:
-            return False
-        logger.info("[Tor] Starting local tor subprocess...")
-        _tor_subprocess = subprocess.Popen(
-            [tor_bin, "--SocksPort", "9050", "--ControlPort", "0", "--DataDirectory", "/tmp/tor_data"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        time.sleep(5)
-        os.environ["TOR_SOCKS_PROXY"] = "socks5h://127.0.0.1:9050"
-        logger.info("[Tor] Local tor started on socks5h://127.0.0.1:9050")
-        return True
-    except Exception as e:
-        logger.warning(f"[Tor] Failed to start local tor: {e}")
-        return False
-
-# =============================================================================
-# Logging Setup
-# =============================================================================
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# Base Configuration
+# Environment & Config
 # =============================================================================
-BOT_TOKEN = "8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE"
-OWNER_ID = 6693251012
-ADMIN_GROUP_ID = -1003983996094
-PANEL_BASE = "https://agents.texas4win.com"
-RENDER_URL = "https://bahr-bot-c3ac.onrender.com"
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN")
+RENDER_URL = os.environ.get("RENDER_URL", "https://your-render-app.onrender.com")
+OWNER_ID = os.environ.get("OWNER_ID", "")
+ADMIN_GROUP_ID = os.environ.get("ADMIN_GROUP_ID", "")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin")
+AGENT_USERNAME = os.environ.get("AGENT_USERNAME", "")
+AGENT_PASSWORD = os.environ.get("AGENT_PASSWORD", "")
+SHAM_CASH_WALLET = os.environ.get("SHAM_CASH_WALLET", "")
+SYRIATEL_CASH_CODE = os.environ.get("SYRIATEL_CASH_CODE", "")
+RESIDENTIAL_PROXY = os.environ.get("RESIDENTIAL_PROXY", "")
 
-AGENT_USERNAME = "Bero@yahoo.com"
-AGENT_PASSWORD = "Aazzam@318"
-SHAM_CASH_WALLET = "a18758d5324eb7595d4463ca355ad221"
-SYRIATEL_CASH_CODE = "481 22120"
-
-OWNERS_FILE = "owners.txt"
-ADMINS_FILE = "admins.txt"
-USERS_FILE = "users.txt"
-PLAYERS_DB_FILE = "players_db.json"
-
-owners_list = []
-admins_list = []
-users_list = []
-
-# Lock to serialize signin attempts across threads
-_signin_lock = threading.Lock()
+BASE_API = "https://agents.texas4win.com/"
+OWNERS_FILE = "owners.json"
+ADMINS_FILE = "admins.json"
+USERS_FILE = "users.json"
+PLAYERS_FILE = "players.json"
 
 # =============================================================================
-# Advanced Proxy Configuration (Residential + WireGuard + Tor + Premium + Free)
+# Global State
 # =============================================================================
-# 1. Residential / Paid proxy (highest priority — e.g. Bright Data, Smartproxy, Oxylabs)
-RESIDENTIAL_PROXY = os.environ.get("RESIDENTIAL_PROXY", "").strip()
-
-# 2. WireGuard tunnel proxy (HTTP/S proxy endpoint through a WG tunnel)
-WIREGUARD_PROXY = os.environ.get("WIREGUARD_PROXY", "").strip()
-
-# 3. Tor SOCKS5 proxy (e.g. socks5h://127.0.0.1:9050 or external Tor daemon)
-TOR_SOCKS_PROXY = os.environ.get("TOR_SOCKS_PROXY", "").strip()
-
-# 4. Premium proxy list (comma-separated rotating paid proxies)
-PREMIUM_PROXIES = [p.strip() for p in os.environ.get("PREMIUM_PROXIES", "").split(",") if p.strip()]
-
-# ---- Proxy pool globals ----
-_proxy_pool = []
-_proxy_pool_lock = threading.Lock()
-_proxy_pool_index = 0
-_proxy_last_refresh = 0
-_proxy_refresh_thread = None
-_proxy_refresh_interval = 45  # seconds between refreshes
-
-PROXY_SOURCES = [
-    "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=all&ssl=all&anonymity=all",
-    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
-    "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt",
-]
-
-
-def _fetch_proxy_sources():
-    """Fetch fresh proxies from multiple free sources."""
-    all_proxies = set()
-    if not requests:
-        logger.warning("requests module not available, cannot fetch proxies")
-        return []
-    for url in PROXY_SOURCES:
-        try:
-            resp = requests.get(url, timeout=10)
-            if resp.status_code == 200:
-                lines = [p.strip() for p in resp.text.strip().splitlines() if p.strip() and ":" in p]
-                all_proxies.update(lines)
-                logger.info(f"Fetched {len(lines)} proxies from {url[:60]}...")
-        except Exception as e:
-            logger.warning(f"Proxy source failed {url[:60]}: {e}")
-    proxies = list(all_proxies)
-    logger.info(f"Total unique proxies fetched: {len(proxies)}")
-    return proxies
-
-
-def _test_proxy(proxy_str):
-    """Quick health check: can the proxy reach the internet and the panel?"""
-    if not requests:
-        return False
-    proxy_dict = {"http": f"http://{proxy_str}", "https": f"http://{proxy_str}"}
-    try:
-        # Test 1: basic internet connectivity (lenient timeout for slow free proxies)
-        r = requests.get(
-            "http://httpbin.org/ip",
-            proxies=proxy_dict,
-            timeout=8,
-            verify=False
-        )
-        if r.status_code != 200:
-            return False
-    except Exception:
-        return False
-
-    # Test 2: can it touch the panel without being blocked?
-    try:
-        r2 = requests.get(
-            PANEL_BASE,
-            proxies=proxy_dict,
-            timeout=10,
-            verify=False,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            }
-        )
-        if r2.status_code in (403, 429, 503):
-            return False
-        if "Cloudflare" in r2.text or "blocked" in r2.text.lower():
-            return False
-        return True
-    except Exception:
-        # Even if panel test fails, accept proxy if httpbin worked
-        # (panel might geo-block the proxy IP but the proxy still works for other requests)
-        return True
-
-
-def _refresh_proxy_pool():
-    """Refresh the working proxy pool in background."""
-    global _proxy_pool, _proxy_last_refresh
-    proxies = _fetch_proxy_sources()
-    if not proxies:
-        logger.warning("No proxies fetched from any source")
-        with _proxy_pool_lock:
-            _proxy_pool = []
-        return
-    # Test a larger random sample (max 50 to find more working proxies)
-    test_candidates = random.sample(proxies, min(len(proxies), 50))
-    working = []
-    for proxy_str in test_candidates:
-        if _test_proxy(proxy_str):
-            working.append({"http": f"http://{proxy_str}", "https": f"http://{proxy_str}"})
-    with _proxy_pool_lock:
-        _proxy_pool = working
-        _proxy_last_refresh = time.time()
-    logger.info(f"Proxy pool refreshed: {len(working)} working proxies out of {len(test_candidates)} tested")
-
-
-def _proxy_refresh_loop():
-    """Daemon thread that keeps the proxy pool hot and auto-updated."""
-    while True:
-        try:
-            _refresh_proxy_pool()
-        except Exception as e:
-            logger.error(f"Proxy refresh loop error: {e}")
-        time.sleep(_proxy_refresh_interval)
-
-
-def _init_proxy_pool():
-    """Start the background proxy refresh thread."""
-    global _proxy_refresh_thread
-    if _proxy_refresh_thread is None or not _proxy_refresh_thread.is_alive():
-        _proxy_refresh_thread = threading.Thread(target=_proxy_refresh_loop, daemon=True)
-        _proxy_refresh_thread.start()
-        logger.info("Dynamic proxy refresh thread started (interval: 45s)")
-
-
-def get_next_proxy():
-    """Get next working proxy from the pool (round-robin)."""
-    global _proxy_pool_index
-    with _proxy_pool_lock:
-        if not _proxy_pool:
-            return None
-        proxy = _proxy_pool[_proxy_pool_index % len(_proxy_pool)]
-        _proxy_pool_index += 1
-        return proxy
-
-
-def _normalize_proxy_url(proxy_url):
-    """Ensure proxy URL starts with a scheme."""
-    if not proxy_url:
-        return None
-    proxy_url = proxy_url.strip()
-    if not proxy_url.startswith(("http://", "https://", "socks5://", "socks5h://", "socks4://")):
-        proxy_url = "http://" + proxy_url
-    return proxy_url
-
-
-def get_effective_proxy():
-    """
-    Returns proxy dict for requests/curl_cffi.
-    Priority (highest → lowest):
-      1. RESIDENTIAL_PROXY   (paid residential proxy)
-      2. WIREGUARD_PROXY     (WireGuard tunnel HTTP proxy)
-      3. PREMIUM_PROXIES     (rotating paid proxy list)
-      4. TOR_SOCKS_PROXY     (Tor SOCKS5 proxy)
-      5. Dynamic free pool   (auto-rotating free proxies)
-      6. Direct connection   (no proxy)
-    """
-    # 1. Residential / paid proxy (highest priority)
-    if RESIDENTIAL_PROXY:
-        url = _normalize_proxy_url(RESIDENTIAL_PROXY)
-        logger.info(f"[Proxy] Using residential proxy: {url[:60]}...")
-        return {"http": url, "https": url}
-
-    # 2. WireGuard tunnel proxy
-    if WIREGUARD_PROXY:
-        url = _normalize_proxy_url(WIREGUARD_PROXY)
-        logger.info(f"[Proxy] Using WireGuard tunnel proxy: {url[:60]}...")
-        return {"http": url, "https": url}
-
-    # 3. Premium rotating proxies
-    if PREMIUM_PROXIES:
-        url = _normalize_proxy_url(random.choice(PREMIUM_PROXIES))
-        logger.info(f"[Proxy] Using premium proxy: {url[:60]}...")
-        return {"http": url, "https": url}
-
-    # 4. Tor SOCKS5 proxy
-    if TOR_SOCKS_PROXY:
-        logger.info(f"[Proxy] Using Tor SOCKS5 proxy: {TOR_SOCKS_PROXY[:60]}...")
-        return {"http": TOR_SOCKS_PROXY, "https": TOR_SOCKS_PROXY}
-
-    # 5. Dynamic free proxy pool
-    proxy = get_next_proxy()
-    if proxy:
-        return proxy
-
-    # 6. Direct connection
-    logger.info("[Proxy] No proxy configured — using direct connection.")
-    return None
-
-
-def get_working_proxy():
-    """Legacy alias for get_effective_proxy."""
-    return get_effective_proxy()
-
-# =============================================================================
-# curl_cffi Session (strongest for bypassing Cloudflare)
-# =============================================================================
-curl_session = None
-if curl_cffi_requests:
-    try:
-        curl_session = curl_cffi_requests.Session(impersonate="chrome120")
-        logger.info("curl_cffi session created successfully")
-    except Exception as e:
-        logger.warning(f"curl_cffi Session failed: {e}")
-        curl_session = None
-
-# =============================================================================
-# cloudscraper fallback
-# =============================================================================
-cloud_scraper = None
-if cloudscraper:
-    try:
-        proxy_url = None
-        proxy_dict = get_effective_proxy()
-        if proxy_dict:
-            proxy_url = proxy_dict.get("https") or proxy_dict.get("http")
-        if proxy_url:
-            logger.info(f"cloudscraper using proxy: {proxy_url[:80]}")
-            cloud_scraper = cloudscraper.create_scraper(
-                browser={
-                    'browser': 'chrome',
-                    'platform': 'windows',
-                    'desktop': True
-                },
-                proxy=proxy_url
-            )
-        else:
-            cloud_scraper = cloudscraper.create_scraper(
-                browser={
-                    'browser': 'chrome',
-                    'platform': 'windows',
-                    'desktop': True
-                }
-            )
-        logger.info("cloudscraper created successfully")
-    except Exception as e:
-        logger.warning(f"cloudscraper failed: {e}")
-        cloud_scraper = None
-
-# =============================================================================
-# tls_client fallback
-# =============================================================================
-session = None
-if tls_client:
-    try:
-        proxy_url = None
-        proxy_dict = get_effective_proxy()
-        if proxy_dict:
-            proxy_url = proxy_dict.get("https") or proxy_dict.get("http")
-        if proxy_url:
-            logger.info(f"tls_client using proxy: {proxy_url[:80]}")
-            session = tls_client.Session(
-                client_identifier="chrome_120",
-                random_tls_extension_order=True,
-                proxy=proxy_url
-            )
-        else:
-            session = tls_client.Session(
-                client_identifier="chrome_120",
-                random_tls_extension_order=True
-            )
-    except Exception as e:
-        logging.getLogger(__name__).warning(f"tls_client Session failed: {e}")
-        session = None
-
 access_token = None
 refresh_token = None
 agent_affiliate_id = None
+owners_list = []
+admins_list = []
+users_list = set()
+players_db = {}
 
 user_states = {}
 state_data = {}
 pending_deposits = {}
 pending_withdrawals = {}
-support_tickets = {}          # {msg_id_in_group: user_id}
-active_support_replies = {}   # {admin_id: user_id}
+active_support_replies = {}
+support_tickets = {}
 
-bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
+bot = TeleBot(BOT_TOKEN, parse_mode="HTML")
 
 # =============================================================================
-# File I/O
+# Helpers
 # =============================================================================
-def load_list_from_file(filepath):
-    if not os.path.exists(filepath):
-        return []
-    with open(filepath, "r", encoding="utf-8") as f:
-        return [line.strip() for line in f if line.strip()]
+def load_json(file_path, default):
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
 
-
-def save_list_to_file(filepath, data_list):
-    with open(filepath, "w", encoding="utf-8") as f:
-        for item in data_list:
-            f.write(str(item) + "\n")
-
+def save_json(file_path, data):
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save {file_path}: {e}")
 
 def load_owners():
     global owners_list
-    owners_list = load_list_from_file(OWNERS_FILE)
-    uid = str(OWNER_ID)
-    if uid not in owners_list:
-        owners_list.append(uid)
-        save_list_to_file(OWNERS_FILE, owners_list)
-    logger.info(f"Owners loaded: {owners_list}")
-
+    owners_list = [str(x) for x in load_json(OWNERS_FILE, [])]
 
 def load_admins():
     global admins_list
-    admins_list = load_list_from_file(ADMINS_FILE)
-    logger.info(f"Admins loaded: {admins_list}")
-
+    admins_list = [str(x) for x in load_json(ADMINS_FILE, [])]
 
 def load_users_list():
     global users_list
-    users_list = load_list_from_file(USERS_FILE)
-    logger.info(f"Users list loaded: {len(users_list)} users")
-
-
-def add_user(user_id):
-    uid = str(user_id)
-    if uid not in users_list:
-        users_list.append(uid)
-        with open(USERS_FILE, "a", encoding="utf-8") as f:
-            f.write(uid + "\n")
-        logger.info(f"New user added: {uid}")
-
+    users_list = set(str(x) for x in load_json(USERS_FILE, []))
 
 def load_players_db():
-    if os.path.exists(PLAYERS_DB_FILE):
-        with open(PLAYERS_DB_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
+    global players_db
+    players_db = load_json(PLAYERS_FILE, {})
 
 def save_players_db(data):
-    with open(PLAYERS_DB_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    save_json(PLAYERS_FILE, data)
 
+def save_list_to_file(file_path, data):
+    save_json(file_path, data)
 
-players_db = load_players_db()
-
-# =============================================================================
-# API Helpers
-# =============================================================================
 def decode_jwt_payload(token):
     try:
         parts = token.split(".")
         if len(parts) >= 2:
-            payload_b64 = parts[1]
-            payload_b64 += "=" * (4 - len(payload_b64) % 4)
-            decoded = base64.b64decode(payload_b64)
-            return json.loads(decoded)
+            payload = parts[1]
+            padding = 4 - len(payload) % 4
+            if padding != 4:
+                payload += "=" * padding
+            return json.loads(base64.b64decode(payload))
     except Exception as e:
         logger.error(f"JWT decode error: {e}")
     return {}
 
-
 # =============================================================================
-# HTTP Request Layers (ordered by strength)
+# Keyboard Markups
 # =============================================================================
-class FakeResponse:
-    def __init__(self, text, status_code):
-        self.text = text
-        self.status_code = status_code
+def main_menu_markup(uid):
+    """Main menu using InlineKeyboardMarkup (appears at top of chat)."""
+    markup = InlineKeyboardMarkup(row_width=2)
+    buttons = [
+        InlineKeyboardButton("📝 تسجيل حساب", callback_data="menu_register"),
+        InlineKeyboardButton("🎮 اللعب الآن", callback_data="menu_play"),
+        InlineKeyboardButton("💰 إيداع", callback_data="menu_deposit"),
+        InlineKeyboardButton("🏧 سحب", callback_data="menu_withdraw"),
+        InlineKeyboardButton("📊 رصيدي", callback_data="menu_balance"),
+        InlineKeyboardButton("📞 الدعم الفني", callback_data="menu_support"),
+    ]
+    if str(uid) in owners_list or str(uid) == str(OWNER_ID):
+        buttons.append(InlineKeyboardButton("⚙️ لوحة التحكم", callback_data="menu_admin"))
+    markup.add(*buttons)
+    return markup
 
-    def json(self):
-        return json.loads(self.text)
+def back_to_main_markup():
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data="menu_back"))
+    return markup
 
-
-def _request_with_curl_cffi(url, headers, payload, method):
-    """Layer 1: curl_cffi with JA3 fingerprint + auto-rotating free proxy"""
-    if not curl_cffi_requests:
-        return None
-    proxy = get_effective_proxy()
-    try:
-        sess = curl_cffi_requests.Session(impersonate="chrome120")
-        proxies = proxy
-        if proxy:
-            logger.info(f"curl_cffi using proxy: {proxy}")
-        if method.upper() == "GET":
-            resp = sess.get(url, headers=headers, json=payload, timeout=45, verify=False, proxies=proxies)
-        else:
-            resp = sess.post(url, headers=headers, json=payload, timeout=45, verify=False, proxies=proxies)
-        sess.close()
-        return resp
-    except Exception as e:
-        logger.warning(f"curl_cffi request failed: {e}")
-        return None
-
-
-async def _request_with_nodriver_async(url, headers, payload, method):
-    """Layer 2: Nodriver — real Chrome via CDP, executes fetch() in a blank page"""
-    if not uc:
-        return None
-    try:
-        browser = await uc.start()
-        page = await browser.get('about:blank')
-        header_json = json.dumps(headers)
-        payload_json = json.dumps(payload) if payload else "null"
-        script = f'''
-            fetch("{url}", {{
-                method: "{method}",
-                headers: {header_json},
-                body: {payload_json} ? JSON.stringify({payload_json}) : undefined
-            }}).then(r => r.text())
-        '''
-        result = await page.evaluate(script)
-        await browser.stop()
-        return FakeResponse(result, 200)
-    except Exception as e:
-        logger.warning(f"nodriver request failed: {e}")
-        return None
-
-
-def _request_with_nodriver(url, headers, payload, method):
-    try:
-        return asyncio.run(_request_with_nodriver_async(url, headers, payload, method))
-    except Exception as e:
-        logger.warning(f"nodriver sync wrapper failed: {e}")
-        return None
-
-
-def _request_with_seleniumbase(url, headers, payload, method):
-    """Layer 3: SeleniumBase UC Mode — undetected Chrome with fetch() execution"""
-    if not SB:
-        return None
-    try:
-        header_json = json.dumps(headers)
-        payload_json = json.dumps(payload) if payload else "null"
-        script = f'''
-            return fetch("{url}", {{
-                method: "{method}",
-                headers: {header_json},
-                body: {payload_json} ? JSON.stringify({payload_json}) : undefined
-            }}).then(r => r.text())
-        '''
-        with SB(uc=True, headless=True, demo=False) as sb:
-            sb.open("about:blank")
-            result = sb.execute_script(script)
-            return FakeResponse(result, 200)
-    except Exception as e:
-        logger.warning(f"seleniumbase request failed: {e}")
-        return None
-
-
-def _request_with_cloudscraper(url, headers, payload, method):
-    """Layer 4: cloudscraper"""
-    if not cloud_scraper:
-        return None
-    proxy = get_effective_proxy()
-    try:
-        proxies = proxy if proxy else None
-        if method.upper() == "GET":
-            return cloud_scraper.get(url, headers=headers, json=payload, timeout=15, verify=False, proxies=proxies)
-        else:
-            return cloud_scraper.post(url, headers=headers, json=payload, timeout=15, verify=False, proxies=proxies)
-    except Exception as e:
-        logger.warning(f"cloudscraper request failed: {e}")
-        return None
-
-
-def _request_with_requests(url, headers, payload, method):
-    """Layer 5: standard requests"""
-    if not requests:
-        return None
-    proxy = get_effective_proxy()
-    try:
-        proxies = proxy if proxy else None
-        if method.upper() == "GET":
-            return requests.get(url, headers=headers, json=payload, timeout=15, verify=False, proxies=proxies)
-        else:
-            return requests.post(url, headers=headers, json=payload, timeout=15, verify=False, proxies=proxies)
-    except Exception as e:
-        logger.warning(f"requests fallback failed: {e}")
-        return None
-
-
-# =============================================================================
-# Cloud Gateways (AllOrigins + CORSProxy) — Steps 1-12
-# =============================================================================
-def _request_with_cloud_gateways(url, headers, payload, method):
-    """
-    Unified cloud gateway fallback using AllOrigins + CORSProxy.
-    Follows the 12-step structured approach for bypassing geo-blocks and CORS.
-    """
-    # Step 1: Endpoint already provided as 'url' parameter.
-    # Step 2: Build a list of cloud gateway configurations.
-    gateways = []
-    encoded_url = urllib.parse.quote(url, safe='')
-    if method.upper() == "GET":
-        gateways.append({
-            "name": "AllOrigins",
-            "url": f"https://api.allorigins.win/raw?url={encoded_url}",
-            "method": "GET"
-        })
-    else:
-        gateways.append({
-            "name": "AllOrigins",
-            "url": f"https://api.allorigins.win/post?url={encoded_url}",
-            "method": "POST"
-        })
-    gateways.append({
-        "name": "CORSProxy",
-        "url": f"https://corsproxy.io/?{encoded_url}",
-        "method": method.upper()
-    })
-
-    # Step 3: Prepare anti-bot stealth headers (randomized Chrome fingerprint).
-    # Step 4: Auth token already embedded in the passed 'headers' dict.
-    req_headers = _get_anti_bot_headers(headers)
-
-    # Step 5: Get effective proxy for cloud gateways too (if available).
-    proxy = get_effective_proxy()
-    proxies = proxy if proxy else None
-
-    # Step 6: Start the for-loop to iterate through each gateway sequentially.
-    for gw in gateways:
-        # Step 7: Print attempt event to the logs.
-        logger.info(f"[Cloud Gateway] Attempting {gw['name']} → {url[:120]}")
-        try:
-            # Step 8: Send the POST/GET request with anti-bot headers + proxy.
-            # Step 9: Set short timeout of 15 seconds.
-            if gw["method"] == "GET":
-                response = requests.get(gw["url"], headers=req_headers, timeout=15, verify=False, proxies=proxies)
-            else:
-                response = requests.post(gw["url"], headers=req_headers, json=payload, timeout=15, verify=False, proxies=proxies)
-
-            # Step 9: Check for successful server response code 200.
-            if response.status_code == 200:
-                # Step 10: Convert / decode response data into JSON format.
-                try:
-                    json_data = response.json()
-                    logger.info(f"[Cloud Gateway] {gw['name']} succeeded — JSON parsed.")
-                    # Wrap parsed JSON inside a FakeResponse so it fits the existing layer architecture.
-                    return FakeResponse(json.dumps(json_data, ensure_ascii=False), 200)
-                except Exception:
-                    # If the body is not JSON but the status is 200, return the raw response object.
-                    logger.info(f"[Cloud Gateway] {gw['name']} succeeded — raw response.")
-                    return response
-            else:
-                logger.warning(f"[Cloud Gateway] {gw['name']} returned HTTP {response.status_code}")
-        # Step 11: Handle errors and skip to the next alternative gateway.
-        except Exception as e:
-            logger.warning(f"[Cloud Gateway] {gw['name']} failed: {e}")
-            continue
-
-    # Step 12: All gateways failed — return None.
-    logger.error("[Cloud Gateway] All cloud gateways failed after exhausting the list.")
-    return None
-
-
-def _request_with_tls(url, headers, payload, method):
-    """Layer 6: tls_client"""
-    if not session:
-        return None
-    try:
-        if method.upper() == "GET":
-            return session.get(url, headers=headers, timeout_seconds=15)
-        else:
-            return session.post(url, headers=headers, json=payload, timeout_seconds=15)
-    except Exception as e:
-        logger.warning(f"tls_client request failed: {e}")
-        return None
-
-
-def _is_html_response(response):
-    """Detect if a response body is HTML instead of expected JSON."""
-    if not response:
-        return False
-    if isinstance(response, str):
-        text = response.strip()
-    elif hasattr(response, "text"):
-        text = (response.text or "").strip()
-    else:
-        return False
-    return (
-        text.startswith("<")
-        or "<html" in text.lower()
-        or "<!doctype" in text.lower()
-        or "<head" in text.lower()
+def admin_panel_markup():
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("👤 بيانات الوكيل", callback_data="admin_agent_data"),
+        InlineKeyboardButton("💰 رصيد الخزنة", callback_data="admin_balance"),
+        InlineKeyboardButton("💳 محفظة شام", callback_data="admin_sham_wallet"),
+        InlineKeyboardButton("📱 كود سيرياتيل", callback_data="admin_syriatel_code"),
+        InlineKeyboardButton("📢 إذاعة", callback_data="admin_broadcast"),
+        InlineKeyboardButton("➕ إضافة مالك", callback_data="admin_add_owner"),
+        InlineKeyboardButton("➕ إضافة مشرف", callback_data="admin_add_admin"),
+        InlineKeyboardButton("➖ إزالة مالك", callback_data="admin_remove_owner"),
+        InlineKeyboardButton("➖ إزالة مشرف", callback_data="admin_remove_admin"),
+        InlineKeyboardButton("🔙 رجوع", callback_data="admin_back")
     )
-
-
-def _is_bad_response(response):
-    """Detect if a response is unusable (HTML, empty body, or server error)."""
-    if response is None:
-        return True
-    # Check for server errors (5xx) or empty body
-    if hasattr(response, "status_code") and response.status_code >= 500:
-        return True
-    if hasattr(response, "text") and not (response.text or "").strip():
-        return True
-    return _is_html_response(response)
-
+    return markup
 
 # =============================================================================
-# Anti-Bot / Stealth Engine
+# API Request
 # =============================================================================
-_CHROME_VERSIONS = ["120", "119", "118", "117", "116", "115", "114", "113"]
-_PLATFORMS = [
-    "Windows NT 10.0; Win64; x64",
-    "Macintosh; Intel Mac OS X 10_15_7",
-    "X11; Linux x86_64",
-    "Windows NT 10.0; WOW64",
-]
-_SEC_PLATFORMS = ['"Windows"', '"macOS"', '"Linux"']
-_ACCEPT_LANGUAGES = [
-    "en-US,en;q=0.9",
-    "en-GB,en;q=0.8",
-    "en-CA,en;q=0.7",
-    "ar-SA,ar;q=0.9,en;q=0.8",
-    "fr-FR,fr;q=0.9,en;q=0.8",
-]
+@retry(stop_max_attempt_number=3, wait_exponential_multiplier=1000, wait_exponential_max=10000)
+def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
+    global access_token
+    import requests
 
-def _get_anti_bot_headers(base_headers=None):
-    """Generate randomized anti-bot headers that mimic real Chrome."""
-    headers = dict(base_headers) if base_headers else {}
-    chrome_ver = random.choice(_CHROME_VERSIONS)
-    platform = random.choice(_PLATFORMS)
-    user_agent = (
-        f"Mozilla/5.0 ({platform}) AppleWebKit/537.36 "
-        f"(KHTML, like Gecko) Chrome/{chrome_ver}.0.0.0 Safari/537.36"
-    )
-    headers["User-Agent"] = user_agent
-    headers.setdefault("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
-    headers.setdefault("Accept-Language", random.choice(_ACCEPT_LANGUAGES))
-    headers.setdefault("Accept-Encoding", "gzip, deflate, br")
-    headers.setdefault("DNT", "1")
-    headers.setdefault("Connection", "keep-alive")
-    headers.setdefault("Upgrade-Insecure-Requests", "1")
-    headers.setdefault("Sec-Fetch-Dest", "document")
-    headers.setdefault("Sec-Fetch-Mode", "navigate")
-    headers.setdefault("Sec-Fetch-Site", "none")
-    headers.setdefault("Sec-Fetch-User", "?1")
-    headers.setdefault("Sec-CH-UA", f'"Not_A Brand";v="8", "Chromium";v="{chrome_ver}", "Google Chrome";v="{chrome_ver}"')
-    headers.setdefault("Sec-CH-UA-Mobile", "?0")
-    headers.setdefault("Sec-CH-UA-Platform", random.choice(_SEC_PLATFORMS))
-    return headers
-
-
-def _request_with_stealth(url, headers, payload, method):
-    """
-    Layer 0: Anti-bot stealth engine + randomized fingerprint + proxy rotation.
-    Uses standard requests + randomized Chrome headers + proxy.
-    """
-    if not requests:
-        return None
-    try:
-        stealth_headers = _get_anti_bot_headers(headers)
-        proxy = get_effective_proxy()
-        proxies = proxy if proxy else None
-
-        if proxy:
-            logger.info(f"[Stealth] Anti-bot request via proxy → {str(proxy)[:80]}")
-        else:
-            logger.info("[Stealth] Anti-bot request (direct connection)")
-
-        if method.upper() == "GET":
-            resp = requests.get(
-                url, headers=stealth_headers, json=payload, timeout=15, verify=False, proxies=proxies
-            )
-        else:
-            resp = requests.post(
-                url, headers=stealth_headers, json=payload, timeout=15, verify=False, proxies=proxies
-            )
-        logger.info(f"[Stealth] status={resp.status_code}, len={len(resp.text)}")
-        return resp
-    except Exception as e:
-        logger.warning(f"[Stealth] request failed: {e}")
-        return None
-
-
-# =============================================================================
-# Unified API Request
-# =============================================================================
-def api_request(method, endpoint, payload=None, auth=False, add_delay=False):
-    url = f"{PANEL_BASE}/{endpoint}"
+    url = f"{BASE_API}{endpoint}"
     headers = {
         "Content-Type": "application/json",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -827,161 +172,87 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=False):
     if auth and access_token:
         headers["Authorization"] = f"Bearer {access_token}"
 
-    # Random delay to avoid bot detection (2-5 seconds)
     if add_delay:
-        delay = random.uniform(2, 5)
-        logger.info(f"Random delay: {delay:.2f}s before API request")
-        time.sleep(delay)
+        time.sleep(random.uniform(1, 3))
 
-    logger.info(f"API REQUEST: {method} {url} | auth={auth} | payload={json.dumps(payload, ensure_ascii=False)[:500]}")
-    logger.info(f"RESIDENTIAL_PROXY set: {bool(RESIDENTIAL_PROXY)} | WIREGUARD_PROXY set: {bool(WIREGUARD_PROXY)} | TOR_SOCKS_PROXY set: {bool(TOR_SOCKS_PROXY)}")
+    logger.info(f"API {method} {url}")
 
     try:
-        # Priority order (strongest bypass first):
-        # 0. Anti-bot stealth engine (randomized headers + proxy)
-        # 1. curl_cffi (JA3 fingerprint) + proxy
-        # 2. nodriver (real Chrome CDP)
-        # 3. seleniumbase UC Mode (undetected Chrome)
-        # 4. cloudscraper
-        # 5. standard requests
-        # 6. Cloud Gateways (AllOrigins + CORSProxy) — unified Steps 1-12
-        # 7. tls_client
-        response = _request_with_stealth(url, headers, payload, method)
-        if _is_bad_response(response):
-            response = _request_with_curl_cffi(url, headers, payload, method)
-        if _is_bad_response(response):
-            response = _request_with_nodriver(url, headers, payload, method)
-        if _is_bad_response(response):
-            response = _request_with_seleniumbase(url, headers, payload, method)
-        if _is_bad_response(response):
-            response = _request_with_cloudscraper(url, headers, payload, method)
-        if _is_bad_response(response):
-            response = _request_with_requests(url, headers, payload, method)
-        if _is_bad_response(response):
-            response = _request_with_cloud_gateways(url, headers, payload, method)
-        if _is_bad_response(response):
-            response = _request_with_tls(url, headers, payload, method)
-        if _is_bad_response(response):
-            raise Exception("All request methods failed (None, HTML, empty body, or server error)")
+        proxies = {}
+        if RESIDENTIAL_PROXY:
+            proxies = {"http": RESIDENTIAL_PROXY, "https": RESIDENTIAL_PROXY}
 
-        # Auto-retry on auth failure
-        if auth and response.status_code in (401, 403):
-            logger.warning(f"Auth failed ({response.status_code}), attempting re-signin...")
+        resp = requests.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
+
+        if auth and resp.status_code in (401, 403):
+            logger.warning("Auth failed, re-signing in...")
             if do_signin():
                 headers["Authorization"] = f"Bearer {access_token}"
-                response = _request_with_stealth(url, headers, payload, method)
-                if _is_bad_response(response):
-                    response = _request_with_curl_cffi(url, headers, payload, method)
-                if _is_bad_response(response):
-                    response = _request_with_nodriver(url, headers, payload, method)
-                if _is_bad_response(response):
-                    response = _request_with_seleniumbase(url, headers, payload, method)
-                if _is_bad_response(response):
-                    response = _request_with_cloudscraper(url, headers, payload, method)
-                if _is_bad_response(response):
-                    response = _request_with_requests(url, headers, payload, method)
-                if _is_bad_response(response):
-                    response = _request_with_cloud_gateways(url, headers, payload, method)
-                if _is_bad_response(response):
-                    response = _request_with_tls(url, headers, payload, method)
-                if _is_bad_response(response):
-                    raise Exception("All request methods failed on retry (None, HTML, empty body, or server error)")
+                resp = requests.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
             else:
-                logger.error("Re-signin failed after auth error.")
+                logger.error("Re-signin failed")
 
-        logger.info(f"API RESPONSE status: {response.status_code}")
-        logger.info(f"API RESPONSE text: {response.text[:2000]}")
+        logger.info(f"API response: {resp.status_code}")
         try:
-            data = response.json()
-            logger.info(f"API RESPONSE json: {json.dumps(data, ensure_ascii=False)[:1000]}")
-            return data
-        except Exception as e:
-            logger.error(f"Non-JSON response: {e}")
-            return {"__raw__": response.text}
+            return resp.json()
+        except Exception:
+            return {"__raw__": resp.text}
     except Exception as e:
-        logger.error(f"API request error: {e}")
+        logger.error(f"API error: {e}")
         return None
 
 
 def do_signin():
     global access_token, refresh_token
-    with _signin_lock:
-        payload = {"username": AGENT_USERNAME, "password": AGENT_PASSWORD}
-        logger.info(f"Signing in with username: {AGENT_USERNAME}")
-        result = api_request("POST", "global/api/UserApi/signIn", payload)
-        if result is None:
-            logger.error("Sign in failed: API returned None (all clients failed or returned HTML)")
-            return False
-        if isinstance(result, dict) and result.get("__raw__"):
-            raw_text = result["__raw__"]
-            if _is_html_response(raw_text):
-                logger.error(f"Sign in failed: API returned HTML instead of JSON (WAF/Cloudflare block detected). First 500 chars: {raw_text[:500]}")
-            else:
-                logger.error(f"Sign in failed: API returned non-JSON response: {raw_text[:500]}")
-            return False
-        if result and result.get("status") and isinstance(result.get("result"), dict):
-            access_token = result["result"].get("accessToken")
-            refresh_token = result["result"].get("refreshToken")
-            logger.info(f"Sign in OK. Token prefix: {access_token[:30] if access_token else 'None'}...")
-            return True
-        logger.error(f"Sign in failed: unexpected result: {result}")
-        return False
+    payload = {"username": AGENT_USERNAME, "password": AGENT_PASSWORD}
+    logger.info(f"Signing in: {AGENT_USERNAME}")
+    result = api_request("POST", "global/api/UserApi/signIn", payload)
+    if result and result.get("status") and isinstance(result.get("result"), dict):
+        access_token = result["result"].get("accessToken")
+        refresh_token = result["result"].get("refreshToken")
+        logger.info("Signin OK")
+        return True
+    logger.error(f"Signin failed: {result}")
+    return False
 
 
 def get_agent_affiliate_id():
     global agent_affiliate_id
-    # Hardcoded confirmed parentId
-    HARDCODED_AFFILIATE_ID = "2688288"
+    HARDCODED = "2688288"
     if not access_token:
-        logger.warning("No access token, attempting signin first")
         if not do_signin():
-            agent_affiliate_id = HARDCODED_AFFILIATE_ID
+            agent_affiliate_id = HARDCODED
             return agent_affiliate_id
     if access_token:
-        jwt_data = decode_jwt_payload(access_token)
-        logger.info(f"JWT keys: {list(jwt_data.keys())}")
-        for key in ["affiliateId", "userId", "id", "sub", "affiliate_id"]:
-            if key in jwt_data and jwt_data[key]:
-                val = str(jwt_data[key])
-                if val == HARDCODED_AFFILIATE_ID:
+        jwt = decode_jwt_payload(access_token)
+        for key in ["affiliateId", "userId", "id", "sub"]:
+            if key in jwt and jwt[key]:
+                val = str(jwt[key])
+                if val == HARDCODED:
                     agent_affiliate_id = val
-                    logger.info(f"Agent affiliateId from JWT ({key}): {agent_affiliate_id}")
                     return agent_affiliate_id
-    # Fallback 1: try to get from getChildren
     try:
         result = api_request("POST", "global/api/UserApi/getChildren", {}, auth=True)
         if result and result.get("status") and isinstance(result.get("result"), dict):
             val = str(result["result"].get("parentId", ""))
             if val and val != "0":
                 agent_affiliate_id = val
-                logger.info(f"Agent affiliateId from getChildren: {agent_affiliate_id}")
                 return agent_affiliate_id
     except Exception as e:
         logger.error(f"getChildren error: {e}")
-    # Fallback 2: try to get from first player in getPlayersForCurrentAgent
     try:
-        search_payload = {
-            "start": 0,
-            "limit": 1,
-            "filter": {},
-            "isNextPage": False
-        }
-        players_result = api_request("POST", "global/api/UserApi/getPlayersForCurrentAgent", search_payload, auth=True)
-        logger.info(f"getPlayersForCurrentAgent affiliate fetch: {players_result}")
-        if players_result and players_result.get("status") and isinstance(players_result.get("result"), dict):
-            records = players_result["result"].get("records", [])
-            if records and isinstance(records, list) and len(records) > 0:
-                first_player = records[0]
-                parent_id = first_player.get("parentId")
-                if parent_id:
-                    agent_affiliate_id = str(parent_id)
-                    logger.info(f"Agent affiliateId from first player parentId: {agent_affiliate_id}")
+        search_payload = {"start": 0, "limit": 1, "filter": {}, "isNextPage": False}
+        players = api_request("POST", "global/api/UserApi/getPlayersForCurrentAgent", search_payload, auth=True)
+        if players and players.get("status") and isinstance(players.get("result"), dict):
+            records = players["result"].get("records", [])
+            if records:
+                pid = records[0].get("parentId")
+                if pid:
+                    agent_affiliate_id = str(pid)
                     return agent_affiliate_id
     except Exception as e:
-        logger.error(f"Error fetching affiliate from players: {e}")
-    # Final fallback: use hardcoded confirmed value
-    agent_affiliate_id = HARDCODED_AFFILIATE_ID
-    logger.info(f"Using hardcoded affiliateId: {agent_affiliate_id}")
+        logger.error(f"getPlayers error: {e}")
+    agent_affiliate_id = HARDCODED
     return agent_affiliate_id
 
 
@@ -1003,151 +274,59 @@ def token_refresh_loop():
             do_signin()
 
 # =============================================================================
-# Keyboard Markups
-# =============================================================================
-def main_menu_markup(user_id):
-    is_owner = str(user_id) == str(OWNER_ID) or str(user_id) in owners_list
-    logger.info(f"main_menu_markup user_id={user_id} is_owner={is_owner} owners={owners_list}")
-    markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    markup.add(
-        KeyboardButton("👤 حسابي"),
-        KeyboardButton("📥 إيداع / شحن رصيد"),
-        KeyboardButton("📩 سحب رصيد"),
-        KeyboardButton("📞 الدعم الفني")
-    )
-    if is_owner:
-        markup.add(KeyboardButton("⚙️ لوحة التحكم"))
-    return markup
-
-
-def back_markup():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(KeyboardButton("🔙 رجوع"))
-    return markup
-
-# =============================================================================
-# Admin Panel
-# =============================================================================
-def show_admin_panel(chat_id, message_id=None):
-    markup = InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        InlineKeyboardButton("💼 تعديل بيانات الوكيل", callback_data="admin_agent_data"),
-        InlineKeyboardButton("💰 تعديل محفظة شام كاش", callback_data="admin_sham_wallet"),
-        InlineKeyboardButton("📱 تعديل كود سيرياتيل", callback_data="admin_syriatel_code"),
-        InlineKeyboardButton("📊 رصيد الخزنة الحالي", callback_data="admin_balance"),
-        InlineKeyboardButton("📢 إذاعة للجميع", callback_data="admin_broadcast"),
-        InlineKeyboardButton("➕ إضافة مالك", callback_data="admin_add_owner"),
-        InlineKeyboardButton("➕ إضافة مشرف", callback_data="admin_add_admin"),
-        InlineKeyboardButton("➖ إزالة مالك", callback_data="admin_remove_owner"),
-        InlineKeyboardButton("➖ إزالة مشرف", callback_data="admin_remove_admin"),
-        InlineKeyboardButton("🔙 إغلاق", callback_data="admin_back")
-    )
-    text = "⚙️ لوحة التحكم - اختر الإجراء:"
-    if message_id:
-        try:
-            bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
-        except Exception as e:
-            logger.error(f"Failed to edit admin panel message: {e}")
-    else:
-        bot.send_message(chat_id, text, reply_markup=markup)
-
-
-# =============================================================================
 # Bot Handlers
 # =============================================================================
 @bot.message_handler(commands=["start"])
 def cmd_start(message):
-    uid = message.from_user.id
-    add_user(uid)
-    bot.send_message(
-        uid,
-        "🎰 مرحباً بك في بوت الكازينو!\n\n"
-        "الرجاء اختيار أحد الخيارات من القائمة أدناه.",
-        reply_markup=main_menu_markup(uid)
-    )
-
-
-@bot.message_handler(func=lambda m: m.text == "👤 حسابي")
-def handle_account(message):
     uid = str(message.from_user.id)
-    player = players_db.get(uid)
-    if player:
-        text = (
-            f"👤 بيانات حسابك:\n\n"
-            f"🆔 معرف اللاعب: {player.get('player_id')}\n"
-            f"👤 اسم المستخدم: {player.get('username')}\n"
-            f"📧 البريد: {player.get('email')}\n"
-            f"💰 العملة: {player.get('currency', 'EUR')}\n\n"
-            f"للتحقق من رصيدك، تواصل مع الدعم الفني."
-        )
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("🗑️ حذف الحساب", callback_data="delete_account"))
-        bot.send_message(message.from_user.id, text, reply_markup=markup)
-    else:
-        text = (
-            "📝 ليس لديك حساب مسجل بعد.\n\n"
-            "هل تريد إنشاء حساب جديد الآن؟"
-        )
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("✅ نعم، إنشاء حساب", callback_data="register_now"))
-        bot.send_message(message.from_user.id, text, reply_markup=markup)
+    users_list.add(uid)
+    save_list_to_file(USERS_FILE, list(users_list))
+    load_players_db()
 
-
-@bot.message_handler(func=lambda m: m.text == "📥 إيداع / شحن رصيد")
-def handle_deposit(message):
-    uid = message.from_user.id
-    user_states[uid] = "WAITING_DEPOSIT_AMOUNT"
-    state_data[uid] = {}
-    text = (
-        "💰 لإيداع رصيد، أرسل المبلغ المطلوب (رقماً فقط).\n\n"
-        "مثال: 50"
+    welcome = (
+        "👋 <b>أهلاً بك في تكساس للربح!</b>\n\n"
+        "🎰 <b>المنصة الأولى للألعاب والربح عبر الإنترنت.</b>\n\n"
+        "يمكنك من خلال هذا البوت:\n"
+        "• 📝 تسجيل حساب جديد\n"
+        "• 🎮 الدخول واللعب مباشرة\n"
+        "• 💰 إيداع رصيد\n"
+        "• 🏧 سحب أرباحك\n"
+        "• 📊 متابعة رصيدك\n"
+        "• 📞 التواصل مع الدعم الفني\n\n"
+        "اختر من القائمة أدناه للبدء:"
     )
-    bot.send_message(uid, text, reply_markup=back_markup())
+    bot.send_message(message.chat.id, welcome, reply_markup=main_menu_markup(uid))
 
 
-@bot.message_handler(func=lambda m: m.text == "📩 سحب رصيد")
-def handle_withdraw(message):
-    uid = message.from_user.id
-    user_states[uid] = "WAITING_WITHDRAW_AMOUNT"
-    state_data[uid] = {}
-    text = (
-        "💸 لسحب رصيد، أرسل المبلغ المطلوب (رقماً فقط).\n\n"
-        "مثال: 30"
-    )
-    bot.send_message(uid, text, reply_markup=back_markup())
-
-
-@bot.message_handler(func=lambda m: m.text == "📞 الدعم الفني")
-def handle_support(message):
-    uid = message.from_user.id
-    user_states[uid] = "WAITING_SUPPORT_MESSAGE"
-    text = (
-        "📞 الدعم الفني:\n\n"
-        "أرسل رسالتك الآن وسيقوم فريق الدعم بالرد عليك في أقرب وقت."
-    )
-    bot.send_message(uid, text, reply_markup=back_markup())
-
-
-@bot.message_handler(func=lambda m: m.text == "⚙️ لوحة التحكم")
-def handle_admin_panel(message):
+@bot.message_handler(commands=["admin"])
+def cmd_admin(message):
     uid = str(message.from_user.id)
     if uid not in owners_list and uid != str(OWNER_ID):
-        bot.send_message(message.from_user.id, "⛔️ ليس لديك صلاحية الوصول للوحة التحكم.")
+        bot.send_message(message.chat.id, "⛔️ لا يوجد لديك صلاحية.")
         return
-    show_admin_panel(message.from_user.id)
+    bot.send_message(message.chat.id, "🔧 <b>لوحة التحكم</b>", reply_markup=admin_panel_markup())
 
 
-@bot.message_handler(func=lambda m: m.text == "🔙 رجوع")
-def handle_back(message):
-    uid = message.from_user.id
-    user_states.pop(uid, None)
-    state_data.pop(uid, None)
-    bot.send_message(uid, "🔙 تم العودة للقائمة الرئيسية.", reply_markup=main_menu_markup(uid))
+@bot.callback_query_handler(func=lambda call: call.data == "menu_back")
+def cb_menu_back(call):
+    bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+    bot.send_message(call.from_user.id, "🔙 العودة للقائمة الرئيسية:", reply_markup=main_menu_markup(call.from_user.id))
+    bot.answer_callback_query(call.id)
 
 
-# =============================================================================
-# State Handlers
-# =============================================================================
+@bot.callback_query_handler(func=lambda call: call.data == "menu_register")
+def cb_menu_register(call):
+    uid = call.from_user.id
+    player = players_db.get(str(uid))
+    if player:
+        bot.send_message(uid, f"✅ لديك حساب مسجل بالفعل.\n\n👤 اسم المستخدم: <b>{html.escape(player.get('username', ''))}</b>\n🔑 كلمة المرور: <tg-spoiler>{html.escape(player.get('password', ''))}</tg-spoiler>", reply_markup=back_to_main_markup())
+    else:
+        user_states[uid] = "WAITING_REGISTER_USERNAME"
+        state_data[uid] = {}
+        bot.send_message(uid, "👤 أرسل اسم المستخدم المطلوب:")
+    bot.answer_callback_query(call.id)
+
+
 @bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_REGISTER_USERNAME")
 def state_register_username(message):
     uid = message.from_user.id
@@ -1155,9 +334,9 @@ def state_register_username(message):
     if not username:
         bot.send_message(uid, "❌ اسم المستخدم فارغ. أرسل اسم مستخدم صالح:")
         return
-    state_data[uid]["reg_username"] = username
+    state_data[uid]["username"] = username
     user_states[uid] = "WAITING_REGISTER_PASSWORD"
-    bot.send_message(uid, "🔒 أرسل كلمة المرور الآن (أي طول مقبول):")
+    bot.send_message(uid, "🔒 أرسل كلمة المرور المطلوبة:")
 
 
 @bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_REGISTER_PASSWORD")
@@ -1168,156 +347,176 @@ def state_register_password(message):
         bot.send_message(uid, "❌ كلمة المرور فارغة. أرسل كلمة مرور صالحة:")
         return
 
-    username = state_data[uid].get("reg_username", "")
-    if not username:
-        bot.send_message(uid, "❌ حدث خطأ. ابدأ التسجيل من جديد.")
-        user_states.pop(uid, None)
+    username = state_data[uid].get("username", "")
+    state_data[uid]["password"] = password
+    user_states[uid] = "WAITING_REGISTER_PHONE"
+    bot.send_message(uid, "📱 أرسل رقم الهاتف (مثال: 0941234567):")
+
+
+@bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_REGISTER_PHONE")
+def state_register_phone(message):
+    uid = message.from_user.id
+    phone = message.text.strip()
+    if not phone:
+        bot.send_message(uid, "❌ رقم الهاتف فارغ. أرسل رقم صالح:")
         return
 
-    # Generate random email
-    email = f"{username.lower()}{random.randint(1000,9999)}@gmail.com"
-    first_name = username
-    last_name = "Player"
-    # Use agent affiliate id as integer parentId
-    parent_id_val = int(agent_affiliate_id) if agent_affiliate_id else 2688288
+    state_data[uid]["phone"] = phone
+    user_states[uid] = "WAITING_REGISTER_CURRENCY"
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("💵 USD", callback_data="curr_USD"),
+        InlineKeyboardButton("💶 EUR", callback_data="curr_EUR"),
+        InlineKeyboardButton("💴 TRY", callback_data="curr_TRY"),
+    )
+    bot.send_message(uid, "💱 اختر العملة:", reply_markup=markup)
 
-    bot.send_message(uid, "⏳ جاري معالجة التسجيل...")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("curr_"))
+def cb_currency(call):
+    uid = call.from_user.id
+    currency = call.data.split("_")[1]
+    state_data[uid]["currency"] = currency
+    user_states[uid] = "WAITING_REGISTER_LANGUAGE"
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("🇹🇷 Turkish", callback_data="lang_tr"),
+        InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"),
+        InlineKeyboardButton("🇦🇪 Arabic", callback_data="lang_ar"),
+    )
+    bot.send_message(uid, "🌐 اختر لغة الحساب:", reply_markup=markup)
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("lang_"))
+def cb_language(call):
+    uid = call.from_user.id
+    lang = call.data.split("_")[1]
+    state_data[uid]["language"] = lang
+
+    affiliate_id = get_agent_affiliate_id()
+    if not affiliate_id:
+        bot.send_message(uid, "❌ تعذر الحصول على معرف الوكيل. يرجى المحاولة لاحقاً.", reply_markup=back_to_main_markup())
+        user_states.pop(uid, None)
+        bot.answer_callback_query(call.id)
+        return
 
     payload = {
-        "login": username,
-        "email": email,
-        "password": password,
-        "parentId": parent_id_val,
-        "firstName": first_name,
-        "lastName": last_name
+        "userName": state_data[uid]["username"],
+        "password": state_data[uid]["password"],
+        "phone": state_data[uid]["phone"],
+        "currency": state_data[uid]["currency"],
+        "language": lang,
+        "affiliateId": int(affiliate_id),
     }
 
-    logger.info(f"REGISTER PAYLOAD: {json.dumps(payload, ensure_ascii=False)}")
-
-    # auth=True is required so the player is created under the logged-in agent
-    result = api_request("POST", "global/api/UserApi/registerPlayer", payload, auth=True, add_delay=True)
-
-    logger.info(f"REGISTER RESULT type={type(result)} | content={json.dumps(result, ensure_ascii=False) if isinstance(result, dict) else str(result)[:2000]}")
-
-    if result is None:
-        bot.send_message(uid, "❌ فشل الاتصال بالخادم. حاول مرة أخرى لاحقاً.")
-        user_states.pop(uid, None)
-        return
-
-    # Check for Cloudflare/WAF HTML block
-    raw_text = result.get("__raw__", "")
-    if raw_text and (raw_text.strip().startswith("<") or "<html" in raw_text.lower()):
-        logger.warning(f"Cloudflare/WAF HTML block detected during registration for user {uid}")
-        bot.send_message(
-            uid,
-            "⚠️ تم حظر الطلب بواسطة جدار الحماية (Cloudflare).\n"
-            "الحساب قد لا يكون قد تم إنشاؤه فعلياً.\n\n"
-            "يرجى الانتظار قليلاً ثم المحاولة مرة أخرى."
-        )
-        user_states.pop(uid, None)
-        return
-
-    # Check for duplicate username
-    if "DuplicateUserName" in raw_text or "already exists" in raw_text.lower() or "اسم المستخدم موجود" in raw_text:
-        bot.send_message(uid, "❌ اسم المستخدم مستخدم بالفعل. ابدأ التسجيل باسم مختلف.")
-        user_states.pop(uid, None)
-        return
-
-    # Check for empty or failed response (non-JSON, server error, etc.)
-    if isinstance(result, dict) and "__raw__" in result:
-        if not raw_text.strip():
-            bot.send_message(
-                uid,
-                "❌ فشل في التسجيل: الخادم رد بخطأ داخلي (500) أو الرد فارغ.\n"
-                "قد تكون المشكلة مؤقتة من طرف الخادم. يرجى المحاولة بعد قليل."
-            )
-        else:
-            bot.send_message(
-                uid,
-                f"❌ فشل في التسجيل: رد غير متوقع من الخادم.\n\n"
-                f"{raw_text[:800]}"
-            )
-        user_states.pop(uid, None)
-        return
-
-    if isinstance(result, dict) and result.get("status"):
-        player_id = None
-        result_data = result.get("result")
-        if isinstance(result_data, dict):
-            player_id = result_data.get("playerId") or result_data.get("id")
-        elif isinstance(result_data, (int, str)):
-            player_id = result_data
-
-        if not player_id or str(player_id) in ("", "0", "None", "null"):
-            bot.send_message(
-                uid,
-                f"❌ فشل في التسجيل: الرد لا يحتوي على معرف لاعب صالح.\n\n"
-                f"رد الخادم: {json.dumps(result, ensure_ascii=False)[:800]}"
-            )
-            user_states.pop(uid, None)
-            return
-
-        # Verify player actually exists in agent panel
-        bot.send_message(uid, "🔍 جاري التحقق من إنشاء الحساب في لوحة التحكم...")
-        verify_payload = {
-            "start": 0,
-            "limit": 10,
-            "filter": {"login": username},
-            "isNextPage": False
-        }
-        verify_result = api_request("POST", "global/api/UserApi/getPlayersForCurrentAgent", verify_payload, auth=True)
-        logger.info(f"VERIFY RESULT for user {uid}: {json.dumps(verify_result, ensure_ascii=False) if isinstance(verify_result, dict) else str(verify_result)[:1000]}")
-
-        verified = False
-        if isinstance(verify_result, dict) and verify_result.get("status"):
-            v_data = verify_result.get("result", {})
-            if isinstance(v_data, dict):
-                records = v_data.get("records", [])
-                if isinstance(records, list):
-                    for rec in records:
-                        if isinstance(rec, dict) and rec.get("login") == username:
-                            verified = True
-                            break
-
-        if not verified:
-            bot.send_message(
-                uid,
-                "⚠️ تم استلام تأكيد من الخادم، لكن لم يتم العثور على الحساب في لوحة التحكم.\n"
-                "قد يكون هناك مشكلة مؤقتة أو تأخير في التحديث.\n\n"
-                "يرجى المحاولة مرة أخرى بعد بضع دقائق."
-            )
-            user_states.pop(uid, None)
-            return
-
+    result = api_request("POST", "global/api/UserApi/signUp", payload)
+    if result and result.get("status") and isinstance(result.get("result"), dict):
+        player_id = result["result"].get("playerId")
         players_db[str(uid)] = {
-            "player_id": str(player_id),
-            "username": username,
-            "email": email,
-            "currency": "EUR"
+            "username": state_data[uid]["username"],
+            "password": state_data[uid]["password"],
+            "player_id": player_id,
+            "currency": state_data[uid]["currency"],
+            "language": lang,
         }
         save_players_db(players_db)
         bot.send_message(
             uid,
-            f"✅ تم إنشاء الحساب بنجاح!\n\n"
-            f"👤 اسم المستخدم: {username}\n"
-            f"📧 البريد: {email}\n"
-            f"🆔 معرف اللاعب: {player_id}\n\n"
-            f"يمكنك الآن الإيداع واللعب!",
-            reply_markup=main_menu_markup(uid)
+            f"✅ <b>تم إنشاء الحساب بنجاح!</b>\n\n"
+            f"👤 اسم المستخدم: <b>{html.escape(state_data[uid]['username'])}</b>\n"
+            f"🔑 كلمة المرور: <tg-spoiler>{html.escape(state_data[uid]['password'])}</tg-spoiler>\n"
+            f"💱 العملة: {state_data[uid]['currency']}\n"
+            f"🌐 اللغة: {lang.upper()}",
+            reply_markup=back_to_main_markup()
         )
     else:
-        error_msg = "Unknown error"
-        if result and isinstance(result, dict) and result.get("notification"):
-            notif = result["notification"]
-            if isinstance(notif, list) and len(notif) > 0:
-                error_msg = notif[0].get("content", "Unknown error")
-            elif isinstance(notif, dict):
-                error_msg = notif.get("content", "Unknown error")
-        elif raw_text:
-            error_msg = raw_text[:800]
-        bot.send_message(uid, f"❌ فشل في التسجيل: {error_msg}")
+        error = "Unknown error"
+        if result and result.get("notification"):
+            error = result["notification"][0].get("content", "Unknown error")
+        bot.send_message(uid, f"❌ فشل في التسجيل: {error}", reply_markup=back_to_main_markup())
 
     user_states.pop(uid, None)
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "menu_play")
+def cb_menu_play(call):
+    uid = call.from_user.id
+    player = players_db.get(str(uid))
+    if not player:
+        bot.send_message(uid, "❌ ليس لديك حساب مسجل. استخدم 📝 تسجيل حساب أولاً.", reply_markup=back_to_main_markup())
+        bot.answer_callback_query(call.id)
+        return
+    token = access_token
+    if not token:
+        bot.send_message(uid, "⏳ جاري تجهيز الرابط...")
+        if not do_signin():
+            bot.send_message(uid, "❌ فشل في تسجيل الدخول. حاول لاحقاً.")
+            bot.answer_callback_query(call.id)
+            return
+        token = access_token
+    payload = {
+        "playerId": player["player_id"],
+        "language": player.get("language", "ar"),
+        "returnUrl": "https://texas4win.com",
+    }
+    result = api_request("POST", "global/api/UserApi/getAuthTokenForPlayer", payload, auth=True)
+    if result and result.get("status") and isinstance(result.get("result"), dict):
+        player_token = result["result"].get("authToken")
+        if player_token:
+            link = f"https://texas4win.com/auth?token={player_token}"
+            bot.send_message(uid, f"🎮 <b>رابط الدخول للعبة:</b>\n\n<a href='{link}'>اضغط هنا للعب</a>", reply_markup=back_to_main_markup())
+        else:
+            bot.send_message(uid, "❌ فشل في الحصول على رابط اللعب.", reply_markup=back_to_main_markup())
+    else:
+        bot.send_message(uid, "❌ فشل في الحصول على رابط اللعب.", reply_markup=back_to_main_markup())
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "menu_balance")
+def cb_menu_balance(call):
+    uid = call.from_user.id
+    player = players_db.get(str(uid))
+    if not player:
+        bot.send_message(uid, "❌ ليس لديك حساب مسجل. استخدم 📝 تسجيل حساب أولاً.", reply_markup=back_to_main_markup())
+        bot.answer_callback_query(call.id)
+        return
+    if not access_token:
+        do_signin()
+    payload = {
+        "start": 0,
+        "limit": 1,
+        "filter": {"search": player["username"]},
+        "isNextPage": False,
+    }
+    result = api_request("POST", "global/api/UserApi/getPlayersForCurrentAgent", payload, auth=True)
+    if result and result.get("status") and isinstance(result.get("result"), dict):
+        records = result["result"].get("records", [])
+        if records:
+            bal = records[0].get("balance", 0)
+            bonus = records[0].get("bonus", 0)
+            currency = player.get("currency", "EUR")
+            bot.send_message(uid, f"📊 <b>رصيدك:</b>\n\n💵 الرصيد: {bal} {currency}\n🎁 البونص: {bonus} {currency}", reply_markup=back_to_main_markup())
+        else:
+            bot.send_message(uid, "❌ لم يتم العثور على بيانات الرصيد.", reply_markup=back_to_main_markup())
+    else:
+        bot.send_message(uid, "❌ فشل في جلب الرصيد.", reply_markup=back_to_main_markup())
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "menu_deposit")
+def cb_menu_deposit(call):
+    uid = call.from_user.id
+    player = players_db.get(str(uid))
+    if not player:
+        bot.send_message(uid, "❌ ليس لديك حساب مسجل. استخدم 📝 تسجيل حساب أولاً.", reply_markup=back_to_main_markup())
+        bot.answer_callback_query(call.id)
+        return
+    user_states[uid] = "WAITING_DEPOSIT_AMOUNT"
+    state_data[uid] = {}
+    bot.send_message(uid, "💰 أرسل المبلغ الذي تريد إيداعه (رقم فقط):")
+    bot.answer_callback_query(call.id)
 
 
 @bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_DEPOSIT_AMOUNT")
@@ -1331,28 +530,37 @@ def state_deposit_amount(message):
     except ValueError:
         bot.send_message(uid, "❌ أرسل مبلغاً صالحاً (رقم فقط).")
         return
-
     state_data[uid]["deposit_amount"] = amount
-    user_states[uid] = "WAITING_DEPOSIT_RECEIPT"
-    bot.send_message(
-        uid,
-        f"💰 المبلغ: {amount}\n\n"
-        f"📸 أرسل صورة الإيصال الآن (أو اضغط 🔙 للإلغاء).",
-        reply_markup=back_markup()
+    user_states[uid] = "WAITING_DEPOSIT_METHOD"
+    markup = InlineKeyboardMarkup()
+    markup.add(
+        InlineKeyboardButton("💳 شام كاش", callback_data="dep_sham"),
+        InlineKeyboardButton("📱 سيرياتيل كاش", callback_data="dep_syriatel")
     )
+    bot.send_message(uid, "اختر طريقة الإيداع:", reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data in ["dep_sham", "dep_syriatel"])
+def cb_deposit_method(call):
+    uid = call.from_user.id
+    method = "sham" if call.data == "dep_sham" else "syriatel"
+    state_data[uid]["deposit_method"] = method
+    amount = state_data[uid].get("deposit_amount", 0)
+    if method == "sham":
+        msg = f"💳 <b>إيداع عبر شام كاش</b>\n\n💰 المبلغ: {amount}\n📋 المحفظة: <code>{html.escape(SHAM_CASH_WALLET)}</code>\n\nأرسل إيصال التحويل كـ صورة:"
+    else:
+        msg = f"📱 <b>إيداع عبر سيرياتيل كاش</b>\n\n💰 المبلغ: {amount}\n📋 الكود: <code>{html.escape(SYRIATEL_CASH_CODE)}</code>\n\nأرسل إيصال التحويل كـ صورة:"
+    bot.send_message(uid, msg)
+    user_states[uid] = "WAITING_DEPOSIT_RECEIPT"
+    bot.answer_callback_query(call.id)
 
 
 @bot.message_handler(content_types=["photo"], func=lambda m: user_states.get(m.from_user.id) == "WAITING_DEPOSIT_RECEIPT")
 def state_deposit_receipt(message):
     uid = message.from_user.id
-    amount = state_data[uid].get("deposit_amount", 0)
     file_id = message.photo[-1].file_id
-    caption = (
-        f"📥 طلب إيداع جديد\n\n"
-        f"👤 المستخدم: {uid}\n"
-        f"💰 المبلغ: {amount}\n\n"
-        f"أوافق / أرفض؟"
-    )
+    amount = state_data[uid].get("deposit_amount", 0)
+    caption = f"📥 <b>طلب إيداع جديد</b>\n\n👤 المستخدم: {uid}\n💰 المبلغ: {amount}\n\nأوافق / أرفض؟"
     markup = InlineKeyboardMarkup()
     markup.add(
         InlineKeyboardButton("✅ موافق", callback_data="approve_dep"),
@@ -1362,6 +570,20 @@ def state_deposit_receipt(message):
     pending_deposits[sent.message_id] = {"user_id": uid, "amount": amount}
     bot.send_message(uid, "✅ تم إرسال الإيصال للمراجعة. سيتم إشعارك بالنتيجة.", reply_markup=main_menu_markup(uid))
     user_states.pop(uid, None)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "menu_withdraw")
+def cb_menu_withdraw(call):
+    uid = call.from_user.id
+    player = players_db.get(str(uid))
+    if not player:
+        bot.send_message(uid, "❌ ليس لديك حساب مسجل. استخدم 📝 تسجيل حساب أولاً.", reply_markup=back_to_main_markup())
+        bot.answer_callback_query(call.id)
+        return
+    user_states[uid] = "WAITING_WITHDRAW_AMOUNT"
+    state_data[uid] = {}
+    bot.send_message(uid, "🏧 أرسل المبلغ الذي تريد سحبه (رقم فقط):")
+    bot.answer_callback_query(call.id)
 
 
 @bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_WITHDRAW_AMOUNT")
@@ -1375,7 +597,6 @@ def state_withdraw_amount(message):
     except ValueError:
         bot.send_message(uid, "❌ أرسل مبلغاً صالحاً (رقم فقط).")
         return
-
     state_data[uid]["withdraw_amount"] = amount
     user_states[uid] = "WAITING_WITHDRAW_METHOD"
     markup = InlineKeyboardMarkup()
@@ -1406,19 +627,10 @@ def state_withdraw_account(message):
     if not account:
         bot.send_message(uid, "❌ الحساب فارغ. أرسل رقم صالح:")
         return
-
     amount = state_data[uid].get("withdraw_amount", 0)
     method = state_data[uid].get("withdraw_method", "")
     method_name = "شام كاش" if method == "sham" else "سيرياتيل كاش"
-
-    text = (
-        f"📩 طلب سحب جديد\n\n"
-        f"👤 المستخدم: {uid}\n"
-        f"💰 المبلغ: {amount}\n"
-        f"💳 الطريقة: {method_name}\n"
-        f"🔢 الحساب: {account}\n\n"
-        f"أوافق / أرفض؟"
-    )
+    text = f"📩 <b>طلب سحب جديد</b>\n\n👤 المستخدم: {uid}\n💰 المبلغ: {amount}\n💳 الطريقة: {method_name}\n🔢 الحساب: <code>{html.escape(account)}</code>\n\nأوافق / أرفض؟"
     markup = InlineKeyboardMarkup()
     markup.add(
         InlineKeyboardButton("✅ موافق", callback_data="approve_wd"),
@@ -1430,6 +642,14 @@ def state_withdraw_account(message):
     user_states.pop(uid, None)
 
 
+@bot.callback_query_handler(func=lambda call: call.data == "menu_support")
+def cb_menu_support(call):
+    uid = call.from_user.id
+    user_states[uid] = "WAITING_SUPPORT_MESSAGE"
+    bot.send_message(uid, "📞 أرسل رسالتك لفريق الدعم الفني:")
+    bot.answer_callback_query(call.id)
+
+
 @bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_SUPPORT_MESSAGE")
 def state_support_message(message):
     uid = message.from_user.id
@@ -1437,14 +657,7 @@ def state_support_message(message):
     if not text:
         bot.send_message(uid, "❌ الرسالة فارغة. أرسل رسالة صالحة:")
         return
-
-    # Forward to admin group
-    forward_text = (
-        f"📞 رسالة دعم فني جديدة\n\n"
-        f"👤 من المستخدم: {uid}\n"
-        f"💬 الرسالة:\n{text}\n\n"
-        f"اضغط على الزر أدناه للرد."
-    )
+    forward_text = f"📞 <b>رسالة دعم فني جديدة</b>\n\n👤 من المستخدم: {uid}\n💬 الرسالة:\n{html.escape(text)}\n\nاضغط على الزر أدناه للرد."
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("✍️ رد على المستخدم", callback_data=f"reply_support_{uid}"))
     sent = bot.send_message(ADMIN_GROUP_ID, forward_text, reply_markup=markup)
@@ -1453,9 +666,122 @@ def state_support_message(message):
     user_states.pop(uid, None)
 
 
-# =============================================================================
-# Admin State Handlers
-# =============================================================================
+@bot.callback_query_handler(func=lambda call: call.data.startswith("reply_support_"))
+def cb_reply_support(call):
+    uid = call.from_user.id
+    target_uid = int(call.data.split("_")[-1])
+    active_support_replies[uid] = target_uid
+    bot.send_message(uid, f"✍️ أرسل رسالة الرد للمستخدم {target_uid} الآن:\n\n(ارسل 'إلغاء' للإلغاء)")
+    bot.answer_callback_query(call.id)
+
+
+@bot.message_handler(func=lambda m: active_support_replies.get(m.from_user.id))
+def handle_support_reply(message):
+    admin_id = message.from_user.id
+    target_uid = active_support_replies.get(admin_id)
+    text = message.text.strip()
+    if text == "إلغاء":
+        active_support_replies.pop(admin_id, None)
+        bot.send_message(admin_id, "❌ تم إلغاء الرد.")
+        return
+    try:
+        bot.send_message(target_uid, f"📩 رد من الدعم الفني:\n\n{html.escape(text)}")
+        bot.send_message(admin_id, "✅ تم إرسال الرد.")
+    except Exception as e:
+        bot.send_message(admin_id, f"❌ فشل في إرسال الرد: {e}")
+    active_support_replies.pop(admin_id, None)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "menu_admin")
+def cb_menu_admin(call):
+    uid = str(call.from_user.id)
+    if uid not in owners_list and uid != str(OWNER_ID):
+        bot.answer_callback_query(call.id, "⛔️ ليس لديك صلاحية!")
+        return
+    bot.send_message(call.from_user.id, "🔧 <b>لوحة التحكم</b>", reply_markup=admin_panel_markup())
+    bot.answer_callback_query(call.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("admin_") or call.data.startswith("edit_"))
+def cb_admin_panel(call):
+    uid = str(call.from_user.id)
+    if uid not in owners_list and uid != str(OWNER_ID):
+        bot.answer_callback_query(call.id, "⛔️ ليس لديك صلاحية!")
+        return
+
+    data = call.data
+
+    if data == "admin_agent_data":
+        markup = InlineKeyboardMarkup()
+        markup.add(
+            InlineKeyboardButton("تعديل اسم المستخدم", callback_data="edit_agent_username"),
+            InlineKeyboardButton("تعديل كلمة المرور", callback_data="edit_agent_password"),
+            InlineKeyboardButton("🔙 رجوع", callback_data="admin_back_to_menu")
+        )
+        bot.edit_message_text("💼 اختر ما تريد تعديله:", call.message.chat.id, call.message.message_id, reply_markup=markup)
+
+    elif data == "edit_agent_username":
+        user_states[call.from_user.id] = "WAITING_ADMIN_AGENT_USERNAME"
+        bot.send_message(call.from_user.id, "📝 أرسل اسم المستخدم الجديد للوكيل:")
+
+    elif data == "edit_agent_password":
+        user_states[call.from_user.id] = "WAITING_ADMIN_AGENT_PASSWORD"
+        bot.send_message(call.from_user.id, "🔒 أرسل كلمة المرور الجديدة للوكيل:")
+
+    elif data == "admin_sham_wallet":
+        user_states[call.from_user.id] = "WAITING_ADMIN_SHAM_WALLET"
+        bot.send_message(call.from_user.id, "💰 أرسل عنوان محفظة شام كاش الجديد:")
+
+    elif data == "admin_syriatel_code":
+        user_states[call.from_user.id] = "WAITING_ADMIN_SYRIATEL_CODE"
+        bot.send_message(call.from_user.id, "📱 أرسل كود سيرياتيل كاش الجديد:")
+
+    elif data == "admin_balance":
+        result = api_request("POST", "global/api/UserApi/getAgentAllWallets", {}, auth=True)
+        if result and result.get("status") and result.get("result"):
+            balances = result["result"]
+            text = "📊 <b>أرصدة الخزنة الحالية:</b>\n\n"
+            for bal in balances:
+                text += f"💵 {bal.get('currencyName', 'Unknown')} ({bal.get('currencyCode', 'N/A')}):\n"
+                text += f"   الرصيد: {bal.get('balance', 0)}\n"
+                text += f"   المتاح: {bal.get('availability', 0)}\n"
+                text += f"   البونص: {bal.get('bonus', 0)}\n\n"
+            bot.edit_message_text(text, call.message.chat.id, call.message.message_id)
+        else:
+            bot.edit_message_text("❌ فشل في جلب الأرصدة.", call.message.chat.id, call.message.message_id)
+
+    elif data == "admin_broadcast":
+        user_states[call.from_user.id] = "WAITING_ADMIN_BROADCAST"
+        bot.send_message(call.from_user.id, "📢 أرسل الرسالة التي تريد بثها للجميع:")
+
+    elif data == "admin_add_owner":
+        user_states[call.from_user.id] = "WAITING_ADMIN_ADD_OWNER"
+        bot.send_message(call.from_user.id, "➕ أرسل معرف المستخدم (User ID) للمالك الجديد:")
+
+    elif data == "admin_add_admin":
+        user_states[call.from_user.id] = "WAITING_ADMIN_ADD_ADMIN"
+        bot.send_message(call.from_user.id, "➕ أرسل معرف المستخدم (User ID) للمشرف الجديد:")
+
+    elif data == "admin_remove_owner":
+        user_states[call.from_user.id] = "WAITING_ADMIN_REMOVE_OWNER"
+        current = "\n".join(owners_list) if owners_list else "(لا يوجد مالكين)"
+        bot.send_message(call.from_user.id, f"➖ أرسل معرف المستخدم للمالك المراد إزالته.\n\nالمالكين الحاليين:\n{current}")
+
+    elif data == "admin_remove_admin":
+        user_states[call.from_user.id] = "WAITING_ADMIN_REMOVE_ADMIN"
+        current = "\n".join(admins_list) if admins_list else "(لا يوجد مشرفين)"
+        bot.send_message(call.from_user.id, f"➖ أرسل معرف المستخدم للمشرف المراد إزالته.\n\nالمشرفين الحاليين:\n{current}")
+
+    elif data == "admin_back":
+        bot.send_message(call.from_user.id, "🔙 تم إغلاق لوحة التحكم.", reply_markup=main_menu_markup(call.from_user.id))
+
+    elif data == "admin_back_to_menu":
+        bot.edit_message_text("🔧 <b>لوحة التحكم</b>", call.message.chat.id, call.message.message_id, reply_markup=admin_panel_markup())
+
+    bot.answer_callback_query(call.id)
+
+
+# Admin state handlers
 @bot.message_handler(func=lambda m: user_states.get(m.from_user.id) == "WAITING_ADMIN_AGENT_USERNAME")
 def state_admin_agent_username(message):
     uid = message.from_user.id
@@ -1502,7 +828,7 @@ def state_admin_broadcast(message):
     count = 0
     for user_id in users_list:
         try:
-            bot.send_message(int(user_id), f"📢 إذاعة:\n\n{text}")
+            bot.send_message(int(user_id), f"📢 إذاعة:\n\n{html.escape(text)}")
             count += 1
         except Exception as e:
             logger.error(f"Failed to broadcast to {user_id}: {e}")
@@ -1564,168 +890,13 @@ def state_admin_remove_admin(message):
     user_states.pop(uid, None)
 
 
-# =============================================================================
-# Callbacks - Registration
-# =============================================================================
-@bot.callback_query_handler(func=lambda call: call.data == "register_now")
-def cb_register_now(call):
-    uid = call.from_user.id
-    user_states[uid] = "WAITING_REGISTER_USERNAME"
-    state_data[uid] = {}
-    bot.send_message(uid, "👤 أرسل اسم المستخدم المطلوب (حروف إنجليزية وأرقام فقط):")
-    bot.answer_callback_query(call.id)
-
-
-@bot.callback_query_handler(func=lambda call: call.data == "delete_account")
-def cb_delete_account(call):
-    uid = str(call.from_user.id)
-    if uid in players_db:
-        removed = players_db.pop(uid)
-        save_players_db(players_db)
-        bot.send_message(
-            call.from_user.id,
-            f"🗑️ تم حذف بيانات الحساب المحلية بنجاح.\n\n"
-            f"👤 اسم المستخدم المحذوف: {removed.get('username', 'غير معروف')}\n\n"
-            f"يمكنك الآن إنشاء حساب جديد إذا أردت."
-        )
-        bot.answer_callback_query(call.id, "✅ تم الحذف")
-    else:
-        bot.send_message(call.from_user.id, "❌ لا يوجد حساب مسجل لديك.")
-        bot.answer_callback_query(call.id, "❌ لا يوجد حساب")
-
-
-# =============================================================================
-# Callbacks - Support Reply
-# =============================================================================
-@bot.callback_query_handler(func=lambda call: call.data.startswith("reply_support_"))
-def cb_reply_support(call):
-    uid = call.from_user.id
-    target_uid = int(call.data.split("_")[-1])
-    active_support_replies[uid] = target_uid
-    bot.send_message(uid, f"✍️ أرسل رسالة الرد للمستخدم {target_uid} الآن:\n\n(ارسل 'إلغاء' للإلغاء)")
-    bot.answer_callback_query(call.id)
-
-
-@bot.message_handler(func=lambda m: active_support_replies.get(m.from_user.id))
-def handle_support_reply(message):
-    admin_id = message.from_user.id
-    target_uid = active_support_replies.get(admin_id)
-    text = message.text.strip()
-    if text == "إلغاء":
-        active_support_replies.pop(admin_id, None)
-        bot.send_message(admin_id, "❌ تم إلغاء الرد.")
-        return
-    try:
-        bot.send_message(target_uid, f"📩 رد من الدعم الفني:\n\n{text}")
-        bot.send_message(admin_id, "✅ تم إرسال الرد.")
-    except Exception as e:
-        bot.send_message(admin_id, f"❌ فشل في إرسال الرد: {e}")
-    active_support_replies.pop(admin_id, None)
-
-
-# =============================================================================
-# Callbacks - Admin Panel
-# =============================================================================
-@bot.callback_query_handler(func=lambda call: call.data.startswith("admin_") or call.data.startswith("edit_"))
-def cb_admin_panel(call):
-    uid = str(call.from_user.id)
-    if uid not in owners_list and uid != str(OWNER_ID):
-        bot.answer_callback_query(call.id, "⛔️ ليس لديك صلاحية!")
-        return
-
-    data = call.data
-
-    if data == "admin_agent_data":
-        markup = InlineKeyboardMarkup()
-        markup.add(
-            InlineKeyboardButton("تعديل اسم المستخدم", callback_data="edit_agent_username"),
-            InlineKeyboardButton("تعديل كلمة المرور", callback_data="edit_agent_password"),
-            InlineKeyboardButton("🔙 رجوع", callback_data="admin_back_to_menu")
-        )
-        bot.edit_message_text("💼 اختر ما تريد تعديله:", call.message.chat.id, call.message.message_id, reply_markup=markup)
-        bot.answer_callback_query(call.id)
-
-    elif data == "edit_agent_username":
-        user_states[call.from_user.id] = "WAITING_ADMIN_AGENT_USERNAME"
-        bot.send_message(call.from_user.id, "📝 أرسل اسم المستخدم الجديد للوكيل:")
-        bot.answer_callback_query(call.id)
-
-    elif data == "edit_agent_password":
-        user_states[call.from_user.id] = "WAITING_ADMIN_AGENT_PASSWORD"
-        bot.send_message(call.from_user.id, "🔒 أرسل كلمة المرور الجديدة للوكيل:")
-        bot.answer_callback_query(call.id)
-
-    elif data == "admin_sham_wallet":
-        user_states[call.from_user.id] = "WAITING_ADMIN_SHAM_WALLET"
-        bot.send_message(call.from_user.id, "💰 أرسل عنوان محفظة شام كاش الجديد:")
-        bot.answer_callback_query(call.id)
-
-    elif data == "admin_syriatel_code":
-        user_states[call.from_user.id] = "WAITING_ADMIN_SYRIATEL_CODE"
-        bot.send_message(call.from_user.id, "📱 أرسل كود سيرياتيل كاش الجديد:")
-        bot.answer_callback_query(call.id)
-
-    elif data == "admin_balance":
-        result = api_request("POST", "global/api/UserApi/getAgentAllWallets", {}, auth=True)
-        if result and result.get("status") and result.get("result"):
-            balances = result["result"]
-            text = "📊 أرصدة الخزنة الحالية:\n\n"
-            for bal in balances:
-                text += f"💵 {bal.get('currencyName', 'Unknown')} ({bal.get('currencyCode', 'N/A')}):\n"
-                text += f"   الرصيد: {bal.get('balance', 0)}\n"
-                text += f"   المتاح: {bal.get('availability', 0)}\n"
-                text += f"   البونص: {bal.get('bonus', 0)}\n\n"
-            bot.edit_message_text(text, call.message.chat.id, call.message.message_id)
-        else:
-            bot.edit_message_text("❌ فشل في جلب الأرصدة.", call.message.chat.id, call.message.message_id)
-        bot.answer_callback_query(call.id)
-
-    elif data == "admin_broadcast":
-        user_states[call.from_user.id] = "WAITING_ADMIN_BROADCAST"
-        bot.send_message(call.from_user.id, "📢 أرسل الرسالة التي تريد بثها للجميع:")
-        bot.answer_callback_query(call.id)
-
-    elif data == "admin_add_owner":
-        user_states[call.from_user.id] = "WAITING_ADMIN_ADD_OWNER"
-        bot.send_message(call.from_user.id, "➕ أرسل معرف المستخدم (User ID) للمالك الجديد:")
-        bot.answer_callback_query(call.id)
-
-    elif data == "admin_add_admin":
-        user_states[call.from_user.id] = "WAITING_ADMIN_ADD_ADMIN"
-        bot.send_message(call.from_user.id, "➕ أرسل معرف المستخدم (User ID) للمشرف الجديد:")
-        bot.answer_callback_query(call.id)
-
-    elif data == "admin_remove_owner":
-        user_states[call.from_user.id] = "WAITING_ADMIN_REMOVE_OWNER"
-        current = "\n".join(owners_list) if owners_list else "(لا يوجد مالكين)"
-        bot.send_message(call.from_user.id, f"➖ أرسل معرف المستخدم (User ID) للمالك المراد إزالته.\n\nالمالكين الحاليين:\n{current}")
-        bot.answer_callback_query(call.id)
-
-    elif data == "admin_remove_admin":
-        user_states[call.from_user.id] = "WAITING_ADMIN_REMOVE_ADMIN"
-        current = "\n".join(admins_list) if admins_list else "(لا يوجد مشرفين)"
-        bot.send_message(call.from_user.id, f"➖ أرسل معرف المستخدم (User ID) للمشرف المراد إزالته.\n\nالمشرفين الحاليين:\n{current}")
-        bot.answer_callback_query(call.id)
-
-    elif data == "admin_back":
-        bot.send_message(call.from_user.id, "🔙 تم إغلاق لوحة التحكم.", reply_markup=main_menu_markup(call.from_user.id))
-        bot.answer_callback_query(call.id)
-
-    elif data == "admin_back_to_menu":
-        show_admin_panel(call.from_user.id, call.message.message_id)
-        bot.answer_callback_query(call.id)
-
-
-# =============================================================================
-# Callbacks - Deposit Action
-# =============================================================================
+# Deposit / Withdraw approval callbacks
 @bot.callback_query_handler(func=lambda call: call.data in ["approve_dep", "reject_dep"])
 def cb_deposit_action(call):
     msg_id = call.message.message_id
     if msg_id not in pending_deposits:
         bot.answer_callback_query(call.id, "❌ طلب غير موجود أو تم معالجته.")
         return
-
     dep = pending_deposits.pop(msg_id)
     user_id = dep["user_id"]
     amount = dep["amount"]
@@ -1736,10 +907,8 @@ def cb_deposit_action(call):
             bot.send_message(call.message.chat.id, f"❌ لم يتم العثور على ربط حساب اللاعب للمستخدم {user_id}")
             bot.answer_callback_query(call.id)
             return
-
         player_id = player_info["player_id"]
         currency = player_info.get("currency", "EUR")
-
         payload = {
             "amount": float(amount),
             "comment": f"Deposit via bot for user {user_id}",
@@ -1748,10 +917,8 @@ def cb_deposit_action(call):
             "currency": currency,
             "moneyStatus": 5
         }
-
         if not access_token:
             do_signin()
-
         result = api_request("POST", "global/api/UserApi/depositToPlayer", payload, auth=True)
         if result and result.get("status"):
             try:
@@ -1780,20 +947,15 @@ def cb_deposit_action(call):
             bot.edit_message_caption(new_caption, call.message.chat.id, call.message.message_id)
         except Exception as e:
             logger.error(f"Failed to edit deposit message: {e}")
-
     bot.answer_callback_query(call.id)
 
 
-# =============================================================================
-# Callbacks - Withdraw Action
-# =============================================================================
 @bot.callback_query_handler(func=lambda call: call.data in ["approve_wd", "reject_wd"])
 def cb_withdraw_action(call):
     msg_id = call.message.message_id
     if msg_id not in pending_withdrawals:
         bot.answer_callback_query(call.id, "❌ طلب غير موجود أو تم معالجته.")
         return
-
     wd = pending_withdrawals.pop(msg_id)
     user_id = wd["user_id"]
     amount = wd["amount"]
@@ -1804,10 +966,8 @@ def cb_withdraw_action(call):
             bot.send_message(call.message.chat.id, f"❌ لم يتم العثور على ربط حساب اللاعب للمستخدم {user_id}")
             bot.answer_callback_query(call.id)
             return
-
         player_id = player_info["player_id"]
         currency = player_info.get("currency", "EUR")
-
         payload = {
             "amount": -float(amount),
             "comment": f"Withdraw via bot for user {user_id}",
@@ -1816,10 +976,8 @@ def cb_withdraw_action(call):
             "currency": currency,
             "moneyStatus": 5
         }
-
         if not access_token:
             do_signin()
-
         result = api_request("POST", "global/api/UserApi/withdrawFromPlayer", payload, auth=True)
         if result and result.get("status"):
             try:
@@ -1848,7 +1006,6 @@ def cb_withdraw_action(call):
             bot.edit_message_text(new_text, call.message.chat.id, call.message.message_id)
         except Exception as e:
             logger.error(f"Failed to edit withdraw message: {e}")
-
     bot.answer_callback_query(call.id)
 
 
@@ -1858,11 +1015,10 @@ def cb_withdraw_action(call):
 @app.route(f"/{BOT_TOKEN}", methods=["POST", "GET"])
 def webhook():
     if request.method == "GET":
-        # Health check / browser ping — return OK so Render/UptimeRobot stay green
-        return "Webhook endpoint active. Send POST for Telegram updates.", 200
+        return "Webhook active. Send POST for Telegram updates.", 200
     if request.headers.get("content-type") == "application/json":
         json_string = request.get_data().decode("utf-8")
-        update = telebot.types.Update.de_json(json_string)
+        update = types.Update.de_json(json_string)
         bot.process_new_updates([update])
         return "OK", 200
     else:
@@ -1871,7 +1027,7 @@ def webhook():
 
 @app.route("/")
 def index():
-    return "Bot is running! curl_cffi + Nodriver + SeleniumBase UC Mode enabled.", 200
+    return "Bot is running!", 200
 
 
 def set_webhook():
@@ -1884,42 +1040,20 @@ def set_webhook():
     except Exception as e:
         logger.error(f"Failed to set webhook: {e}")
 
+
 # =============================================================================
 # Main
 # =============================================================================
-def _init_background():
-    """Background initialization: signin + affiliate ID fetch + Tor proxy warmup."""
-    _ensure_tor_proxy()
-    if do_signin():
-        get_agent_affiliate_id()
-    else:
-        logger.error("Initial signin failed. API calls may fail until signin succeeds.")
-
-
 if __name__ == "__main__":
     load_owners()
     load_admins()
     load_users_list()
+    load_players_db()
 
     logger.info(f"RESIDENTIAL_PROXY env: {'SET' if RESIDENTIAL_PROXY else 'NOT SET'}")
-    logger.info(f"WIREGUARD_PROXY env: {'SET' if WIREGUARD_PROXY else 'NOT SET'}")
-    logger.info(f"TOR_SOCKS_PROXY env: {'SET' if TOR_SOCKS_PROXY else 'NOT SET'}")
-    logger.info(f"curl_cffi available: {bool(curl_cffi_requests)}")
-    logger.info(f"nodriver available: {bool(uc)}")
-    logger.info(f"seleniumbase available: {bool(SB)}")
-    logger.info(f"cloudscraper available: {bool(cloudscraper)}")
-    logger.info(f"requests available: {bool(requests)}")
-    logger.info(f"tls_client available: {bool(tls_client)}")
-    logger.info(f"Anti-Bot stealth engine: ENABLED")
-    logger.info(f"SOCKS proxy support: {bool(SOCKS_AVAILABLE)}")
-    logger.info(f"pysocks support: {bool(SOCKS_PY_AVAILABLE)}")
+    logger.info("Bot initialized. Starting...")
 
-    # Start proxy pool refresh immediately
-    _init_proxy_pool()
-
-    # Start server immediately so Render detects the port.
-    # Do signin in background to avoid blocking webhook health checks.
-    init_thread = threading.Thread(target=_init_background, daemon=True)
+    init_thread = threading.Thread(target=lambda: do_signin() and get_agent_affiliate_id(), daemon=True)
     init_thread.start()
 
     refresh_thread = threading.Thread(target=token_refresh_loop, daemon=True)
