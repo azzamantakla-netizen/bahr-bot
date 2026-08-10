@@ -360,20 +360,19 @@ def _thordata_unlocker_request(method, url, *, headers=None, payload=None, timeo
     unlock_url = "https://universalapi.thordata.com/request"
     thordata_headers = {
         "Authorization": f"Bearer {THORDATA_TOKEN}",
-        "Content-Type": "application/json",
     }
     post_data = {
         "url": url,
         "type": "html",
-        "js_render": True,
-        "header": False,
+        "js_render": "true",
+        "header": "false",
         "country": "us",
         "clean_content": "js,css",
-        "wait": 5000,
+        "wait": "5000",
     }
     try:
         import requests
-        resp = requests.post(unlock_url, json=post_data, headers=thordata_headers, timeout=timeout)
+        resp = requests.post(unlock_url, data=post_data, headers=thordata_headers, timeout=timeout)
     except Exception as e:
         logger.error(f"Thordata Web Unlocker network error: {e}")
         return None
