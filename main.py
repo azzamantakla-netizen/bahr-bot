@@ -49,6 +49,11 @@ AGENT_PASSWORD = os.environ.get("AGENT_PASSWORD", "")
 SHAM_CASH_WALLET = os.environ.get("SHAM_CASH_WALLET", "")
 SYRIATEL_CASH_CODE = os.environ.get("SYRIATEL_CASH_CODE", "")
 RESIDENTIAL_PROXY = os.environ.get("RESIDENTIAL_PROXY", "")
+PROXY_LIST = [p.strip() for p in os.environ.get("PROXY_LIST", "").split(",") if p.strip()]
+_BASE_PROXIES = []
+if RESIDENTIAL_PROXY:
+    _BASE_PROXIES.append(RESIDENTIAL_PROXY)
+_BASE_PROXIES.extend(PROXY_LIST)
 
 BASE_API = "https://agents.texas4win.com/"
 OWNERS_FILE = "owners.json"
@@ -192,11 +197,24 @@ _scraper = cloudscraper.create_scraper(
     }
 )
 
-def _get_proxies():
-    """Return proxy dict if RESIDENTIAL_PROXY is set."""
-    if RESIDENTIAL_PROXY:
-        return {"http": RESIDENTIAL_PROXY, "https": RESIDENTIAL_PROXY}
-    return {}
+_proxy_rotation_index = 0
+
+def _get_proxies(rotate=False):
+    """Return proxy dict. If rotate=True, cycles through PROXY_LIST."""
+    global _proxy_rotation_index
+    if not _BASE_PROXIES:
+        return {}
+    if rotate and len(_BASE_PROXIES) > 1:
+        proxy = _BASE_PROXIES[_proxy_rotation_index % len(_BASE_PROXIES)]
+        _proxy_rotation_index += 1
+    else:
+        proxy = _BASE_PROXIES[0]
+    return {"http": proxy, "https": proxy}
+
+def _get_proxy_url():
+    """Return current proxy URL string for logging."""
+    proxies = _get_proxies()
+    return proxies.get("http", "none") if proxies else "none"
 
 # List of curl_cffi impersonations to try (in order)
 CURL_CFFI_IMPERSONATIONS = ["chrome120", "chrome119", "chrome116", "chrome110", "chrome107"]
@@ -267,82 +285,91 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
         time.sleep(random.uniform(1, 3))
 
     logger.info(f"API {method} {url}")
-    proxies = _get_proxies()
 
     # -------------------------------------------------------------------------
-    # Strategy 1: curl_cffi with browser impersonation (best for Render / blocked IPs)
+    # Try all configured proxies + no-proxy (if none configured)
     # -------------------------------------------------------------------------
-    if CURL_CFFI_AVAILABLE:
-        try:
-            logger.info("Trying curl_cffi with browser impersonation...")
-            resp = _request_with_curl_cffi(method, url, headers, payload, proxies, timeout=30)
-            if resp is not None:
-                if resp.status_code == 200:
-                    logger.info(f"API response (curl_cffi): {resp.status_code}")
-                    try:
-                        return resp.json()
-                    except Exception:
-                        return {"__raw__": resp.text}
-                else:
-                    logger.warning(f"curl_cffi got status: {resp.status_code}")
-        except Exception as e:
-            logger.error(f"curl_cffi error: {e}")
+    proxy_candidates = []
+    if _BASE_PROXIES:
+        proxy_candidates = [p for p in _BASE_PROXIES]
+    else:
+        proxy_candidates = [None]  # no proxy
 
-    # -------------------------------------------------------------------------
-    # Strategy 2: cloudscraper (with proxy if available)
-    # -------------------------------------------------------------------------
-    try:
-        resp = _scraper.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
-        if resp.status_code == 200:
-            logger.info(f"API response (cloudscraper): {resp.status_code}")
+    for proxy_url in proxy_candidates:
+        proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else {}
+        proxy_label = proxy_url if proxy_url else "no-proxy"
+        logger.info(f"Trying with proxy: {proxy_label}")
+
+        # Strategy 1: curl_cffi with browser impersonation
+        if CURL_CFFI_AVAILABLE:
             try:
-                return resp.json()
-            except Exception:
-                return {"__raw__": resp.text}
-        elif resp.status_code == 403 and "cloudflare" in resp.text.lower():
-            logger.warning("Cloudflare block on cloudscraper, trying fresh session...")
-            fresh_scraper = cloudscraper.create_scraper(
-                browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False}
-            )
-            resp2 = fresh_scraper.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
-            if resp2.status_code == 200:
-                logger.info(f"API response (fresh cloudscraper): {resp2.status_code}")
+                logger.info(f"  → curl_cffi + {proxy_label}")
+                resp = _request_with_curl_cffi(method, url, headers, payload, proxies, timeout=30)
+                if resp is not None:
+                    if resp.status_code == 200:
+                        logger.info(f"API response (curl_cffi/{proxy_label}): {resp.status_code}")
+                        try:
+                            return resp.json()
+                        except Exception:
+                            return {"__raw__": resp.text}
+                    else:
+                        logger.warning(f"  curl_cffi got {resp.status_code} via {proxy_label}")
+            except Exception as e:
+                logger.error(f"  curl_cffi error: {e}")
+
+        # Strategy 2: cloudscraper (with proxy if available)
+        try:
+            logger.info(f"  → cloudscraper + {proxy_label}")
+            resp = _scraper.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
+            if resp.status_code == 200:
+                logger.info(f"API response (cloudscraper/{proxy_label}): {resp.status_code}")
                 try:
-                    return resp2.json()
+                    return resp.json()
                 except Exception:
-                    return {"__raw__": resp2.text}
-            else:
-                logger.warning(f"Fresh cloudscraper also blocked: {resp2.status_code}")
-    except Exception as e:
-        logger.error(f"cloudscraper error: {e}")
-
-    # -------------------------------------------------------------------------
-    # Strategy 3: last resort — plain requests with full proxy (if proxy set)
-    # -------------------------------------------------------------------------
-    if proxies:
-        try:
-            import requests
-            logger.info("Trying plain requests with proxy...")
-            resp = requests.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
-            logger.info(f"API response (requests+proxy): {resp.status_code}")
-            try:
-                return resp.json()
-            except Exception:
-                return {"__raw__": resp.text}
+                    return {"__raw__": resp.text}
+            elif resp.status_code == 403 and "cloudflare" in resp.text.lower():
+                logger.warning(f"  Cloudflare block on cloudscraper, trying fresh session...")
+                fresh_scraper = cloudscraper.create_scraper(
+                    browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False}
+                )
+                resp2 = fresh_scraper.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
+                if resp2.status_code == 200:
+                    logger.info(f"API response (fresh cloudscraper/{proxy_label}): {resp2.status_code}")
+                    try:
+                        return resp2.json()
+                    except Exception:
+                        return {"__raw__": resp2.text}
+                else:
+                    logger.warning(f"  Fresh cloudscraper also blocked: {resp2.status_code}")
         except Exception as e:
-            logger.error(f"requests+proxy error: {e}")
+            logger.error(f"  cloudscraper error: {e}")
+
+        # Strategy 3: plain requests with proxy
+        if proxies:
+            try:
+                logger.info(f"  → requests + {proxy_label}")
+                import requests
+                resp = requests.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
+                logger.info(f"API response (requests/{proxy_label}): {resp.status_code}")
+                try:
+                    return resp.json()
+                except Exception:
+                    return {"__raw__": resp.text}
+            except Exception as e:
+                logger.error(f"  requests+proxy error: {e}")
 
     # -------------------------------------------------------------------------
-    # Auth refresh if we got 401/403 (non-Cloudflare)
+    # Auth refresh if we got 401/403 (non-Cloudflare) with best proxy
     # -------------------------------------------------------------------------
     if auth and access_token:
         logger.warning("Auth failed, re-signing in...")
         if do_signin():
             headers["Authorization"] = f"Bearer {access_token}"
-            # Try all strategies again after re-signin
+            # Try first proxy again after re-signin
+            best_proxy = _get_proxies()
             if CURL_CFFI_AVAILABLE:
                 try:
-                    resp = _request_with_curl_cffi(method, url, headers, payload, proxies, timeout=30)
+                    resp = _request_with_curl_cffi(method, url, headers, payload, best_proxy, timeout=30)
                     if resp is not None and resp.status_code == 200:
                         try:
                             return resp.json()
@@ -351,7 +378,7 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
                 except Exception:
                     pass
             try:
-                resp = _scraper.request(method, url, json=payload, headers=headers, proxies=proxies, timeout=30)
+                resp = _scraper.request(method, url, json=payload, headers=headers, proxies=best_proxy, timeout=30)
                 if resp.status_code == 200:
                     try:
                         return resp.json()
@@ -362,7 +389,11 @@ def api_request(method, endpoint, payload=None, auth=False, add_delay=True):
         else:
             logger.error("Re-signin failed")
 
-    logger.error("All request strategies failed. Cloudflare is blocking this IP.")
+    logger.error("=" * 60)
+    logger.error("All request strategies failed on ALL proxies.")
+    logger.error("Cloudflare is blocking this IP — add RESIDENTIAL_PROXY.")
+    logger.error("Get a free proxy: https://www.webshare.io")
+    logger.error("=" * 60)
     return None
 
 
@@ -1217,21 +1248,33 @@ load_admins()
 load_users_list()
 load_players_db()
 
+_proxy_warn_logged = False
+
 logger.info(f"RESIDENTIAL_PROXY env: {'SET' if RESIDENTIAL_PROXY else 'NOT SET'}")
+logger.info(f"PROXY_LIST env: {len(PROXY_LIST)} proxies configured")
 logger.info(f"curl_cffi available: {CURL_CFFI_AVAILABLE}")
 logger.info("Bot initialized. Starting...")
 
 def _init_background():
     """Background initialization: signin + get affiliate ID."""
+    global _proxy_warn_logged
     try:
         ok = do_signin()
         if ok:
             get_agent_affiliate_id()
         else:
-            logger.warning(
-                "Initial signin failed. This is usually because Cloudflare blocks Render's IP. "
-                "Set RESIDENTIAL_PROXY environment variable on Render to bypass this."
-            )
+            if not _proxy_warn_logged:
+                _proxy_warn_logged = True
+                logger.error(
+                    "=" * 70 + "\n"
+                    "  SIGNIN FAILED — Cloudflare is blocking your Render IP.\n"
+                    "  The ONLY way to fix this is to add a RESIDENTIAL PROXY.\n\n"
+                    "  1) Get a free proxy from https://www.webshare.io (free tier)\n"
+                    "  2) In Render Dashboard → Environment → add:\n"
+                    "     RESIDENTIAL_PROXY=http://user:pass@host:port\n"
+                    "  3) Redeploy\n"
+                    "=" * 70
+                )
     except Exception as e:
         logger.error(f"Background init error: {e}")
 
