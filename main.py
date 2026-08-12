@@ -1,14 +1,12 @@
 """Arabic Telegram Casino Bot — Cloudflare Bypass with Thordata Web Unlocker + curl_cffi + SOCKS5 proxy fallback."""
 import os, json, logging, requests, urllib.parse, re
+import asyncio, threading
 from datetime import datetime, timezone
 from flask import Flask, request, jsonify
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler,
-    ContextTypes
+    Application, CommandHandler, CallbackQueryHandler, ContextTypes
 )
-from telegram import Bot
-import asyncio
 from telegram.constants import ParseMode
 from urllib.parse import urlencode
 
@@ -193,7 +191,7 @@ def api_request(method, endpoint, **kwargs):
         raise
 
 
-# ─── Flask App (webhook) ─────────────────────────────────────
+# ─── Flask App (webhook + health + deposit) ──────────────────
 app = Flask(__name__)
 
 @app.route('/')
@@ -215,7 +213,13 @@ def handle_deposit():
         return jsonify({'error': 'Missing user_id or amount'}), 400
     try:
         msg = f'✅ تم إيداع ${amount} بنجاح! 🎉'
-        asyncio.run(bot.send_message(chat_id=user_id, text=msg, parse_mode=ParseMode.HTML))
+        # Use telegram_loop to schedule send safely from Flask thread
+        if telegram_loop:
+            future = asyncio.run_coroutine_threadsafe(
+                bot.send_message(chat_id=user_id, text=msg, parse_mode=ParseMode.HTML),
+                telegram_loop
+            )
+            future.result(timeout=10)
         return jsonify({'status': 'success'})
     except Exception as e:
         logger.error('Deposit error: %s', e)
@@ -284,38 +288,55 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
 
-# ─── Test Thordata on startup ───────────────────────────────
-def _test_thordata_on_startup():
-    try:
-        test_url = f'{API_DOMAIN}/health'
-        logger.info('🧪 Testing Thordata Web Unlocker against %s...', test_url)
-        resp = _thordata_unlocker('GET', test_url)
-        logger.info('✅ Thordata Web Unlocker OK: %s — %s', resp.status_code, resp.text[:200])
-    except Exception as e:
-        logger.warning('⚠️ Thordata Web Unlocker startup test failed: %s', e)
-        logger.warning('⚠️ Will fallback to proxy when requests arrive...')
+# ─── Telegram Application (webhook via Flask) ────────────────
+# Build application WITHOUT its own updater (we use Flask to receive webhooks)
+telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).updater(None).build()
+telegram_app.add_handler(CommandHandler('start', start_command))
+telegram_app.add_handler(CommandHandler('balance', balance_command))
+telegram_app.add_handler(CommandHandler('help', help_command))
+telegram_app.add_handler(CallbackQueryHandler(button_callback))
 
+bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
-def _init_telegram():
-    app_builder = Application.builder().token(TELEGRAM_BOT_TOKEN)
-    telegram_app = app_builder.build()
-    telegram_app.add_handler(CommandHandler('start', start_command))
-    telegram_app.add_handler(CommandHandler('balance', balance_command))
-    telegram_app.add_handler(CommandHandler('help', help_command))
-    telegram_app.add_handler(CallbackQueryHandler(button_callback))
-    return telegram_app
+# Default webhook URL (override with WEBHOOK_URL env var if needed)
+WEBHOOK_URL = os.environ.get('WEBHOOK_URL')
+if not WEBHOOK_URL:
+    # Render gives us RENDER_EXTERNAL_URL or we can construct from domain
+    render_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://bahr-bot-c3ac.onrender.com')
+    WEBHOOK_URL = f"{render_url.rstrip('/')}/{TELEGRAM_BOT_TOKEN}"
+
+telegram_loop = None
+
+async def _telegram_startup():
+    """Initialize PTB, start processing, set webhook, and keep loop alive."""
+    global telegram_loop
+    telegram_loop = asyncio.get_running_loop()
+    await telegram_app.initialize()
+    await telegram_app.start()
+    await telegram_app.bot.set_webhook(WEBHOOK_URL)
+    logger.info('✅ Telegram bot started and webhook set to %s', WEBHOOK_URL)
+    # Keep the event loop alive forever so run_coroutine_threadsafe works
+    await asyncio.Event().wait()
+
+def _run_telegram():
+    asyncio.run(_telegram_startup())
+
+# Start PTB in a background daemon thread so Flask/gunicorn can keep serving HTTP
+threading.Thread(target=_run_telegram, daemon=True).start()
+
+# Telegram webhook route — receives POSTs from Telegram servers
+@app.route(f'/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
+def telegram_webhook():
+    data = request.get_json(force=True)
+    update = Update.de_json(data, telegram_app.bot)
+    if telegram_loop:
+        future = asyncio.run_coroutine_threadsafe(telegram_app.process_update(update), telegram_loop)
+        try:
+            future.result(timeout=10)
+        except Exception as e:
+            logger.error('Error processing Telegram update: %s', e)
+    return 'OK'
 
 
 if __name__ == '__main__':
-    _test_thordata_on_startup()
-    telegram_app = _init_telegram()
-    bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    WEBHOOK_URL = os.environ.get('WEBHOOK_URL')
-    if WEBHOOK_URL:
-        telegram_app.run_webhook(
-            listen='0.0.0.0',
-            port=int(os.environ.get('PORT', 5000)),
-            webhook_url=WEBHOOK_URL,
-        )
-    else:
-        telegram_app.run_polling()
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
