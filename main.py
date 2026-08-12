@@ -1,20 +1,18 @@
-"""Arabic Telegram Casino Bot — Cloudflare Bypass with Thordata Web Unlocker + curl_cffi + SOCKS5 proxy fallback."""
-import os, json, logging, requests, urllib.parse, re
-import asyncio, threading
+"""Arabic Telegram Casino Bot — Cloudflare Bypass with Thordata Web Unlocker + proxy fallback."""
+import os, json, logging, requests, urllib.parse, re, threading
 from datetime import datetime, timezone
 from flask import Flask, request, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
-from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler, ContextTypes
-)
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from telegram.constants import ParseMode
+from asgiref.sync import async_to_sync
 from urllib.parse import urlencode
 
-# curl_cffi for advanced browser emulation (Cloudflare bypass via proxy)
+# curl_cffi for advanced browser emulation
 try:
     from curl_cffi import requests as curl_requests
     CURL_CFFI_AVAILABLE = True
-except Exception as _import_err:
+except Exception:
     CURL_CFFI_AVAILABLE = False
     curl_requests = None
 
@@ -24,27 +22,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ─── Bot Configuration ───────────────────────────────────────
+# ─── Configuration ───────────────────────────────────────────
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', 'YOUR_TOKEN_HERE')
 API_SECRET        = os.environ.get('API_SECRET', 'YOUR_API_SECRET_HERE')
-
-# ─── Thordata Web Unlocker (Primary bypass) ────────────────────
-THORDATA_TOKEN = os.environ.get('THORDATA_TOKEN', 'a88e6ccf584d663b4e55d6fc746e805e')
-
-# ─── SOCKS5 / HTTP Proxy (Fallback) ────────────────────────────
+THORDATA_TOKEN    = os.environ.get('THORDATA_TOKEN', 'a88e6ccf584d663b4e55d6fc746e805e')
 RESIDENTIAL_PROXY = os.environ.get('RESIDENTIAL_PROXY', '')
-# MUST be https://... or socks5://...  NOT http:// (will cause SSL WRONG_VERSION_NUMBER)
-
+API_DOMAIN        = 'https://agents.texas4win.com'
 THORDATA_ENDPOINT = 'https://webunlocker.thordata.com/request'
-
-# ─── Target Domain ───────────────────────────────────────────
-API_DOMAIN = 'https://agents.texas4win.com'
 
 # ─── Graceful JSON extraction ─────────────────────────────────
 CLEAN_RE = re.compile(r'<[^>]+>')
 
-def safe_json_load(text, log_prefix=''):
-    """Strip HTML tags, control chars, and try to decode JSON from any blob."""
+def safe_json_load(text):
     if not text or not isinstance(text, str):
         return None
     text = CLEAN_RE.sub('', text)
@@ -75,7 +64,6 @@ def safe_json_load(text, log_prefix=''):
 
 
 def _proxy_for():
-    """Return a proxy dict if RESIDENTIAL_PROXY is set."""
     if not RESIDENTIAL_PROXY:
         return None
     if '://' not in RESIDENTIAL_PROXY:
@@ -87,14 +75,13 @@ def _proxy_for():
 
 
 def _thordata_unlocker(method, url, **kwargs):
-    """Use Thordata Web Unlocker to fetch a URL. Returns requests.Response."""
     form_data = {'url': url, 'type': 'html'}
     headers = {
         'Authorization': f'Bearer {THORDATA_TOKEN}',
         'Content-Type': 'application/x-www-form-urlencoded',
     }
     try:
-        logger.info('🔥 Thordata Web Unlocker: %s %s via POST %s', method, url, THORDATA_ENDPOINT)
+        logger.info('🔥 Thordata Web Unlocker: %s %s', method, url)
         resp = requests.post(
             THORDATA_ENDPOINT,
             data=urlencode(form_data),
@@ -109,7 +96,6 @@ def _thordata_unlocker(method, url, **kwargs):
 
 
 class ApiResponse:
-    """Wrapper that normalizes Thordata HTML responses and direct JSON responses."""
     def __init__(self, raw_resp):
         self._raw = raw_resp
         self.status_code = raw_resp.status_code
@@ -119,11 +105,9 @@ class ApiResponse:
 
     @property
     def json(self):
-        # Try to parse as JSON first
         data = safe_json_load(self.text)
         if data is not None:
             return data
-        # If Thordata returns HTML, try to extract JSON from it
         if '<' in self.text:
             return safe_json_load(self.text)
         raise ValueError('Response is not JSON')
@@ -133,16 +117,11 @@ class ApiResponse:
 
 
 def api_request(method, endpoint, **kwargs):
-    """
-    1) Try Thordata Web Unlocker (primary Cloudflare bypass) for GET/DELETE/OPTIONS.
-    2) If Thordata fails or body is present, try standard requests + curl_cffi + proxy.
-    """
     url = f'{API_DOMAIN}{endpoint}'
     timeout = kwargs.get('timeout', 30)
     json_body = kwargs.get('json')
     extra_headers = kwargs.get('headers', {})
 
-    # 1) Thordata Web Unlocker for GET/DELETE/OPTIONS (no body)
     if THORDATA_TOKEN and method.upper() in ('GET', 'DELETE', 'OPTIONS'):
         try:
             raw = _thordata_unlocker(method, url, **kwargs)
@@ -150,20 +129,11 @@ def api_request(method, endpoint, **kwargs):
         except Exception as e:
             logger.info('Thordata bypass failed, trying proxy fallback: %s', e)
 
-    # 2) For POST/PUT with body or Thordata failure, use proxy + curl_cffi
     try:
         proxy = _proxy_for()
-        if proxy:
-            logger.info('Direct proxy request: %s', proxy.get('https') or proxy.get('http'))
-        else:
-            logger.info('Direct request without proxy')
-
-        # Try curl_cffi first for advanced stealth
         if CURL_CFFI_AVAILABLE:
             try:
-                proxy_url = None
-                if proxy:
-                    proxy_url = proxy.get('https') or proxy.get('http')
+                proxy_url = proxy.get('https') or proxy.get('http') if proxy else None
                 raw = curl_requests.request(
                     method, url,
                     json=json_body,
@@ -176,7 +146,6 @@ def api_request(method, endpoint, **kwargs):
             except Exception as curl_err:
                 logger.warning('curl_cffi failed: %s, falling back to requests', curl_err)
 
-        # Fallback to requests library
         raw = requests.request(
             method, url,
             json=json_body,
@@ -191,7 +160,7 @@ def api_request(method, endpoint, **kwargs):
         raise
 
 
-# ─── Flask App (webhook + health + deposit) ──────────────────
+# ─── Flask App ───────────────────────────────────────────────
 app = Flask(__name__)
 
 @app.route('/')
@@ -213,27 +182,18 @@ def handle_deposit():
         return jsonify({'error': 'Missing user_id or amount'}), 400
     try:
         msg = f'✅ تم إيداع ${amount} بنجاح! 🎉'
-        # Use telegram_loop to schedule send safely from Flask thread
-        if telegram_loop:
-            future = asyncio.run_coroutine_threadsafe(
-                bot.send_message(chat_id=user_id, text=msg, parse_mode=ParseMode.HTML),
-                telegram_loop
-            )
-            future.result(timeout=10)
+        async_to_sync(bot.send_message)(chat_id=user_id, text=msg, parse_mode=ParseMode.HTML)
         return jsonify({'status': 'success'})
     except Exception as e:
         logger.error('Deposit error: %s', e)
         return jsonify({'error': str(e)}), 500
 
 
-# ─── Telegram Bot Handlers ───────────────────────────────────
+# ─── Telegram Bot ────────────────────────────────────────────
 user_balances: dict[str, float] = {}
 
 async def get_balance(user_id: str) -> float:
     return user_balances.get(user_id, 0.0)
-
-async def update_balance(user_id: str, amount: float) -> None:
-    user_balances[user_id] = user_balances.get(user_id, 0.0) + amount
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
@@ -288,8 +248,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
 
-# ─── Telegram Application (webhook via Flask) ────────────────
-# Build application WITHOUT its own updater (we use Flask to receive webhooks)
+# Build PTB Application (no updater — we use Flask webhook)
 telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).updater(None).build()
 telegram_app.add_handler(CommandHandler('start', start_command))
 telegram_app.add_handler(CommandHandler('balance', balance_command))
@@ -298,43 +257,33 @@ telegram_app.add_handler(CallbackQueryHandler(button_callback))
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
-# Default webhook URL (override with WEBHOOK_URL env var if needed)
-WEBHOOK_URL = os.environ.get('WEBHOOK_URL')
-if not WEBHOOK_URL:
-    # Render gives us RENDER_EXTERNAL_URL or we can construct from domain
-    render_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://bahr-bot-c3ac.onrender.com')
-    WEBHOOK_URL = f"{render_url.rstrip('/')}/{TELEGRAM_BOT_TOKEN}"
+# Lazy init with lock (works across gunicorn sync worker threads)
+_telegram_lock = threading.Lock()
+_telegram_initialized = False
 
-telegram_loop = None
+def _ensure_telegram():
+    global _telegram_initialized
+    with _telegram_lock:
+        if not _telegram_initialized:
+            async_to_sync(telegram_app.initialize)()
+            async_to_sync(telegram_app.start)()
+            render_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://bahr-bot-c3ac.onrender.com')
+            webhook_url = f"{render_url.rstrip('/')}/{TELEGRAM_BOT_TOKEN}"
+            async_to_sync(telegram_app.bot.set_webhook)(webhook_url)
+            _telegram_initialized = True
+            logger.info('✅ Telegram bot initialized, webhook set to %s', webhook_url)
 
-async def _telegram_startup():
-    """Initialize PTB, start processing, set webhook, and keep loop alive."""
-    global telegram_loop
-    telegram_loop = asyncio.get_running_loop()
-    await telegram_app.initialize()
-    await telegram_app.start()
-    await telegram_app.bot.set_webhook(WEBHOOK_URL)
-    logger.info('✅ Telegram bot started and webhook set to %s', WEBHOOK_URL)
-    # Keep the event loop alive forever so run_coroutine_threadsafe works
-    await asyncio.Event().wait()
-
-def _run_telegram():
-    asyncio.run(_telegram_startup())
-
-# Start PTB in a background daemon thread so Flask/gunicorn can keep serving HTTP
-threading.Thread(target=_run_telegram, daemon=True).start()
-
-# Telegram webhook route — receives POSTs from Telegram servers
 @app.route(f'/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
 def telegram_webhook():
+    logger.info('📨 Received Telegram webhook POST')
+    _ensure_telegram()
     data = request.get_json(force=True)
     update = Update.de_json(data, telegram_app.bot)
-    if telegram_loop:
-        future = asyncio.run_coroutine_threadsafe(telegram_app.process_update(update), telegram_loop)
-        try:
-            future.result(timeout=10)
-        except Exception as e:
-            logger.error('Error processing Telegram update: %s', e)
+    try:
+        async_to_sync(telegram_app.process_update)(update)
+        logger.info('✅ Update processed successfully')
+    except Exception:
+        logger.exception('❌ Error processing update')
     return 'OK'
 
 
