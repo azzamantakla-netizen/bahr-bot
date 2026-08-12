@@ -5,7 +5,6 @@ from flask import Flask, request, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from telegram.constants import ParseMode
-from asgiref.sync import async_to_sync
 from urllib.parse import urlencode
 
 # curl_cffi for advanced browser emulation
@@ -182,14 +181,18 @@ def handle_deposit():
         return jsonify({'error': 'Missing user_id or amount'}), 400
     try:
         msg = f'✅ تم إيداع ${amount} بنجاح! 🎉'
-        async_to_sync(bot.send_message)(chat_id=user_id, text=msg, parse_mode=ParseMode.HTML)
+        future = asyncio.run_coroutine_threadsafe(
+            _bot.send_message(chat_id=user_id, text=msg, parse_mode=ParseMode.HTML),
+            _telegram_loop
+        )
+        future.result(timeout=10)
         return jsonify({'status': 'success'})
     except Exception as e:
         logger.error('Deposit error: %s', e)
         return jsonify({'error': str(e)}), 500
 
 
-# ─── Telegram Bot ────────────────────────────────────────────
+# ─── Telegram Handlers ───────────────────────────────────────
 user_balances: dict[str, float] = {}
 
 async def get_balance(user_id: str) -> float:
@@ -248,39 +251,68 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
 
-# Build PTB Application (no updater — we use Flask webhook)
-telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).updater(None).build()
-telegram_app.add_handler(CommandHandler('start', start_command))
-telegram_app.add_handler(CommandHandler('balance', balance_command))
-telegram_app.add_handler(CommandHandler('help', help_command))
-telegram_app.add_handler(CallbackQueryHandler(button_callback))
+# ─── Persistent Async Event Loop in Background Thread ────────
+import asyncio
 
-bot = Bot(token=TELEGRAM_BOT_TOKEN)
+_telegram_loop = None
+_telegram_app  = None
+_bot           = None
+_telegram_ready = threading.Event()
 
-# Lazy init with lock (works across gunicorn sync worker threads)
-_telegram_lock = threading.Lock()
-_telegram_initialized = False
+def _telegram_thread_main():
+    """Run a persistent asyncio event loop for PTB in a background thread."""
+    global _telegram_loop, _telegram_app, _bot
 
-def _ensure_telegram():
-    global _telegram_initialized
-    with _telegram_lock:
-        if not _telegram_initialized:
-            async_to_sync(telegram_app.initialize)()
-            async_to_sync(telegram_app.start)()
-            render_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://bahr-bot-c3ac.onrender.com')
-            webhook_url = f"{render_url.rstrip('/')}/{TELEGRAM_BOT_TOKEN}"
-            async_to_sync(telegram_app.bot.set_webhook)(webhook_url)
-            _telegram_initialized = True
-            logger.info('✅ Telegram bot initialized, webhook set to %s', webhook_url)
+    _telegram_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(_telegram_loop)
+
+    # Build PTB Application (no updater — webhook only)
+    _telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).updater(None).build()
+    _telegram_app.add_handler(CommandHandler('start', start_command))
+    _telegram_app.add_handler(CommandHandler('balance', balance_command))
+    _telegram_app.add_handler(CommandHandler('help', help_command))
+    _telegram_app.add_handler(CallbackQueryHandler(button_callback))
+
+    _bot = Bot(token=TELEGRAM_BOT_TOKEN)
+
+    # Initialize and start PTB
+    _telegram_loop.run_until_complete(_telegram_app.initialize())
+    _telegram_loop.run_until_complete(_telegram_app.start())
+
+    # Set webhook
+    render_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://bahr-bot-c3ac.onrender.com')
+    webhook_url = f"{render_url.rstrip('/')}/{TELEGRAM_BOT_TOKEN}"
+    _telegram_loop.run_until_complete(_telegram_app.bot.set_webhook(webhook_url))
+
+    logger.info('✅ Telegram bot initialized, webhook set to %s', webhook_url)
+    _telegram_ready.set()
+
+    # Keep loop alive forever
+    _telegram_loop.run_forever()
+
+# Start background thread at module level (runs inside every gunicorn worker)
+_telegram_thread = threading.Thread(target=_telegram_thread_main, daemon=True)
+_telegram_thread.start()
+
+# Block module import until Telegram is ready (max 15s)
+_telegram_ready.wait(timeout=15)
 
 @app.route(f'/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
 def telegram_webhook():
     logger.info('📨 Received Telegram webhook POST')
-    _ensure_telegram()
+    if not _telegram_ready.is_set():
+        logger.warning('Telegram thread not ready yet')
+        return 'Not Ready', 503
+
     data = request.get_json(force=True)
-    update = Update.de_json(data, telegram_app.bot)
+    update = Update.de_json(data, _bot)
+
+    future = asyncio.run_coroutine_threadsafe(
+        _telegram_app.process_update(update),
+        _telegram_loop
+    )
     try:
-        async_to_sync(telegram_app.process_update)(update)
+        future.result(timeout=10)
         logger.info('✅ Update processed successfully')
     except Exception:
         logger.exception('❌ Error processing update')
