@@ -8,9 +8,11 @@ import re
 import threading
 import asyncio
 import sqlite3
+import time
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 
+import requests
 from flask import Flask, request, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -383,6 +385,7 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'telegram_ready': _telegram_ready.is_set(),
+        'telegram_pid': _telegram_pid,
         'timestamp': datetime.now(timezone.utc).isoformat()
     })
 
@@ -421,40 +424,55 @@ def handle_deposit():
 # Telegram Handlers
 # ═══════════════════════════════════════════════════════════════
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    t4w_user = user_db.get_user(user.id)
+    """Main start handler with full error boundary so user always gets a response."""
+    try:
+        user = update.effective_user
+        if not user:
+            logger.error('start_command: effective_user is None')
+            return
 
-    welcome = f"🎰 مرحباً {user.first_name}!\n\n"
-    if t4w_user and t4w_user['username']:
-        welcome += f"✅ حسابك مرتبط: <code>{t4w_user['username']}</code>\n"
-        try:
-            bal_data = await asyncio.to_thread(t4w_client.get_balance, t4w_user['username'])
-            bal = bal_data.get('balance')
-            if bal is None and isinstance(bal_data.get('data'), dict):
-                bal = bal_data['data'].get('balance', 0)
-            bal = bal or 0
-            welcome += f"💰 الرصيد: <b>${bal}</b>\n"
-        except Exception as e:
-            logger.warning('Balance fetch failed: %s', e)
-            welcome += "💰 الرصيد: غير متوفر\n"
-    else:
-        welcome += (
-            "❌ لم يربط حساب Texas4win بعد\n"
-            "استخدم /create لإنشاء حساب جديد\n\n"
+        t4w_user = user_db.get_user(user.id)
+
+        welcome = f"🎰 مرحباً {user.first_name or 'صديقي'}!\n\n"
+        if t4w_user and t4w_user.get('username'):
+            welcome += f"✅ حسابك مرتبط: <code>{t4w_user['username']}</code>\n"
+            try:
+                bal_data = await asyncio.to_thread(t4w_client.get_balance, t4w_user['username'])
+                bal = bal_data.get('balance')
+                if bal is None and isinstance(bal_data.get('data'), dict):
+                    bal = bal_data['data'].get('balance', 0)
+                bal = bal or 0
+                welcome += f"💰 الرصيد: <b>${bal}</b>\n"
+            except Exception as e:
+                logger.warning('Balance fetch failed: %s', e)
+                welcome += "💰 الرصيد: غير متوفر\n"
+        else:
+            welcome += (
+                "❌ لم يربط حساب Texas4win بعد\n"
+                "استخدم /create لإنشاء حساب جديد\n\n"
+            )
+
+        welcome += "\n🎲 اختر إجراءً:"
+
+        keyboard = [
+            [InlineKeyboardButton('🎰 العب الآن', url='https://agents.texas4win.com')],
+            [InlineKeyboardButton('💳 إيداع', callback_data='deposit')],
+            [InlineKeyboardButton('💸 سحب', callback_data='withdraw')],
+        ]
+        await update.message.reply_text(
+            welcome,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
         )
-
-    welcome += "\n🎲 اختر إجراءً:"
-
-    keyboard = [
-        [InlineKeyboardButton('🎰 العب الآن', url='https://agents.texas4win.com')],
-        [InlineKeyboardButton('💳 إيداع', callback_data='deposit')],
-        [InlineKeyboardButton('💸 سحب', callback_data='withdraw')],
-    ]
-    await update.message.reply_text(
-        welcome,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode=ParseMode.HTML
-    )
+    except Exception as e:
+        logger.exception('Start command crashed')
+        try:
+            await update.message.reply_text(
+                f"❌ حدث خطأ داخلي. يرجى المحاولة لاحقاً.\n<code>{str(e)[:200]}</code>",
+                parse_mode=ParseMode.HTML
+            )
+        except Exception:
+            pass
 
 
 async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -621,15 +639,40 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ═══════════════════════════════════════════════════════════════
-# Background Thread for PTB Event Loop
+# Worker-aware Telegram startup (fixes Gunicorn multi-worker chaos)
 # ═══════════════════════════════════════════════════════════════
 _telegram_loop = None
 _telegram_app = None
 _telegram_ready = threading.Event()
+_telegram_pid = None
+
+
+def _is_primary_worker():
+    """Use PID file to ensure only ONE worker starts the Telegram thread."""
+    pid_file = '/tmp/texas4win_bot.pid'
+    my_pid = os.getpid()
+
+    try:
+        with open(pid_file, 'r') as f:
+            old_pid = int(f.read().strip())
+        if old_pid == my_pid:
+            return True
+        # Check if old process is still alive
+        os.kill(old_pid, 0)
+        return False
+    except (FileNotFoundError, ValueError, ProcessLookupError, PermissionError, OSError):
+        pass
+
+    try:
+        with open(pid_file, 'w') as f:
+            f.write(str(my_pid))
+        return True
+    except Exception:
+        return False
 
 
 def _telegram_thread_main():
-    global _telegram_loop, _telegram_app
+    global _telegram_loop, _telegram_app, _telegram_pid
 
     try:
         _telegram_loop = asyncio.new_event_loop()
@@ -656,6 +699,7 @@ def _telegram_thread_main():
         webhook_url = f"{render_url.rstrip('/')}/{TELEGRAM_BOT_TOKEN}"
         _telegram_loop.run_until_complete(_telegram_app.bot.set_webhook(webhook_url))
 
+        _telegram_pid = os.getpid()
         logger.info('✅ Telegram bot ready, webhook: %s', webhook_url)
         _telegram_ready.set()
         _telegram_loop.run_forever()
@@ -664,8 +708,14 @@ def _telegram_thread_main():
         # ready stays unset → webhook returns 503
 
 
-_telegram_thread = threading.Thread(target=_telegram_thread_main, daemon=True)
-_telegram_thread.start()
+# Only start Telegram thread in the primary worker
+if _is_primary_worker():
+    _telegram_thread = threading.Thread(target=_telegram_thread_main, daemon=True)
+    _telegram_thread.start()
+    logger.info('🚀 Telegram thread started in primary worker PID %s', os.getpid())
+else:
+    logger.info('⏭️ Skipping Telegram thread start in secondary worker PID %s', os.getpid())
+
 
 # ═══════════════════════════════════════════════════════════════
 # Webhook Route
@@ -673,6 +723,7 @@ _telegram_thread.start()
 @app.route(f'/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
 def telegram_webhook():
     if not TELEGRAM_BOT_TOKEN:
+        logger.error('Webhook hit but TELEGRAM_BOT_TOKEN is empty')
         return 'Bot token missing', 500
 
     if not _telegram_ready.is_set():
@@ -681,7 +732,14 @@ def telegram_webhook():
 
     try:
         data = request.get_json(force=True)
+        if not data:
+            logger.warning('Webhook received empty JSON body')
+            return 'Empty body', 400
+
         update = Update.de_json(data, _telegram_app.bot)
+        if not update:
+            logger.warning('Webhook received unparseable update')
+            return 'Bad update', 400
 
         future = asyncio.run_coroutine_threadsafe(
             _telegram_app.process_update(update),
