@@ -1,6 +1,5 @@
-python-telegram-bot>=20.7
 flask>=2.3.0
-gunicorn>=21.2.0
+gunicorn>=21.0.0
+python-telegram-bot>=20.0
 requests>=2.31.0
-PySocks>=1.7.1
-curl-cffi>=0.5.7
+curl-cffi>=0.6.0
