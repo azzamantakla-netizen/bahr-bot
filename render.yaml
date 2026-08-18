@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: texas4win-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn bot:app --workers 1 --timeout 120 --bind 0.0.0.0:$PORT
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: AGENT_USERNAME
+        sync: false
+      - key: AGENT_PASSWORD
+        sync: false
+      - key: PARENT_ID
+        sync: false
+      - key: OWNER_ID
+        sync: false
+      - key: ADMIN_GROUP
+        sync: false
+      - key: SHAM_CASH_WALLET
+        sync: false
+      - key: SYRIATEL_CASH_CODE
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false
+      - key: CURRENCY
+        value: SYP
+      - key: DEPOSIT_MIN
+        value: 100000
+      - key: WITHDRAW_MIN
+        value: 200000
+      - key: WITHDRAW_MAX
+        value: 2000000
+      - key: WITHDRAW_FEE_PERCENT
+        value: 10
+      - key: API_BASE
+        value: https://agents.texas4win.com/global/api/User/
+      - key: DB_PATH
+        value: /tmp/texas4win.db
+      - key: PYTHON_VERSION
+        value: 3.12.4
