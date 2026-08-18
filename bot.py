@@ -637,6 +637,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ═══════════════════════════════════════════════════════════════
 _telegram_loop = None
 _telegram_app = None
+_telegram_thread = None
 _telegram_ready = threading.Event()
 
 
@@ -676,16 +677,13 @@ def _telegram_thread_main():
         # ready stays unset → webhook returns 503
 
 
-_telegram_started = False
-
 def _ensure_telegram():
-    global _telegram_thread, _telegram_started
-    if _telegram_thread.is_alive():
+    global _telegram_thread
+    if _telegram_thread is not None and _telegram_thread.is_alive():
         return
     _telegram_ready.clear()
     _telegram_thread = threading.Thread(target=_telegram_thread_main, daemon=True)
     _telegram_thread.start()
-    _telegram_started = True
 
 # ═══════════════════════════════════════════════════════════════
 # Webhook Route
