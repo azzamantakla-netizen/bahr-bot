@@ -1,382 +1,1201 @@
-"""Arabic Telegram Casino Bot — Texas4Win Agent Panel Full Automation
-Cloudflare Bypass via Thordata Web Unlocker + curl_cffi fallback.
-"""
 import os
 import json
-import logging
-import re
+import random
+import string
 import threading
-import asyncio
+import logging
 import sqlite3
 from datetime import datetime, timezone
-from urllib.parse import urlencode
+from functools import wraps
 
-import requests
 from flask import Flask, request, jsonify
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
-from telegram.constants import ParseMode
-
-# curl_cffi for advanced browser emulation
-try:
-    from curl_cffi import requests as curl_requests
-    CURL_CFFI_AVAILABLE = True
-except Exception:
-    CURL_CFFI_AVAILABLE = False
-    curl_requests = None
-
-logging.basicConfig(
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+import requests
+from telegram import (
+    Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 )
-logger = logging.getLogger(__name__)
+from telegram.ext import (
+    Application, CommandHandler, CallbackQueryHandler,
+    MessageHandler, filters, ContextTypes
+)
 
 # ═══════════════════════════════════════════════════════════════
 # Configuration
 # ═══════════════════════════════════════════════════════════════
-TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
-API_SECRET = os.environ.get('API_SECRET', 'default_secret')
-THORDATA_TOKEN = os.environ.get('THORDATA_TOKEN', '')
-RESIDENTIAL_PROXY = os.environ.get('RESIDENTIAL_PROXY', '')
+TELEGRAM_BOT_TOKEN = os.environ.get('BOT_TOKEN', '8624354425:AAEYNe5BOSlFNoC-X0SpTCTwNnRre_SMsZE')
+AGENT_USERNAME = os.environ.get('AGENT_USERNAME', 'Bero@yahoo.com')
+AGENT_PASSWORD = os.environ.get('AGENT_PASSWORD', 'Aazzam@318')
+PARENT_ID = int(os.environ.get('PARENT_ID', '2688288'))
+CURRENCY = os.environ.get('CURRENCY', 'SYP')
+OWNER_ID = int(os.environ.get('OWNER_ID', '6693251012'))
+ADMIN_GROUP = int(os.environ.get('ADMIN_GROUP', '-1003983996094'))
+SHAM_CASH_WALLET = os.environ.get('SHAM_CASH_WALLET', 'a18758d5324eb7595d4463ca355ad221')
+SYRIATEL_CASH_CODE = os.environ.get('SYRIATEL_CASH_CODE', '48122120')
+DEPOSIT_MIN = int(os.environ.get('DEPOSIT_MIN', '100000'))
+WITHDRAW_MIN = int(os.environ.get('WITHDRAW_MIN', '200000'))
+WITHDRAW_MAX = int(os.environ.get('WITHDRAW_MAX', '2000000'))
+WITHDRAW_FEE_PERCENT = int(os.environ.get('WITHDRAW_FEE_PERCENT', '10'))
+WEBHOOK_URL = os.environ.get('WEBHOOK_URL', '')
+API_BASE = os.environ.get('API_BASE', 'https://agents.texas4win.com/global/api/User/')
+DB_PATH = os.environ.get('DB_PATH', '/tmp/texas4win.db')
+PORT = int(os.environ.get('PORT', '10000'))
 
-# Texas4Win Panel Settings
-T4W_DOMAIN = os.environ.get('T4W_DOMAIN', 'https://agents.texas4win.com')
-T4W_LOGIN_ENDPOINT = os.environ.get('T4W_LOGIN_ENDPOINT', '/api/auth/login')
-T4W_CREATE_ENDPOINT = os.environ.get('T4W_CREATE_ENDPOINT', '/api/player/create')
-T4W_DEPOSIT_ENDPOINT = os.environ.get('T4W_DEPOSIT_ENDPOINT', '/api/finance/deposit')
-T4W_WITHDRAW_ENDPOINT = os.environ.get('T4W_WITHDRAW_ENDPOINT', '/api/finance/withdraw')
-T4W_BALANCE_ENDPOINT = os.environ.get('T4W_BALANCE_ENDPOINT', '/api/player/balance')
+# ═══════════════════════════════════════════════════════════════
+# Logging
+# ═══════════════════════════════════════════════════════════════
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger('Texas4Win')
 
-# Agent credentials (to login to Texas4win panel)
-T4W_AGENT_USERNAME = os.environ.get('T4W_AGENT_USERNAME', '')
-T4W_AGENT_PASSWORD = os.environ.get('T4W_AGENT_PASSWORD', '')
+# ═══════════════════════════════════════════════════════════════
+# Database
+# ═══════════════════════════════════════════════════════════════
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS players (
+        telegram_id INTEGER PRIMARY KEY,
+        player_id TEXT,
+        username TEXT,
+        password TEXT,
+        registered_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS admins (
+        telegram_id INTEGER PRIMARY KEY,
+        role TEXT DEFAULT 'admin',
+        added_by INTEGER,
+        added_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS pending_deposits (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER,
+        amount INTEGER,
+        method TEXT,
+        transaction_id TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        status TEXT DEFAULT 'pending'
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS pending_withdrawals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER,
+        amount INTEGER,
+        method TEXT,
+        wallet_address TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        status TEXT DEFAULT 'pending'
+    )''')
+    # Insert owner as admin
+    c.execute('INSERT OR IGNORE INTO admins (telegram_id, role) VALUES (?, ?)', (OWNER_ID, 'owner'))
+    # Insert default settings
+    c.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', ('sham_cash_wallet', SHAM_CASH_WALLET))
+    c.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', ('syriatel_cash_code', SYRIATEL_CASH_CODE))
+    conn.commit()
+    conn.close()
 
-THORDATA_ENDPOINT = 'https://webunlocker.thordata.com/request'
-USER_DB_PATH = os.environ.get('USER_DB_PATH', '/tmp/texas4win_bot.db')
+def db_execute(query, params=(), fetch=False, fetchone=False):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(query, params)
+    result = None
+    if fetchone:
+        result = c.fetchone()
+    elif fetch:
+        result = c.fetchall()
+    conn.commit()
+    conn.close()
+    return result
 
-if not TELEGRAM_BOT_TOKEN:
-    logger.warning('⚠️ TELEGRAM_BOT_TOKEN not set!')
+# ═══════════════════════════════════════════════════════════════
+# Agent API Client
+# ═══════════════════════════════════════════════════════════════
+class AgentAPI:
+    def __init__(self):
+        self.access_token = None
+        self.refresh_token = None
+        self._lock = threading.Lock()
+        self._login()
+
+    def _login(self):
+        try:
+            resp = requests.post(
+                f'{API_BASE}signIn',
+                json={'username': AGENT_USERNAME, 'password': AGENT_PASSWORD},
+                headers={'Content-Type': 'application/json'},
+                timeout=15
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                self.access_token = data.get('result', {}).get('accessToken')
+                self.refresh_token = data.get('result', {}).get('refreshToken')
+                if self.access_token:
+                    logger.info('✅ Agent API login successful')
+                    return True
+            logger.error('❌ Agent API login failed: %s', resp.text)
+            return False
+        except Exception as e:
+            logger.error('❌ Agent API login error: %s', e)
+            return False
+
+    def _refresh(self):
+        try:
+            resp = requests.post(
+                f'{API_BASE}refreshToken',
+                json={'refreshToken': self.refresh_token},
+                headers={'Content-Type': 'application/json'},
+                timeout=15
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                self.access_token = data.get('result', {}).get('accessToken')
+                self.refresh_token = data.get('result', {}).get('refreshToken')
+                if self.access_token:
+                    logger.info('✅ Token refreshed successfully')
+                    return True
+            # Refresh failed, try full login
+            return self._login()
+        except Exception as e:
+            logger.error('❌ Token refresh error: %s', e)
+            return self._login()
+
+    def _headers(self):
+        return {
+            'Authorization': f'Bearer {self.access_token}',
+            'Content-Type': 'application/json'
+        }
+
+    def _request(self, endpoint, payload):
+        with self._lock:
+            for attempt in range(2):
+                try:
+                    resp = requests.post(
+                        f'{API_BASE}{endpoint}',
+                        json=payload,
+                        headers=self._headers(),
+                        timeout=15
+                    )
+                    if resp.status_code == 401:
+                        # Token expired, refresh and retry
+                        if self._refresh():
+                            continue
+                        return None
+                    return resp.json()
+                except Exception as e:
+                    logger.error('❌ API request error [%s]: %s', endpoint, e)
+                    if attempt == 1:
+                        return None
+            return None
+
+    def register_player(self, login, password, email):
+        return self._request('registerPlayer', {
+            'player': {
+                'email': email,
+                'password': password,
+                'parentId': str(PARENT_ID),
+                'login': login
+            }
+        })
+
+    def get_player_balance(self, player_id):
+        return self._request('getPlayerBalanceById', {
+            'playerId': str(player_id)
+        })
+
+    def deposit_to_player(self, player_id, amount, comment=''):
+        return self._request('depositToPlayer', {
+            'amount': amount,
+            'comment': comment,
+            'playerId': str(player_id),
+            'currencyCode': CURRENCY,
+            'currency': CURRENCY,
+            'moneyStatus': 5
+        })
+
+    def withdraw_from_player(self, player_id, amount, comment=''):
+        return self._request('withdrawFromPlayer', {
+            'amount': amount,
+            'comment': comment,
+            'playerId': str(player_id),
+            'currencyCode': CURRENCY,
+            'currency': CURRENCY,
+            'moneyStatus': 5
+        })
+
+    def get_agent_wallets(self):
+        return self._request('getAgentAllWallets', {})
+
+    def get_players(self, search=None, player_id=None, start=0, limit=50):
+        payload = {'start': start, 'limit': limit}
+        filter_obj = {}
+        if player_id:
+            filter_obj['playerID'] = {'action': '=', 'value': str(player_id)}
+        elif search:
+            filter_obj['userName'] = {'action': 'like', 'value': search}
+        if filter_obj:
+            payload['filter'] = filter_obj
+        return self._request('getPlayersForCurrentAgent', payload)
 
 # ═══════════════════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════════════════
-CLEAN_RE = re.compile(r'<[^>]+>')
+def generate_random_email():
+    name = ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
+    return f'{name}@texas4win.com'
 
+def is_player(telegram_id):
+    row = db_execute('SELECT * FROM players WHERE telegram_id=?', (telegram_id,), fetchone=True)
+    return row is not None
 
-def safe_json_load(text):
-    if not text or not isinstance(text, str):
-        return None
-    text = CLEAN_RE.sub('', text)
-    text = text.replace('\x00', '').replace('\x0b', '').replace('\x0c', '').strip()
-    if text.startswith('"') and text.endswith('"'):
-        try:
-            text = json.loads(text)
-        except Exception:
-            pass
+def get_player(telegram_id):
+    return db_execute('SELECT * FROM players WHERE telegram_id=?', (telegram_id,), fetchone=True)
+
+def is_admin(telegram_id):
+    row = db_execute('SELECT * FROM admins WHERE telegram_id=?', (telegram_id,), fetchone=True)
+    return row is not None
+
+def is_owner(telegram_id):
+    row = db_execute('SELECT * FROM admins WHERE telegram_id=? AND role=?', (telegram_id, 'owner'), fetchone=True)
+    return row is not None
+
+def get_setting(key):
+    row = db_execute('SELECT value FROM settings WHERE key=?', (key,), fetchone=True)
+    return row[0] if row else None
+
+def update_setting(key, value):
+    db_execute('UPDATE settings SET value=? WHERE key=?', (value, key))
+
+def owner_only(func):
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        if not is_owner(user_id):
+            await update.effective_message.reply_text('⛔ هذا الإجراء متاح فقط لمالك البوت')
+            return
+        return await func(update, context)
+    return wrapper
+
+def admin_only(func):
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        if not is_admin(user_id):
+            await update.effective_message.reply_text('⛔ هذا الإجراء متاح فقط للمشرفين')
+            return
+        return await func(update, context)
+    return wrapper
+
+# ═══════════════════════════════════════════════════════════════
+# User States (conversation flow)
+# ═══════════════════════════════════════════════════════════════
+user_states = {}
+
+def set_state(telegram_id, state, data=None):
+    user_states[telegram_id] = {'state': state, 'data': data or {}}
+
+def get_state(telegram_id):
+    return user_states.get(telegram_id)
+
+def clear_state(telegram_id):
+    user_states.pop(telegram_id, None)
+
+# ═══════════════════════════════════════════════════════════════
+# Keyboards
+# ═══════════════════════════════════════════════════════════════
+def main_menu_keyboard(telegram_id):
+    if is_player(telegram_id):
+        keyboard = [
+            [InlineKeyboardButton('📋 معلومات الحساب', callback_data='account_info')],
+            [InlineKeyboardButton('📤 سحب', callback_data='withdraw'),
+             InlineKeyboardButton('📥 ايداع', callback_data='deposit')],
+            [InlineKeyboardButton('🆘 الدعم الفني', callback_data='support')],
+            [InlineKeyboardButton('🔙 رجوع', callback_data='back_main')]
+        ]
+    else:
+        keyboard = [
+            [InlineKeyboardButton('🆕 إنشاء حساب', callback_data='create_account')],
+            [InlineKeyboardButton('🆘 الدعم الفني', callback_data='support')],
+            [InlineKeyboardButton('🔙 رجوع', callback_data='back_main')]
+        ]
+    return InlineKeyboardMarkup(keyboard)
+
+def deposit_method_keyboard():
+    keyboard = [
+        [InlineKeyboardButton('🟠 شام كاش', callback_data='deposit_sham'),
+         InlineKeyboardButton('🔴 سيريتيل كاش', callback_data='deposit_syriatel')],
+        [InlineKeyboardButton('🔙 رجوع', callback_data='back_main')]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def withdraw_method_keyboard():
+    keyboard = [
+        [InlineKeyboardButton('🟠 شام كاش', callback_data='withdraw_sham'),
+         InlineKeyboardButton('🔴 سيريتيل كاش', callback_data='withdraw_syriatel')],
+        [InlineKeyboardButton('🔙 رجوع', callback_data='back_main')]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def admin_action_keyboard(pending_id, action_type):
+    keyboard = [
+        [InlineKeyboardButton('✅ موافق', callback_data=f'approve_{action_type}_{pending_id}'),
+         InlineKeyboardButton('❌ رفض', callback_data=f'reject_{action_type}_{pending_id}')],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def owner_panel_keyboard():
+    keyboard = [
+        [InlineKeyboardButton('👑 اضافة مالك', callback_data='add_owner'),
+         InlineKeyboardButton('👤 اضافة مشرف', callback_data='add_admin')],
+        [InlineKeyboardButton('❌ ازالة مشرف', callback_data='remove_admin')],
+        [InlineKeyboardButton('💰 تفقد رصيد البوت', callback_data='bot_balance')],
+        [InlineKeyboardButton('🟠 تعديل محفظة شام كاش', callback_data='edit_sham_wallet')],
+        [InlineKeyboardButton('🔴 تعديل كود شام كاش', callback_data='edit_syriatel_code')],
+        [InlineKeyboardButton('📢 الاذاعة', callback_data='broadcast')],
+        [InlineKeyboardButton('🔙 رجوع', callback_data='back_main')]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# ═══════════════════════════════════════════════════════════════
+# Bot Handlers
+# ═══════════════════════════════════════════════════════════════
+WELCOME_MSG = (
+    'أهلا بك في عائلتنا 🎰\n\n'
+    'جميع عمليات السحب والايداع مبرمجة بالكامل ✅\n\n'
+    'تفضل باختيار طلبك من القائمة ادناه 👇'
+)
+
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        return json.loads(text)
-    except Exception:
-        for start_char in ('{', '['):
-            idx = text.find(start_char)
-            if idx != -1:
-                try:
-                    return json.loads(text[idx:])
-                except Exception:
-                    pass
-    return None
-
-
-def _proxy_for():
-    if not RESIDENTIAL_PROXY:
-        return None
-    if '://' not in RESIDENTIAL_PROXY:
-        return {'http': f'http://{RESIDENTIAL_PROXY}', 'https': f'http://{RESIDENTIAL_PROXY}'}
-    parsed = __import__('urllib.parse').parse.urlparse(RESIDENTIAL_PROXY)
-    if parsed.scheme in ('socks5', 'socks5h', 'socks4', 'socks4a'):
-        return {'http': RESIDENTIAL_PROXY, 'https': RESIDENTIAL_PROXY}
-    return {'http': RESIDENTIAL_PROXY, 'https': RESIDENTIAL_PROXY}
-
-
-def _thordata_unlocker(method, url, json_data=None, extra_headers=None, timeout=30):
-    """Send any HTTP request through Thordata Web Unlocker."""
-    form_data = {
-        'url': url,
-        'type': 'json',
-        'method': method.upper(),
-    }
-    if json_data is not None:
-        form_data['body'] = json.dumps(json_data)
-    if extra_headers:
-        form_data['headers'] = json.dumps(extra_headers)
-
-    headers = {
-        'Authorization': f'Bearer {THORDATA_TOKEN}',
-        'Content-Type': 'application/x-www-form-urlencoded',
-    }
-
-    logger.info('🔥 Thordata [%s] %s', method.upper(), url)
-    resp = requests.post(
-        THORDATA_ENDPOINT,
-        data=urlencode(form_data),
-        headers=headers,
-        timeout=timeout,
-    )
-    resp.raise_for_status()
-    return resp
-
-
-class ApiResponse:
-    def __init__(self, raw_resp):
-        self._raw = raw_resp
-        self.status_code = raw_resp.status_code
-        self.text = getattr(raw_resp, 'text', '')
-        self.content = getattr(raw_resp, 'content', b'')
-        self.headers = getattr(raw_resp, 'headers', {})
-
-    @property
-    def json(self):
-        data = safe_json_load(self.text)
-        if data is not None:
-            return data
-        raise ValueError(
-            f'Response is not JSON. Status: {self.status_code}, Body: {self.text[:300]}'
+        telegram_id = update.effective_user.id
+        await update.effective_message.reply_text(
+            WELCOME_MSG,
+            reply_markup=main_menu_keyboard(telegram_id)
         )
-
-    def __repr__(self):
-        return f'<ApiResponse [{self.status_code}]>'
-
-
-def api_request(method, endpoint, **kwargs):
-    """Make API request with Cloudflare bypass (Thordata → curl_cffi → requests)."""
-    url = f'{T4W_DOMAIN}{endpoint}'
-    timeout = kwargs.get('timeout', 30)
-    json_data = kwargs.get('json')
-    extra_headers = kwargs.get('headers', {})
-
-    # 1) Try Thordata Web Unlocker (supports ALL methods now)
-    if THORDATA_TOKEN:
-        try:
-            raw = _thordata_unlocker(
-                method, url, json_data=json_data, extra_headers=extra_headers, timeout=timeout
-            )
-            return ApiResponse(raw)
-        except Exception as e:
-            logger.warning('Thordata bypass failed: %s', e)
-
-    # 2) Fallback: curl_cffi with proxy
-    try:
-        proxy = _proxy_for()
-        if CURL_CFFI_AVAILABLE:
-            try:
-                proxy_url = proxy.get('https') or proxy.get('http') if proxy else None
-                raw = curl_requests.request(
-                    method, url,
-                    json=json_data,
-                    headers=extra_headers,
-                    proxy=proxy_url,
-                    timeout=timeout,
-                )
-                raw.raise_for_status()
-                return ApiResponse(raw)
-            except Exception as curl_err:
-                logger.warning('curl_cffi failed: %s, falling back to requests', curl_err)
-
-        raw = requests.request(
-            method, url,
-            json=json_data,
-            headers=extra_headers,
-            proxies=proxy,
-            timeout=timeout,
-        )
-        raw.raise_for_status()
-        return ApiResponse(raw)
     except Exception as e:
-        logger.error('All bypass methods failed for %s: %s', url, e)
-        raise
+        logger.error('❌ /start error: %s', e)
 
+# ── Callback Query Handlers ──────────────────────────────────
 
-# ═══════════════════════════════════════════════════════════════
-# Database Layer (SQLite)
-# ═══════════════════════════════════════════════════════════════
-class UserDB:
-    def __init__(self, db_path):
-        self.db_path = db_path
-        self._init_db()
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    telegram_id = query.from_user.id
 
-    def _init_db(self):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                telegram_id TEXT PRIMARY KEY,
-                t4w_username TEXT,
-                t4w_password TEXT,
-                balance REAL DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    # ── Back to main ──
+    if data == 'back_main':
+        clear_state(telegram_id)
+        await query.edit_message_text(
+            WELCOME_MSG,
+            reply_markup=main_menu_keyboard(telegram_id)
+        )
+        return
+
+    # ── Create Account ──
+    if data == 'create_account':
+        set_state(telegram_id, 'awaiting_username')
+        await query.edit_message_text(
+            '🆕 إنشاء حساب جديد\n\n'
+            'اختر اسم المستخدم الذي تريده:',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='back_main')]])
+        )
+        return
+
+    # ── Account Info ──
+    if data == 'account_info':
+        player = get_player(telegram_id)
+        if player:
+            msg = (
+                f'📋 معلومات حسابك:\n\n'
+                f'🆔 أيدي اللاعب: `{player[1]}`\n'
+                f'👤 اسم المستخدم: `{player[2]}`\n'
+                f'🔑 كلمة السر: `{player[3]}`'
             )
-        ''')
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS config (
-                key TEXT PRIMARY KEY,
-                value TEXT
+            await query.edit_message_text(
+                msg,
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='back_main')]])
             )
-        ''')
-        conn.commit()
-        conn.close()
+        return
 
-    def link_account(self, telegram_id, t4w_username, t4w_password=None):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute(
-            'INSERT OR REPLACE INTO users (telegram_id, t4w_username, t4w_password) VALUES (?, ?, ?)',
-            (str(telegram_id), t4w_username, t4w_password)
+    # ── Deposit ──
+    if data == 'deposit':
+        if not is_player(telegram_id):
+            await query.edit_message_text('⚠️ يجب إنشاء حساب أولاً')
+            return
+        await query.edit_message_text(
+            '📥 الإيداع\n\n'
+            f'الحد الأدنى للإيداع: {DEPOSIT_MIN:,} {CURRENCY}\n\n'
+            'اختر طريقة الإيداع:',
+            reply_markup=deposit_method_keyboard()
         )
-        conn.commit()
-        conn.close()
+        return
 
-    def get_user(self, telegram_id):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.execute(
-            'SELECT t4w_username, t4w_password, balance FROM users WHERE telegram_id = ?',
-            (str(telegram_id),)
+    # ── Deposit: Sham Cash ──
+    if data == 'deposit_sham':
+        sham_wallet = get_setting('sham_cash_wallet')
+        set_state(telegram_id, 'awaiting_deposit_amount', {'method': 'sham_cash', 'wallet': sham_wallet})
+        await query.edit_message_text(
+            '📥 إيداع عبر شام كاش\n\n'
+            f'اكتب المبلغ المراد إيداعه:\n'
+            f'(الحد الأدنى: {DEPOSIT_MIN:,} {CURRENCY})',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='deposit')]])
         )
-        row = cursor.fetchone()
-        conn.close()
-        if row:
-            return {'username': row[0], 'password': row[1], 'balance': row[2]}
-        return None
+        return
 
-    def get_username(self, telegram_id):
-        user = self.get_user(telegram_id)
-        return user['username'] if user else None
-
-    def update_balance(self, telegram_id, amount):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute(
-            'UPDATE users SET balance = balance + ? WHERE telegram_id = ?',
-            (amount, str(telegram_id))
+    # ── Deposit: Syriatel Cash ──
+    if data == 'deposit_syriatel':
+        syriatel_code = get_setting('syriatel_cash_code')
+        set_state(telegram_id, 'awaiting_deposit_amount', {'method': 'syriatel_cash', 'code': syriatel_code})
+        await query.edit_message_text(
+            '📥 إيداع عبر سيريتيل كاش\n\n'
+            f'اكتب المبلغ المراد إيداعه:\n'
+            f'(الحد الأدنى: {DEPOSIT_MIN:,} {CURRENCY})',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='deposit')]])
         )
-        conn.commit()
-        conn.close()
+        return
 
-    def set_config(self, key, value):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)', (key, value))
-        conn.commit()
-        conn.close()
+    # ── Withdraw ──
+    if data == 'withdraw':
+        if not is_player(telegram_id):
+            await query.edit_message_text('⚠️ يجب إنشاء حساب أولاً')
+            return
+        await query.edit_message_text(
+            '📤 السحب\n\n'
+            'اختر طريقة السحب:',
+            reply_markup=withdraw_method_keyboard()
+        )
+        return
 
-    def get_config(self, key):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.execute('SELECT value FROM config WHERE key = ?', (key,))
-        row = cursor.fetchone()
-        conn.close()
-        return row[0] if row else None
+    # ── Withdraw: Sham Cash ──
+    if data == 'withdraw_sham':
+        set_state(telegram_id, 'awaiting_withdraw_amount', {'method': 'sham_cash'})
+        await query.edit_message_text(
+            f'⚠️ سيحسم مبلغ {WITHDRAW_FEE_PERCENT}% من عملية السحب\n\n'
+            f'اكتب المبلغ المراد سحبه:\n'
+            f'(الحد الأدنى: {WITHDRAW_MIN:,} {CURRENCY} | الحد الأقصى: {WITHDRAW_MAX:,} {CURRENCY})',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='withdraw')]])
+        )
+        return
 
+    # ── Withdraw: Syriatel Cash ──
+    if data == 'withdraw_syriatel':
+        set_state(telegram_id, 'awaiting_withdraw_amount', {'method': 'syriatel_cash'})
+        await query.edit_message_text(
+            f'⚠️ سيحسم مبلغ {WITHDRAW_FEE_PERCENT}% من عملية السحب\n\n'
+            f'اكتب المبلغ المراد سحبه:\n'
+            f'(الحد الأدنى: {WITHDRAW_MIN:,} {CURRENCY} | الحد الأقصى: {WITHDRAW_MAX:,} {CURRENCY})',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='withdraw')]])
+        )
+        return
 
-user_db = UserDB(USER_DB_PATH)
+    # ── Support ──
+    if data == 'support':
+        set_state(telegram_id, 'support_chat')
+        await query.edit_message_text(
+            '🆘 الدعم الفني\n\n'
+            'فريقنا في خدمتكم على مدار الساعة 🕐\n'
+            'فقط اخبرنا بالمشكلة التي تواجهها:',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='back_main')]])
+        )
+        return
 
+    # ── Owner Panel ──
+    if data == 'owner_panel':
+        if not is_owner(telegram_id):
+            await query.edit_message_text('⛔ هذا القسم متاح فقط لمالك البوت')
+            return
+        await query.edit_message_text(
+            '⚙️ قائمة تحكم البوت',
+            reply_markup=owner_panel_keyboard()
+        )
+        return
 
-# ═══════════════════════════════════════════════════════════════
-# Texas4Win API Client
-# ═══════════════════════════════════════════════════════════════
-class Texas4WinClient:
-    def __init__(self):
-        self._token = None
+    # ── Owner: Add Owner ──
+    if data == 'add_owner':
+        if not is_owner(telegram_id):
+            return
+        set_state(telegram_id, 'awaiting_add_owner')
+        await query.edit_message_text(
+            '👑 اضافة مالك جديد\n\n'
+            'أرسل أيدي التليجرام الخاص بالشخص:',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='owner_panel')]])
+        )
+        return
 
-    @property
-    def token(self):
-        if self._token is None:
-            self._token = user_db.get_config('t4w_token')
-        return self._token
+    # ── Owner: Add Admin ──
+    if data == 'add_admin':
+        if not is_owner(telegram_id):
+            return
+        set_state(telegram_id, 'awaiting_add_admin')
+        await query.edit_message_text(
+            '👤 اضافة مشرف جديد\n\n'
+            'أرسل أيدي التليجرام الخاص بالشخص:',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='owner_panel')]])
+        )
+        return
 
-    @token.setter
-    def token(self, value):
-        self._token = value
-        if value:
-            user_db.set_config('t4w_token', value)
+    # ── Owner: Remove Admin ──
+    if data == 'remove_admin':
+        if not is_owner(telegram_id):
+            return
+        admins = db_execute('SELECT telegram_id, role FROM admins', fetch=True)
+        if not admins:
+            await query.edit_message_text('لا يوجد مشرفين حالياً')
+            return
+        keyboard = []
+        for admin_id, role in admins:
+            if admin_id == OWNER_ID:
+                continue
+            label = '👑 مالك' if role == 'owner' else '👤 مشرف'
+            keyboard.append([InlineKeyboardButton(f'{label} - {admin_id}', callback_data=f'remove_admin_{admin_id}')])
+        keyboard.append([InlineKeyboardButton('🔙 رجوع', callback_data='owner_panel')])
+        await query.edit_message_text(
+            '❌ ازالة مشرف\n\n'
+            'اختر المشرف الذي تريد إزالته:',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
 
-    def _request(self, method, endpoint, **kwargs):
-        headers = kwargs.pop('headers', {})
-        if self.token:
-            headers['Authorization'] = f'Bearer {self.token}'
-        return api_request(method, endpoint, headers=headers, **kwargs)
+    # ── Owner: Remove Admin (specific) ──
+    if data.startswith('remove_admin_'):
+        if not is_owner(telegram_id):
+            return
+        target_id = int(data.split('_')[-1])
+        db_execute('DELETE FROM admins WHERE telegram_id=?', (target_id,))
+        await query.edit_message_text(
+            f'✅ تم إزالة المشرف {target_id} بنجاح',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='owner_panel')]])
+        )
+        return
 
-    def login(self):
-        """Authenticate as agent on Texas4Win panel."""
-        if not T4W_AGENT_USERNAME or not T4W_AGENT_PASSWORD:
-            raise ValueError('T4W_AGENT_USERNAME and T4W_AGENT_PASSWORD env vars must be set')
-
-        resp = self._request('POST', T4W_LOGIN_ENDPOINT, json={
-            'username': T4W_AGENT_USERNAME,
-            'password': T4W_AGENT_PASSWORD
-        })
-        data = resp.json
-
-        # Try common token locations in response
-        token = data.get('token') or data.get('access_token')
-        if not token and isinstance(data.get('data'), dict):
-            token = data['data'].get('token') or data['data'].get('access_token')
-
-        if not token:
-            raise ValueError(f'Login OK but no token found. Response: {json.dumps(data)[:500]}')
-
-        self.token = token
-        logger.info('✅ Texas4Win agent login successful')
-        return data
-
-    def ensure_logged_in(self):
-        if not self.token:
-            self.login()
-
-    def create_player(self, username, password, phone=None):
-        """Create a new player account under this agent."""
-        self.ensure_logged_in()
-        payload = {'username': username, 'password': password}
-        if phone:
-            payload['phone'] = phone
-        resp = self._request('POST', T4W_CREATE_ENDPOINT, json=payload)
-        return resp.json
-
-    def deposit(self, username, amount):
-        """Deposit money into a player's account."""
-        self.ensure_logged_in()
-        resp = self._request('POST', T4W_DEPOSIT_ENDPOINT, json={
-            'username': username,
-            'amount': float(amount)
-        })
-        return resp.json
-
-    def withdraw(self, username, amount):
-        """Withdraw money from a player's account."""
-        self.ensure_logged_in()
-        resp = self._request('POST', T4W_WITHDRAW_ENDPOINT, json={
-            'username': username,
-            'amount': float(amount)
-        })
-        return resp.json
-
-    def get_balance(self, username):
-        """Get player's current balance."""
-        self.ensure_logged_in()
-        # Try query param first, then path param
+    # ── Owner: Bot Balance ──
+    if data == 'bot_balance':
+        if not is_owner(telegram_id):
+            return
         try:
-            resp = self._request('GET', f'{T4W_BALANCE_ENDPOINT}?username={username}')
-            return resp.json
-        except Exception:
-            resp = self._request('GET', f'{T4W_BALANCE_ENDPOINT}/{username}')
-            return resp.json
+            result = api.get_agent_wallets()
+            if result and result.get('status'):
+                wallets = result.get('result', [])
+                msg = '💰 أرصدة البوت:\n\n'
+                for w in wallets:
+                    if w.get('currencyCode') == CURRENCY:
+                        msg += (
+                            f'💱 العملة: {w.get("currencyCode")}\n'
+                            f'💳 الرصيد: {w.get("balance", 0):,.2f}\n'
+                            f'✅ المتاح: {w.get("availability", 0):,.2f}\n'
+                            f'🎁 المكافأة: {w.get("bonus", 0):,.2f}\n'
+                            f'❄️ المجمد: {w.get("frozenBalance", 0):,.2f}\n\n'
+                        )
+                if not msg.strip().endswith(':'):
+                    await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='owner_panel')]]))
+                else:
+                    await query.edit_message_text('❌ لم يتم العثور على محفظة SYP', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='owner_panel')]]))
+            else:
+                await query.edit_message_text('❌ فشل في جلب الرصيد', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='owner_panel')]]))
+        except Exception as e:
+            logger.error('❌ Bot balance error: %s', e)
+            await query.edit_message_text('❌ خطأ في جلب الرصيد', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='owner_panel')]]))
+        return
+
+    # ── Owner: Edit Sham Cash Wallet ──
+    if data == 'edit_sham_wallet':
+        if not is_owner(telegram_id):
+            return
+        current = get_setting('sham_cash_wallet')
+        set_state(telegram_id, 'awaiting_edit_sham_wallet')
+        await query.edit_message_text(
+            f'🟠 تعديل محفظة شام كاش\n\n'
+            f'المحفظة الحالية: `{current}`\n\n'
+            f'أرسل العنوان الجديد:',
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='owner_panel')]])
+        )
+        return
+
+    # ── Owner: Edit Syriatel Code ──
+    if data == 'edit_syriatel_code':
+        if not is_owner(telegram_id):
+            return
+        current = get_setting('syriatel_cash_code')
+        set_state(telegram_id, 'awaiting_edit_syriatel_code')
+        await query.edit_message_text(
+            f'🔴 تعديل كود سيريتيل كاش\n\n'
+            f'الكود الحالي: `{current}`\n\n'
+            f'أرسل الكود الجديد:',
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='owner_panel')]])
+        )
+        return
+
+    # ── Owner: Broadcast ──
+    if data == 'broadcast':
+        if not is_owner(telegram_id):
+            return
+        set_state(telegram_id, 'awaiting_broadcast')
+        await query.edit_message_text(
+            '📢 الاذاعة\n\n'
+            'أرسل الرسالة التي تريد بثها لجميع اللاعبين:',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='owner_panel')]])
+        )
+        return
+
+    # ── Admin: Approve Deposit ──
+    if data.startswith('approve_deposit_'):
+        pending_id = int(data.split('_')[-1])
+        row = db_execute('SELECT * FROM pending_deposits WHERE id=? AND status=?', (pending_id, 'pending'), fetchone=True)
+        if not row:
+            await query.edit_message_text('❌ هذا الطلب تم معالجته مسبقاً')
+            return
+        player = get_player(row[1])
+        if not player:
+            await query.edit_message_text('❌ اللاعب غير موجود')
+            return
+        player_id = player[1]
+        amount = row[2]
+        method = row[3]
+        result = api.deposit_to_player(player_id, amount, f'إيداع {method} - {row[4]}')
+        if result and result.get('status'):
+            db_execute('UPDATE pending_deposits SET status=? WHERE id=?', ('approved', pending_id))
+            await query.edit_message_text(
+                f'✅ تم إيداع {amount:,} {CURRENCY} في حساب اللاعب بنجاح'
+            )
+            try:
+                await context.bot.send_message(
+                    chat_id=row[1],
+                    text=f'✅ تم إيداع {amount:,} {CURRENCY} في حسابك بنجاح!\n\n'
+                         f'📌 طريقة الإيداع: {method}\n'
+                         f'🔢 رقم العملية: {row[4]}'
+                )
+            except Exception as e:
+                logger.error('❌ Notify player deposit error: %s', e)
+        else:
+            await query.edit_message_text(
+                f'❌ فشل في إيداع المبلغ. النتيجة: {result}'
+            )
+        return
+
+    # ── Admin: Reject Deposit ──
+    if data.startswith('reject_deposit_'):
+        pending_id = int(data.split('_')[-1])
+        row = db_execute('SELECT * FROM pending_deposits WHERE id=? AND status=?', (pending_id, 'pending'), fetchone=True)
+        if not row:
+            await query.edit_message_text('❌ هذا الطلب تم معالجته مسبقاً')
+            return
+        db_execute('UPDATE pending_deposits SET status=? WHERE id=?', ('rejected', pending_id))
+        await query.edit_message_text('❌ تم رفض طلب الإيداع')
+        try:
+            await context.bot.send_message(
+                chat_id=row[1],
+                text='❌ تم رفض طلب الإيداع. الرجاء التحقق من المعلومات والمحاولة مرة أخرى.'
+            )
+        except Exception as e:
+            logger.error('❌ Notify player reject error: %s', e)
+        return
+
+    # ── Admin: Approve Withdrawal ──
+    if data.startswith('approve_withdraw_'):
+        pending_id = int(data.split('_')[-1])
+        row = db_execute('SELECT * FROM pending_withdrawals WHERE id=? AND status=?', (pending_id, 'pending'), fetchone=True)
+        if not row:
+            await query.edit_message_text('❌ هذا الطلب تم معالجته مسبقاً')
+            return
+        player = get_player(row[1])
+        if not player:
+            await query.edit_message_text('❌ اللاعب غير موجود')
+            return
+        player_id = player[1]
+        amount = row[2]
+        method = row[3]
+        wallet = row[4]
+        # Calculate fee
+        net_amount = amount
+        result = api.withdraw_from_player(player_id, net_amount, f'سحب {method} - {wallet}')
+        if result and result.get('status'):
+            db_execute('UPDATE pending_withdrawals SET status=? WHERE id=?', ('approved', pending_id))
+            await query.edit_message_text(
+                f'✅ تم سحب {net_amount:,} {CURRENCY} من حساب اللاعب بنجاح'
+            )
+            try:
+                await context.bot.send_message(
+                    chat_id=row[1],
+                    text=f'✅ تم سحب {net_amount:,} {CURRENCY} من حسابك بنجاح!\n\n'
+                         f'📌 طريقة السحب: {method}\n'
+                         f'📍 المحفظة: {wallet}'
+                )
+            except Exception as e:
+                logger.error('❌ Notify player withdraw error: %s', e)
+        else:
+            await query.edit_message_text(
+                f'❌ فشل في سحب المبلغ. النتيجة: {result}'
+            )
+        return
+
+    # ── Admin: Reject Withdrawal ──
+    if data.startswith('reject_withdraw_'):
+        pending_id = int(data.split('_')[-1])
+        row = db_execute('SELECT * FROM pending_withdrawals WHERE id=? AND status=?', (pending_id, 'pending'), fetchone=True)
+        if not row:
+            await query.edit_message_text('❌ هذا الطلب تم معالجته مسبقاً')
+            return
+        db_execute('UPDATE pending_withdrawals SET status=? WHERE id=?', ('rejected', pending_id))
+        await query.edit_message_text('❌ تم رفض طلب السحب')
+        try:
+            await context.bot.send_message(
+                chat_id=row[1],
+                text='❌ تم رفض طلب السحب. الرجاء التحقق من المعلومات والمحاولة مرة أخرى.'
+            )
+        except Exception as e:
+            logger.error('❌ Notify player reject error: %s', e)
+        return
 
 
-t4w_client = Texas4WinClient()
+async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    telegram_id = update.effective_user.id
+    text = update.message.text
+    state = get_state(telegram_id)
+
+    if not state:
+        return
+
+    state_name = state['state']
+    state_data = state['data']
+
+    # ── Create Account: Username ──
+    if state_name == 'awaiting_username':
+        username = text.strip()
+        set_state(telegram_id, 'awaiting_password', {'username': username})
+        await update.message.reply_text(
+            '🔐 أكتب كلمة السر التي تريدها:',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='back_main')]])
+        )
+        return
+
+    # ── Create Account: Password ──
+    if state_name == 'awaiting_password':
+        username = state_data.get('username')
+        password = text.strip()
+        email = generate_random_email()
+
+        result = api.register_player(username, password, email)
+        if result and result.get('status'):
+            # Get player ID from API
+            player_search = api.get_players(search=username)
+            player_id = None
+            if player_search and player_search.get('status'):
+                records = player_search.get('result', {}).get('records', [])
+                for r in records:
+                    if r.get('username', '').lower() == username.lower():
+                        player_id = str(r.get('playerId'))
+                        break
+
+            if not player_id:
+                player_id = str(result.get('result', ''))
+
+            db_execute(
+                'INSERT INTO players (telegram_id, player_id, username, password) VALUES (?, ?, ?, ?)',
+                (telegram_id, player_id, username, password)
+            )
+            clear_state(telegram_id)
+            await update.message.reply_text(
+                f'✅ تم إنشاء حسابك بنجاح!\n\n'
+                f'👤 اسم المستخدم: {username}\n'
+                f'🔑 كلمة السر: {password}\n\n'
+                f'يمكنك الآن استخدام جميع خدمات البوت 🎰',
+                reply_markup=main_menu_keyboard(telegram_id)
+            )
+        else:
+            error_msg = 'فشل في إنشاء الحساب'
+            if result:
+                notifs = result.get('notification', [])
+                for n in notifs:
+                    if n.get('content'):
+                        error_msg = n['content']
+                        break
+            await update.message.reply_text(
+                f'❌ {error_msg}\n\n'
+                'الرجاء المحاولة مرة أخرى باسم مستخدم مختلف',
+                reply_markup=main_menu_keyboard(telegram_id)
+            )
+            clear_state(telegram_id)
+        return
+
+    # ── Deposit: Amount ──
+    if state_name == 'awaiting_deposit_amount':
+        try:
+            amount = int(text.strip().replace(',', '').replace('.', ''))
+        except ValueError:
+            await update.message.reply_text('⚠️ الرجاء إدخال مبلغ صحيح (أرقام فقط)')
+            return
+
+        if amount < DEPOSIT_MIN:
+            await update.message.reply_text(f'⚠️ الحد الأدنى للإيداع هو {DEPOSIT_MIN:,} {CURRENCY}')
+            return
+
+        method = state_data.get('method')
+        set_state(telegram_id, 'awaiting_deposit_transaction', {'method': method, 'amount': amount, **state_data})
+
+        if method == 'sham_cash':
+            wallet = get_setting('sham_cash_wallet')
+            await update.message.reply_text(
+                f'📥 إيداع عبر شام كاش\n\n'
+                f'💰 المبلغ: {amount:,} {CURRENCY}\n\n'
+                f'أرسل الأموال إلى المحفظة التالية:\n'
+                f'`{wallet}`\n\n'
+                f'ثم أرسل رقم العملية:',
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='deposit')]])
+            )
+        else:
+            code = get_setting('syriatel_cash_code')
+            await update.message.reply_text(
+                f'📥 إيداع عبر سيريتيل كاش\n\n'
+                f'💰 المبلغ: {amount:,} {CURRENCY}\n\n'
+                f'أرسل الأموال إلى الكود التالي:\n'
+                f'`{code}`\n\n'
+                f'ثم أرسل رقم العملية:',
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='deposit')]])
+            )
+        return
+
+    # ── Deposit: Transaction ID ──
+    if state_name == 'awaiting_deposit_transaction':
+        transaction_id = text.strip()
+        method = state_data.get('method')
+        amount = state_data.get('amount')
+        player = get_player(telegram_id)
+
+        # Save to pending_deposits
+        db_execute(
+            'INSERT INTO pending_deposits (telegram_id, amount, method, transaction_id, status) VALUES (?, ?, ?, ?, ?)',
+            (telegram_id, amount, method, transaction_id, 'pending')
+        )
+        pending_id = db_execute(
+            'SELECT id FROM pending_deposits WHERE telegram_id=? AND transaction_id=? ORDER BY id DESC LIMIT 1',
+            (telegram_id, transaction_id), fetchone=True
+        )[0]
+
+        # Send to admin group
+        player_name = player[2] if player else 'غير معروف'
+        method_ar = 'شام كاش' if method == 'sham_cash' else 'سيريتيل كاش'
+        admin_msg = (
+            f'📥 طلب إيداع جديد\n\n'
+            f'👤 اللاعب: {player_name}\n'
+            f'🆔 أيدي: `{telegram_id}`\n'
+            f'💰 المبلغ: {amount:,} {CURRENCY}\n'
+            f'📌 الطريقة: {method_ar}\n'
+            f'🔢 رقم العملية: `{transaction_id}`'
+        )
+        await context.bot.send_message(
+            chat_id=ADMIN_GROUP,
+            text=admin_msg,
+            parse_mode='Markdown',
+            reply_markup=admin_action_keyboard(pending_id, 'deposit')
+        )
+
+        clear_state(telegram_id)
+        await update.message.reply_text(
+            f'✅ تم إرسال طلب الإيداع بنجاح\n\n'
+            f'سيتم مراجعة طلبك من قبل المشرفين\n'
+            f'يرجى الانتظار ⏳',
+            reply_markup=main_menu_keyboard(telegram_id)
+        )
+        return
+
+    # ── Withdraw: Amount ──
+    if state_name == 'awaiting_withdraw_amount':
+        try:
+            amount = int(text.strip().replace(',', '').replace('.', ''))
+        except ValueError:
+            await update.message.reply_text('⚠️ الرجاء إدخال مبلغ صحيح (أرقام فقط)')
+            return
+
+        if amount < WITHDRAW_MIN:
+            await update.message.reply_text(f'⚠️ الحد الأدنى للسحب هو {WITHDRAW_MIN:,} {CURRENCY}')
+            return
+        if amount > WITHDRAW_MAX:
+            await update.message.reply_text(f'⚠️ الحد الأقصى للسحب هو {WITHDRAW_MAX:,} {CURRENCY}')
+            return
+
+        method = state_data.get('method')
+        set_state(telegram_id, 'awaiting_withdraw_wallet', {'method': method, 'amount': amount})
+
+        if method == 'sham_cash':
+            await update.message.reply_text(
+                '📍 أرسل عنوان محفظة شام كاش الخاصة بك:',
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='withdraw')]])
+            )
+        else:
+            await update.message.reply_text(
+                '📍 أرسل كود/رقم سيريتيل كاش الخاص بك:',
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 رجوع', callback_data='withdraw')]])
+            )
+        return
+
+    # ── Withdraw: Wallet Address ──
+    if state_name == 'awaiting_withdraw_wallet':
+        wallet_address = text.strip()
+        method = state_data.get('method')
+        amount = state_data.get('amount')
+        player = get_player(telegram_id)
+
+        # Calculate fee
+        fee = int(amount * WITHDRAW_FEE_PERCENT / 100)
+        net_amount = amount - fee
+
+        # Save to pending_withdrawals
+        db_execute(
+            'INSERT INTO pending_withdrawals (telegram_id, amount, method, wallet_address, status) VALUES (?, ?, ?, ?, ?)',
+            (telegram_id, amount, method, wallet_address, 'pending')
+        )
+        pending_id = db_execute(
+            'SELECT id FROM pending_withdrawals WHERE telegram_id=? AND wallet_address=? ORDER BY id DESC LIMIT 1',
+            (telegram_id, wallet_address), fetchone=True
+        )[0]
+
+        # Send to admin group
+        player_name = player[2] if player else 'غير معروف'
+        method_ar = 'شام كاش' if method == 'sham_cash' else 'سيريتيل كاش'
+        admin_msg = (
+            f'📤 طلب سحب جديد\n\n'
+            f'👤 اللاعب: {player_name}\n'
+            f'🆔 أيدي: `{telegram_id}`\n'
+            f'💰 المبلغ: {amount:,} {CURRENCY}\n'
+            f'💸 العمولة ({WITHDRAW_FEE_PERCENT}%): {fee:,} {CURRENCY}\n'
+            f'💵 صافي المبلغ: {net_amount:,} {CURRENCY}\n'
+            f'📌 الطريقة: {method_ar}\n'
+            f'📍 المحفظة: `{wallet_address}`'
+        )
+        await context.bot.send_message(
+            chat_id=ADMIN_GROUP,
+            text=admin_msg,
+            parse_mode='Markdown',
+            reply_markup=admin_action_keyboard(pending_id, 'withdraw')
+        )
+
+        clear_state(telegram_id)
+        await update.message.reply_text(
+            f'✅ تم إرسال طلب السحب بنجاح\n\n'
+            f'💰 المبلغ: {amount:,} {CURRENCY}\n'
+            f'💸 العمولة ({WITHDRAW_FEE_PERCENT}%): {fee:,} {CURRENCY}\n'
+            f'💵 صافي المبلغ: {net_amount:,} {CURRENCY}\n\n'
+            f'سيتم مراجعة طلبك من قبل المشرفين\n'
+            f'يرجى الانتظار ⏳',
+            reply_markup=main_menu_keyboard(telegram_id)
+        )
+        return
+
+    # ── Support Chat ──
+    if state_name == 'support_chat':
+        player = get_player(telegram_id)
+        player_name = player[2] if player else update.effective_user.first_name or 'غير معروف'
+        admin_msg = (
+            f'🆘 رسالة دعم فني\n\n'
+            f'👤 اللاعب: {player_name}\n'
+            f'🆔 أيدي: `{telegram_id}`\n\n'
+            f'💬 الرسالة:\n{text}'
+        )
+        await context.bot.send_message(
+            chat_id=ADMIN_GROUP,
+            text=admin_msg,
+            parse_mode='Markdown'
+        )
+        await update.message.reply_text(
+            '✅ تم إرسال رسالتك إلى فريق الدعم\n'
+            'سيتم الرد عليك في أقرب وقت ⏳'
+        )
+        clear_state(telegram_id)
+        return
+
+    # ── Owner: Add Owner ──
+    if state_name == 'awaiting_add_owner':
+        try:
+            new_id = int(text.strip())
+        except ValueError:
+            await update.message.reply_text('⚠️ الرجاء إدخال أيدي صحيح (أرقام فقط)')
+            return
+        db_execute('INSERT OR REPLACE INTO admins (telegram_id, role) VALUES (?, ?)', (new_id, 'owner'))
+        clear_state(telegram_id)
+        await update.message.reply_text(
+            f'✅ تم إضافة {new_id} كمالك بنجاح',
+            reply_markup=owner_panel_keyboard()
+        )
+        return
+
+    # ── Owner: Add Admin ──
+    if state_name == 'awaiting_add_admin':
+        try:
+            new_id = int(text.strip())
+        except ValueError:
+            await update.message.reply_text('⚠️ الرجاء إدخال أيدي صحيح (أرقام فقط)')
+            return
+        db_execute('INSERT OR REPLACE INTO admins (telegram_id, role) VALUES (?, ?)', (new_id, 'admin'))
+        clear_state(telegram_id)
+        await update.message.reply_text(
+            f'✅ تم إضافة {new_id} كمشرف بنجاح',
+            reply_markup=owner_panel_keyboard()
+        )
+        return
+
+    # ── Owner: Edit Sham Cash Wallet ──
+    if state_name == 'awaiting_edit_sham_wallet':
+        update_setting('sham_cash_wallet', text.strip())
+        clear_state(telegram_id)
+        await update.message.reply_text(
+            f'✅ تم تحديث محفظة شام كاش بنجاح\n'
+            f'📍 العنوان الجديد: `{text.strip()}`',
+            parse_mode='Markdown',
+            reply_markup=owner_panel_keyboard()
+        )
+        return
+
+    # ── Owner: Edit Syriatel Code ──
+    if state_name == 'awaiting_edit_syriatel_code':
+        update_setting('syriatel_cash_code', text.strip())
+        clear_state(telegram_id)
+        await update.message.reply_text(
+            f'✅ تم تحديث كود سيريتيل كاش بنجاح\n'
+            f'📍 الكود الجديد: `{text.strip()}`',
+            parse_mode='Markdown',
+            reply_markup=owner_panel_keyboard()
+        )
+        return
+
+    # ── Owner: Broadcast ──
+    if state_name == 'awaiting_broadcast':
+        players = db_execute('SELECT telegram_id FROM players', fetch=True)
+        success = 0
+        fail = 0
+        for (pid,) in players:
+            try:
+                await context.bot.send_message(chat_id=pid, text=f'📢 {text}')
+                success += 1
+            except Exception:
+                fail += 1
+        clear_state(telegram_id)
+        await update.message.reply_text(
+            f'📢 تم الإذاعة\n\n'
+            f'✅ نجاح: {success}\n'
+            f'❌ فشل: {fail}',
+            reply_markup=owner_panel_keyboard()
+        )
+        return
+
+
+# Group reply handler - when admin replies to a support message in the group
+async def group_reply_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    if chat_id != ADMIN_GROUP:
+        return
+
+    # Check if message is a reply
+    if not update.message.reply_to_message:
+        return
+
+    # Check if replier is admin
+    if not is_admin(update.effective_user.id):
+        return
+
+    replied_text = update.message.reply_to_message.text or ''
+    # Extract player telegram_id from the replied message
+    import re
+    match = re.search(r'🆔 أيدي: `(\d+)`', replied_text)
+    if not match:
+        return
+
+    player_id = int(match.group(1))
+    reply_text = update.message.text
+
+    try:
+        await context.bot.send_message(
+            chat_id=player_id,
+            text=f'🆘 رد الدعم الفني:\n\n{reply_text}'
+        )
+    except Exception as e:
+        logger.error('❌ Failed to send support reply: %s', e)
 
 
 # ═══════════════════════════════════════════════════════════════
-# Flask App
+# Flask App + Webhook
 # ═══════════════════════════════════════════════════════════════
 app = Flask(__name__)
+
+_telegram_app = None
+_telegram_loop = None
+_telegram_thread = None
+_telegram_ready = threading.Event()
+
+api = None
+
+def _telegram_thread_main():
+    global _telegram_app, _telegram_loop, api
+    try:
+        _telegram_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_telegram_loop)
+
+        # Init API client
+        api = AgentAPI()
+
+        # Init database
+        init_db()
+
+        # Build Telegram app
+        _telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
+        # Register handlers
+        _telegram_app.add_handler(CommandHandler('start', start_command))
+        _telegram_app.add_handler(CommandHandler('panel', lambda u, c: _show_owner_panel(u, c)))
+        _telegram_app.add_handler(CallbackQueryHandler(button_handler))
+        _telegram_app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, message_handler))
+        _telegram_app.add_handler(MessageHandler(filters.Chat(ADMIN_GROUP) & filters.REPLY, group_reply_handler))
+
+        # Set webhook
+        if WEBHOOK_URL:
+            _telegram_loop.run_until_complete(
+                _telegram_app.bot.set_webhook(url=WEBHOOK_URL)
+            )
+            logger.info('🔗 Webhook set to %s', WEBHOOK_URL)
+
+        _telegram_ready.set()
+        logger.info('✅ Telegram bot ready')
+        _telegram_loop.run_forever()
+    except Exception as e:
+        logger.error('❌ Telegram thread crashed: %s', e)
+
+
+async def _show_owner_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if is_owner(update.effective_user.id):
+        await update.effective_message.reply_text(
+            '⚙️ قائمة تحكم البوت',
+            reply_markup=owner_panel_keyboard()
+        )
+    else:
+        await update.effective_message.reply_text('⛔ هذا القسم متاح فقط لمالك البوت')
+
+
+def _ensure_telegram():
+    global _telegram_thread
+    if _telegram_thread is not None and _telegram_thread.is_alive() and _telegram_ready.is_set():
+        return
+    if _telegram_thread is None or not _telegram_thread.is_alive():
+        _telegram_ready.clear()
+        _telegram_thread = threading.Thread(target=_telegram_thread_main, daemon=True)
+        _telegram_thread.start()
+        logger.info('🔄 Telegram thread started, waiting for readiness...')
+
+
+# Fix: asyncio import needed
+import asyncio
 
 
 @app.route('/')
 def home():
-    return '✅ Texas4Win Agent Bot is online!'
+    _ensure_telegram()
+    return '✅ Texas4Win Bot is online!'
 
 
 @app.route('/health')
@@ -389,305 +1208,6 @@ def health_check():
     })
 
 
-@app.route('/deposit', methods=['POST'])
-def handle_deposit():
-    """External endpoint to notify bot about deposits."""
-    data = request.get_json(force=True)
-    if not data or data.get('secret') != API_SECRET:
-        return jsonify({'error': 'Invalid secret'}), 403
-
-    user_id = data.get('user_id')
-    amount = data.get('amount')
-    if not user_id or amount is None:
-        return jsonify({'error': 'Missing user_id or amount'}), 400
-
-    if not _telegram_ready.is_set():
-        return jsonify({'error': 'Bot not ready'}), 503
-
-    try:
-        msg = f'✅ تم إيداع <b>${amount}</b> بنجاح! 🎉'
-        future = asyncio.run_coroutine_threadsafe(
-            _telegram_app.bot.send_message(
-                chat_id=user_id, text=msg, parse_mode=ParseMode.HTML
-            ),
-            _telegram_loop
-        )
-        future.result(timeout=10)
-        return jsonify({'status': 'success'})
-    except Exception as e:
-        logger.error('Deposit notification error: %s', e)
-        return jsonify({'error': str(e)}), 500
-
-
-# ═══════════════════════════════════════════════════════════════
-# Telegram Handlers
-# ═══════════════════════════════════════════════════════════════
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        user = update.effective_user
-        t4w_user = user_db.get_user(user.id)
-
-        welcome = f"🎰 مرحباً {user.first_name}!\n\n"
-        if t4w_user and t4w_user['username']:
-            welcome += f"✅ حسابك مرتبط: <code>{t4w_user['username']}</code>\n"
-            try:
-                bal_data = await asyncio.to_thread(t4w_client.get_balance, t4w_user['username'])
-                bal = bal_data.get('balance')
-                if bal is None and isinstance(bal_data.get('data'), dict):
-                    bal = bal_data['data'].get('balance', 0)
-                bal = bal or 0
-                welcome += f"💰 الرصيد: <b>${bal}</b>\n"
-            except Exception as e:
-                logger.warning('Balance fetch failed: %s', e)
-                welcome += "💰 الرصيد: غير متوفر\n"
-        else:
-            welcome += (
-                "❌ لم يربط حساب Texas4win بعد\n"
-                "استخدم /create لإنشاء حساب جديد\n\n"
-            )
-
-        welcome += "\n🎲 اختر إجراءً:"
-
-        keyboard = [
-            [InlineKeyboardButton('🎰 العب الآن', url='https://agents.texas4win.com')],
-            [InlineKeyboardButton('💳 إيداع', callback_data='deposit')],
-            [InlineKeyboardButton('💸 سحب', callback_data='withdraw')],
-        ]
-        await update.message.reply_text(
-            welcome,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=ParseMode.HTML
-        )
-    except Exception as e:
-        logger.exception('Start command error: %s', e)
-        try:
-            await update.message.reply_text(
-                "❌ حدث خطأ داخلي. يرجى إعادة المحاولة لاحقاً.",
-                parse_mode=ParseMode.HTML
-            )
-        except Exception:
-            pass
-
-
-async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    t4w_username = user_db.get_username(user.id)
-
-    if not t4w_username:
-        await update.message.reply_text(
-            "❌ لم يربط حسابك بعد.\nاستخدم: <code>/create username password</code>",
-            parse_mode=ParseMode.HTML
-        )
-        return
-
-    try:
-        bal_data = await asyncio.to_thread(t4w_client.get_balance, t4w_username)
-        bal = bal_data.get('balance')
-        if bal is None and isinstance(bal_data.get('data'), dict):
-            bal = bal_data['data'].get('balance', 0)
-        bal = bal or 0
-        await update.message.reply_text(
-            f"💰 رصيد <code>{t4w_username}</code>: <b>${bal}</b>",
-            parse_mode=ParseMode.HTML
-        )
-    except Exception as e:
-        logger.error('Balance error: %s', e)
-        await update.message.reply_text(f"❌ تعذر جلب الرصيد: {e}")
-
-
-async def create_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    args = context.args
-
-    if len(args) < 2:
-        await update.message.reply_text(
-            "❌ الاستخدام:\n<code>/create username password</code>\n\n"
-            "مثال: <code>/create player123 mypass456</code>",
-            parse_mode=ParseMode.HTML
-        )
-        return
-
-    username, password = args[0], args[1]
-
-    try:
-        result = await asyncio.to_thread(t4w_client.create_player, username, password)
-        user_db.link_account(user.id, username, password)
-
-        msg = (
-            f"✅ تم إنشاء الحساب بنجاح!\n\n"
-            f"👤 المستخدم: <code>{username}</code>\n"
-            f"🔑 كلمة المرور: <code>{password}</code>\n\n"
-            f"🎮 <a href='https://agents.texas4win.com'>العب الآن</a>\n\n"
-            f"استخدم /deposit لإضافة رصيد."
-        )
-        await update.message.reply_text(
-            msg,
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True
-        )
-    except Exception as e:
-        logger.error('Create account error: %s', e)
-        await update.message.reply_text(f"❌ فشل إنشاء الحساب: {e}")
-
-
-async def deposit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    t4w_username = user_db.get_username(user.id)
-
-    if not t4w_username:
-        await update.message.reply_text(
-            "❌ لم يربط حسابك بعد.\nاستخدم: <code>/create username password</code>",
-            parse_mode=ParseMode.HTML
-        )
-        return
-
-    if not context.args:
-        await update.message.reply_text(
-            "❌ الاستخدام: <code>/deposit 50</code>\n\nاستبدل 50 بالمبلغ المطلوب.",
-            parse_mode=ParseMode.HTML
-        )
-        return
-
-    try:
-        amount = float(context.args[0])
-        if amount <= 0:
-            raise ValueError('المبلغ يجب أن يكون أكبر من صفر')
-
-        result = await asyncio.to_thread(t4w_client.deposit, t4w_username, amount)
-        user_db.update_balance(user.id, amount)
-
-        await update.message.reply_text(
-            f"✅ تم إيداع <b>${amount}</b> إلى حساب <code>{t4w_username}</code>! 🎉",
-            parse_mode=ParseMode.HTML
-        )
-    except Exception as e:
-        logger.error('Deposit error: %s', e)
-        await update.message.reply_text(f"❌ فشل الإيداع: {e}")
-
-
-async def withdraw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    t4w_username = user_db.get_username(user.id)
-
-    if not t4w_username:
-        await update.message.reply_text(
-            "❌ لم يربط حسابك بعد.\nاستخدم: <code>/create username password</code>",
-            parse_mode=ParseMode.HTML
-        )
-        return
-
-    if not context.args:
-        await update.message.reply_text(
-            "❌ الاستخدام: <code>/withdraw 25</code>\n\nاستبدل 25 بالمبلغ المطلوب.",
-            parse_mode=ParseMode.HTML
-        )
-        return
-
-    try:
-        amount = float(context.args[0])
-        if amount <= 0:
-            raise ValueError('المبلغ يجب أن يكون أكبر من صفر')
-
-        result = await asyncio.to_thread(t4w_client.withdraw, t4w_username, amount)
-        user_db.update_balance(user.id, -amount)
-
-        await update.message.reply_text(
-            f"✅ تم سحب <b>${amount}</b> من حساب <code>{t4w_username}</code>! 💸",
-            parse_mode=ParseMode.HTML
-        )
-    except Exception as e:
-        logger.error('Withdraw error: %s', e)
-        await update.message.reply_text(f"❌ فشل السحب: {e}")
-
-
-async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == 'deposit':
-        await query.edit_message_text(
-            "💳 لإيداع الأموال، أرسل:\n<code>/deposit 50</code>\n\n"
-            "استبدل 50 بالمبلغ المطلوب.",
-            parse_mode=ParseMode.HTML
-        )
-    elif query.data == 'withdraw':
-        await query.edit_message_text(
-            "💸 لسحب الأموال، أرسل:\n<code>/withdraw 25</code>\n\n"
-            "استبدل 25 بالمبلغ المطلوب.",
-            parse_mode=ParseMode.HTML
-        )
-
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = (
-        "🎰 <b>دليل البوت</b>\n\n"
-        "/start - القائمة الرئيسية\n"
-        "/create username password - إنشاء حساب لاعب\n"
-        "/balance - رصيد حسابك في Texas4win\n"
-        "/deposit المبلغ - إيداع رصيد\n"
-        "/withdraw المبلغ - سحب رصيد\n"
-        "/help - المساعدة\n\n"
-        "💡 <i>يجب إنشاء حساب أولاً قبل الإيداع أو السحب.</i>"
-    )
-    await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
-
-
-# ═══════════════════════════════════════════════════════════════
-# Background Thread for PTB Event Loop
-# ═══════════════════════════════════════════════════════════════
-_telegram_loop = None
-_telegram_app = None
-_telegram_thread = None
-_telegram_ready = threading.Event()
-
-
-def _telegram_thread_main():
-    global _telegram_loop, _telegram_app
-
-    try:
-        _telegram_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(_telegram_loop)
-
-        _telegram_app = (
-            Application.builder()
-            .token(TELEGRAM_BOT_TOKEN)
-            .updater(None)
-            .build()
-        )
-        _telegram_app.add_handler(CommandHandler('start', start_command))
-        _telegram_app.add_handler(CommandHandler('balance', balance_command))
-        _telegram_app.add_handler(CommandHandler('create', create_command))
-        _telegram_app.add_handler(CommandHandler('deposit', deposit_command))
-        _telegram_app.add_handler(CommandHandler('withdraw', withdraw_command))
-        _telegram_app.add_handler(CommandHandler('help', help_command))
-        _telegram_app.add_handler(CallbackQueryHandler(button_callback))
-
-        _telegram_loop.run_until_complete(_telegram_app.initialize())
-        _telegram_loop.run_until_complete(_telegram_app.start())
-
-        render_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://bahr-bot-c3ac.onrender.com')
-        webhook_url = f"{render_url.rstrip('/')}/{TELEGRAM_BOT_TOKEN}"
-        _telegram_loop.run_until_complete(_telegram_app.bot.set_webhook(webhook_url))
-
-        logger.info('✅ Telegram bot ready, webhook: %s', webhook_url)
-        _telegram_ready.set()
-        _telegram_loop.run_forever()
-    except Exception as e:
-        logger.error('❌ Telegram thread crashed: %s', e)
-        # ready stays unset → webhook returns 503
-
-
-def _ensure_telegram():
-    global _telegram_thread
-    if _telegram_thread is not None and _telegram_thread.is_alive():
-        return
-    _telegram_ready.clear()
-    _telegram_thread = threading.Thread(target=_telegram_thread_main, daemon=True)
-    _telegram_thread.start()
-
-# ═══════════════════════════════════════════════════════════════
-# Webhook Route
-# ═══════════════════════════════════════════════════════════════
 @app.route(f'/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
 def telegram_webhook():
     _ensure_telegram()
@@ -695,8 +1215,9 @@ def telegram_webhook():
     if not TELEGRAM_BOT_TOKEN:
         return 'Bot token missing', 500
 
-    if not _telegram_ready.is_set():
-        logger.warning('Webhook received but Telegram thread not ready')
+    # Wait for the Telegram thread to become ready (up to 12 seconds)
+    if not _telegram_ready.wait(timeout=12):
+        logger.error('❌ Telegram thread still not ready after 12s')
         return 'Not Ready', 503
 
     try:
@@ -714,5 +1235,15 @@ def telegram_webhook():
         return 'Error', 500
 
 
+@app.route('/deposit', methods=['POST'])
+def handle_deposit():
+    """External endpoint to notify bot about deposits."""
+    return jsonify({'status': 'ok'})
+
+
+# ═══════════════════════════════════════════════════════════════
+# Main
+# ═══════════════════════════════════════════════════════════════
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    _ensure_telegram()
+    app.run(host='0.0.0.0', port=PORT)
