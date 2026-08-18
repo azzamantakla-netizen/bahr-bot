@@ -381,10 +381,10 @@ def home():
 
 @app.route('/health')
 def health_check():
-    ready = _worker_app is not None and _worker_loop is not None and _worker_loop.is_running()
+    _ensure_telegram()
     return jsonify({
         'status': 'healthy',
-        'telegram_ready': ready,
+        'telegram_ready': _telegram_ready.is_set(),
         'timestamp': datetime.now(timezone.utc).isoformat()
     })
 
@@ -401,12 +401,16 @@ def handle_deposit():
     if not user_id or amount is None:
         return jsonify({'error': 'Missing user_id or amount'}), 400
 
+    if not _telegram_ready.is_set():
+        return jsonify({'error': 'Bot not ready'}), 503
+
     try:
-        tg_app = _ensure_telegram()
         msg = f'✅ تم إيداع <b>${amount}</b> بنجاح! 🎉'
         future = asyncio.run_coroutine_threadsafe(
-            tg_app.bot.send_message(chat_id=user_id, text=msg, parse_mode=ParseMode.HTML),
-            _worker_loop
+            _telegram_app.bot.send_message(
+                chat_id=user_id, text=msg, parse_mode=ParseMode.HTML
+            ),
+            _telegram_loop
         )
         future.result(timeout=10)
         return jsonify({'status': 'success'})
@@ -419,17 +423,12 @@ def handle_deposit():
 # Telegram Handlers
 # ═══════════════════════════════════════════════════════════════
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Main start handler with full error boundary so user always gets a response."""
     try:
         user = update.effective_user
-        if not user:
-            logger.error('start_command: effective_user is None')
-            return
-
         t4w_user = user_db.get_user(user.id)
 
-        welcome = f"🎰 مرحباً {user.first_name or 'صديقي'}!\n\n"
-        if t4w_user and t4w_user.get('username'):
+        welcome = f"🎰 مرحباً {user.first_name}!\n\n"
+        if t4w_user and t4w_user['username']:
             welcome += f"✅ حسابك مرتبط: <code>{t4w_user['username']}</code>\n"
             try:
                 bal_data = await asyncio.to_thread(t4w_client.get_balance, t4w_user['username'])
@@ -460,10 +459,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML
         )
     except Exception as e:
-        logger.exception('Start command crashed')
+        logger.exception('Start command error: %s', e)
         try:
             await update.message.reply_text(
-                f"❌ حدث خطأ داخلي. يرجى المحاولة لاحقاً.\n<code>{str(e)[:200]}</code>",
+                "❌ حدث خطأ داخلي. يرجى إعادة المحاولة لاحقاً.",
                 parse_mode=ParseMode.HTML
             )
         except Exception:
@@ -634,78 +633,82 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ═══════════════════════════════════════════════════════════════
-# Lazy Telegram init (per-worker, safe for Gunicorn fork)
+# Background Thread for PTB Event Loop
 # ═══════════════════════════════════════════════════════════════
-_worker_app = None
-_worker_loop = None
-_worker_lock = threading.Lock()
+_telegram_loop = None
+_telegram_app = None
+_telegram_ready = threading.Event()
 
 
-def _ensure_telegram():
-    """Initialize Telegram Application once per Gunicorn worker."""
-    global _worker_app, _worker_loop
+def _telegram_thread_main():
+    global _telegram_loop, _telegram_app
 
-    if _worker_app is not None and _worker_loop is not None and _worker_loop.is_running():
-        return _worker_app
+    try:
+        _telegram_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_telegram_loop)
 
-    with _worker_lock:
-        if _worker_app is not None and _worker_loop is not None and _worker_loop.is_running():
-            return _worker_app
+        _telegram_app = (
+            Application.builder()
+            .token(TELEGRAM_BOT_TOKEN)
+            .updater(None)
+            .build()
+        )
+        _telegram_app.add_handler(CommandHandler('start', start_command))
+        _telegram_app.add_handler(CommandHandler('balance', balance_command))
+        _telegram_app.add_handler(CommandHandler('create', create_command))
+        _telegram_app.add_handler(CommandHandler('deposit', deposit_command))
+        _telegram_app.add_handler(CommandHandler('withdraw', withdraw_command))
+        _telegram_app.add_handler(CommandHandler('help', help_command))
+        _telegram_app.add_handler(CallbackQueryHandler(button_callback))
 
-        # Reset any inherited stale state from master process fork
-        _worker_app = None
-        _worker_loop = None
-
-        loop = asyncio.new_event_loop()
-        _worker_loop = loop
-
-        tg = Application.builder().token(TELEGRAM_BOT_TOKEN).updater(None).build()
-        _worker_app = tg
-
-        tg.add_handler(CommandHandler('start', start_command))
-        tg.add_handler(CommandHandler('balance', balance_command))
-        tg.add_handler(CommandHandler('create', create_command))
-        tg.add_handler(CommandHandler('deposit', deposit_command))
-        tg.add_handler(CommandHandler('withdraw', withdraw_command))
-        tg.add_handler(CommandHandler('help', help_command))
-        tg.add_handler(CallbackQueryHandler(button_callback))
-
-        loop.run_until_complete(tg.initialize())
-        loop.run_until_complete(tg.start())
+        _telegram_loop.run_until_complete(_telegram_app.initialize())
+        _telegram_loop.run_until_complete(_telegram_app.start())
 
         render_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://bahr-bot-c3ac.onrender.com')
         webhook_url = f"{render_url.rstrip('/')}/{TELEGRAM_BOT_TOKEN}"
-        loop.run_until_complete(tg.bot.set_webhook(webhook_url))
+        _telegram_loop.run_until_complete(_telegram_app.bot.set_webhook(webhook_url))
 
         logger.info('✅ Telegram bot ready, webhook: %s', webhook_url)
+        _telegram_ready.set()
+        _telegram_loop.run_forever()
+    except Exception as e:
+        logger.error('❌ Telegram thread crashed: %s', e)
+        # ready stays unset → webhook returns 503
 
-        t = threading.Thread(target=loop.run_forever, daemon=True)
-        t.start()
-        return tg
 
+_telegram_started = False
+
+def _ensure_telegram():
+    global _telegram_thread, _telegram_started
+    if _telegram_thread.is_alive():
+        return
+    _telegram_ready.clear()
+    _telegram_thread = threading.Thread(target=_telegram_thread_main, daemon=True)
+    _telegram_thread.start()
+    _telegram_started = True
 
 # ═══════════════════════════════════════════════════════════════
 # Webhook Route
 # ═══════════════════════════════════════════════════════════════
 @app.route(f'/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
 def telegram_webhook():
+    _ensure_telegram()
+
     if not TELEGRAM_BOT_TOKEN:
-        logger.error('Webhook hit but TELEGRAM_BOT_TOKEN is empty')
         return 'Bot token missing', 500
 
+    if not _telegram_ready.is_set():
+        logger.warning('Webhook received but Telegram thread not ready')
+        return 'Not Ready', 503
+
     try:
-        tg_app = _ensure_telegram()
         data = request.get_json(force=True)
-        if not data:
-            logger.warning('Webhook received empty JSON body')
-            return 'Empty body', 400
+        update = Update.de_json(data, _telegram_app.bot)
 
-        update = Update.de_json(data, tg_app.bot)
-        if not update:
-            logger.warning('Webhook received unparseable update')
-            return 'Bad update', 400
-
-        future = asyncio.run_coroutine_threadsafe(tg_app.process_update(update), _worker_loop)
+        future = asyncio.run_coroutine_threadsafe(
+            _telegram_app.process_update(update),
+            _telegram_loop
+        )
         future.result(timeout=15)
         return 'OK'
     except Exception:
