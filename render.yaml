@@ -23,6 +23,10 @@ services:
         sync: false
       - key: WEBHOOK_URL
         sync: false
+      - key: THORDATA_PROXY
+        sync: false
+      - key: THORDATA_TOKEN
+        sync: false
       - key: CURRENCY
         value: SYP
       - key: DEPOSIT_MIN
