@@ -15,13 +15,25 @@ export class Texas4WinApi {
     this.password = process.env.AGENT_PASSWORD || "Aazzam@318";
     this.parentId = process.env.PARENT_ID || "2688288";
 
+    // ترويسات متصفح كاملة لتخطي فحص جدار حماية Cloudflare
     this.client = axios.create({
       baseURL: this.baseUrl,
       headers: {
         "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Origin": this.baseUrl,
+        "Referer": `${this.baseUrl}/`,
+        "sec-ch-ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
       },
-      timeout: 20000,
+      timeout: 25000,
     });
   }
 
@@ -47,10 +59,15 @@ export class Texas4WinApi {
         return this.session;
       }
 
-      throw new Error(response.data.notification?.[0]?.content || "فشل تسجيل دخول الوكيل في المنصة");
+      throw new Error(response.data?.notification?.[0]?.content || "فشل تسجيل دخول الوكيل في المنصة");
     } catch (error: any) {
-      console.error("Agent signIn error:", error?.response?.data || error.message);
-      throw new Error(error?.response?.data?.notification?.[0]?.content || "تعذر الاتصال بسيرفر الوكالة (Sign In)");
+      const respData = error?.response?.data;
+      if (typeof respData === "string" && respData.includes("Cloudflare")) {
+        console.error("Agent signIn blocked by Cloudflare WAF on this IP/Domain");
+        throw new Error("سيرفر المنصة يطبق حماية Cloudflare على اتصالات السيرفرات السحابية");
+      }
+      console.error("Agent signIn error:", respData || error.message);
+      throw new Error(respData?.notification?.[0]?.content || "تعذر الاتصال بسيرفر الوكالة (Sign In)");
     }
   }
 
@@ -241,7 +258,8 @@ export class Texas4WinApi {
       );
 
       if (res.status && Array.isArray(res.result) && res.result.length > 0) {
-        const mainWallet = res.result.find((w) => w.main) || res.result[0];
+        const mainWallet =
+          res.result.find((w: { balance: number; currencyCode: string; main: boolean }) => w.main) || res.result[0];
         return {
           balance: Number(mainWallet.balance) || 0,
           currencyCode: mainWallet.currencyCode || "USD",
