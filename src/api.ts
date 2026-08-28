@@ -10,7 +10,7 @@ export class Texas4WinApi {
   private parentId: string;
 
   constructor() {
-    this.baseUrl = (process.env.API_BASE_URL || "https://www.texas4win.com").replace(/\/$/, "");
+    this.baseUrl = (process.env.API_BASE_URL || "https://agents.texas4win.com").replace(/\/$/, "");
     this.username = process.env.AGENT_USERNAME || "Bero@yahoo.com";
     this.password = process.env.AGENT_PASSWORD || "Aazzam@318";
     this.parentId = process.env.PARENT_ID || "2688288";
