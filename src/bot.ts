@@ -32,7 +32,7 @@ export class TexasBot {
   }
 
   private setupHandlers() {
-    this.bot.command("start", async (ctx) => {
+    this.bot.command("start", async (ctx: MyContext) => {
       const from = ctx.from;
       if (!from) return;
 
@@ -77,7 +77,7 @@ export class TexasBot {
     });
 
     // معالج زر إنشاء حساب
-    this.bot.callbackQuery("register_player", async (ctx) => {
+    this.bot.callbackQuery("register_player", async (ctx: MyContext) => {
       const from = ctx.from;
       await ctx.answerCallbackQuery("جاري إنشاء الحساب في السيرفر...");
       await ctx.reply("⏳ جاري إنشاء حسابك في المنصة، يرجى الانتظار ثوانٍ...");
@@ -133,7 +133,7 @@ export class TexasBot {
     });
 
     // معالج استعلام الرصيد
-    this.bot.callbackQuery("check_balance", async (ctx) => {
+    this.bot.callbackQuery("check_balance", async (ctx: MyContext) => {
       const from = ctx.from;
       const user = this.users.get(from.id);
 
@@ -166,7 +166,7 @@ export class TexasBot {
     });
 
     // معالج رصيد الوكيل
-    this.bot.callbackQuery("agent_balance", async (ctx) => {
+    this.bot.callbackQuery("agent_balance", async (ctx: MyContext) => {
       await ctx.answerCallbackQuery("جاري جلب أرصدة الخزينة...");
       const wallets = await api.getAgentWallets();
 
@@ -185,7 +185,7 @@ export class TexasBot {
     });
 
     // معالج بدء الإيداع
-    this.bot.callbackQuery("deposit", async (ctx) => {
+    this.bot.callbackQuery("deposit", async (ctx: MyContext) => {
       const from = ctx.from;
       const user = this.users.get(from.id);
       await ctx.answerCallbackQuery();
@@ -204,7 +204,7 @@ export class TexasBot {
     });
 
     // معالج بدء السحب
-    this.bot.callbackQuery("withdraw", async (ctx) => {
+    this.bot.callbackQuery("withdraw", async (ctx: MyContext) => {
       const from = ctx.from;
       const user = this.users.get(from.id);
       await ctx.answerCallbackQuery();
@@ -223,8 +223,8 @@ export class TexasBot {
     });
 
     // استقبال الرسائل النصية
-    this.bot.on("message:text", async (ctx) => {
-      const text = ctx.message.text.trim();
+    this.bot.on("message:text", async (ctx: MyContext) => {
+      const text = ctx.message?.text?.trim() || "";
       const step = ctx.session.step;
 
       if (step === "awaiting_deposit_player") {
