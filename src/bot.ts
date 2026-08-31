@@ -36,12 +36,15 @@ export class TexasBot {
       const from = ctx.from;
       if (!from) return;
 
-      const userState = this.users.get(from.id) || {
-        telegramId: from.id,
-        first_name: from.first_name,
-        username: from.username,
-      };
-      this.users.set(from.id, userState);
+      let userState = this.users.get(from.id);
+      if (!userState) {
+        userState = {
+          telegramId: from.id,
+          first_name: from.first_name,
+          username: from.username,
+        };
+        this.users.set(from.id, userState);
+      }
 
       const welcomeText =
         `👋 أهلاً بك يا ${from.first_name} في بوت وكالة **Texas4Win** الرسمي 🎰\n\n` +
