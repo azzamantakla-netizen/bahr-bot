@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { Bot, Context, session, SessionFlavor, InlineKeyboard } from "grammy";
 import { api } from "./api";
 import { UserState } from "./types";
@@ -17,6 +18,7 @@ export class TexasBot {
   constructor() {
     const token = process.env.BOT_TOKEN;
     if (!token) {
+      console.error("FATAL ERROR: BOT_TOKEN is missing from environment variables!");
       throw new Error("BOT_TOKEN is required in environment variables");
     }
 
@@ -314,3 +316,9 @@ export class TexasBot {
     await this.bot.start();
   }
 }
+
+// تشغيل البوت تلقائياً عند تنفيذ الملف
+const texasBot = new TexasBot();
+texasBot.start().catch((err) => {
+  console.error("Error starting bot:", err);
+});
