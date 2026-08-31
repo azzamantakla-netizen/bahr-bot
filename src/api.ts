@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from "axios";
+import axios from "axios";
 import { ApiResponse } from "./types";
 
 export class Texas4WinApi {
@@ -60,7 +60,7 @@ export class Texas4WinApi {
   }
 
   /**
-   * تنفيذ طلب موجه مع الحفاظ التام على الجلسة والكوكيز
+   * تنفيذ طلب موجه مع الحفاظ التام على الهيدرز والكوكيز
    */
   private async executeRequest<T = any>(endpoint: string, body: any): Promise<ApiResponse<T>> {
     const targetUrl = `${this.baseUrl}${endpoint}`;
@@ -143,9 +143,9 @@ export class Texas4WinApi {
   }
 
   /**
-   * إرسال طلب موثق مع إعادة المحاولة الذكية
+   * إرسال طلب موثق
    */
-  private async postAuth<T = any>(endpoint: string, body: any, isRetry = false): Promise<ApiResponse<T>> {
+  private async postAuth<T = any>(endpoint: string, body: any): Promise<ApiResponse<T>> {
     if (!this.isSignedIn || !this.cookieJar) {
       await this.signIn();
     }
@@ -154,25 +154,10 @@ export class Texas4WinApi {
       console.log(`[BOT-API] Sending POST to: ${this.baseUrl}${endpoint}`);
       const data = await this.executeRequest<T>(endpoint, body);
       console.log(`[BOT-API] POST ${endpoint} Response:`, JSON.stringify(data));
-
-      if (data && data.status === false && !isRetry) {
-        console.warn(`[BOT-API] Server returned status: false on ${endpoint}. Refreshing session...`);
-        this.isSignedIn = false;
-        await this.signIn();
-        return this.postAuth<T>(endpoint, body, true);
-      }
-
       return data;
     } catch (error: any) {
       const status = error?.response?.status;
       console.error(`[BOT-API] POST ${endpoint} Error HTTP ${status}:`, error?.response?.data || error.message);
-
-      if ((status === 403 || status === 401) && !isRetry) {
-        console.warn(`[BOT-API] Re-authenticating agent session and retrying ${endpoint}...`);
-        this.isSignedIn = false;
-        await this.signIn();
-        return this.postAuth<T>(endpoint, body, true);
-      }
       throw error;
     }
   }
@@ -186,16 +171,48 @@ export class Texas4WinApi {
     email: string;
   }): Promise<{ success: boolean; message?: string }> {
     try {
-      const res = await this.postAuth("/global/api/User/registerPlayer", {
+      const login = String(params.login).trim();
+      const password = String(params.password).trim();
+      const email = String(params.email).trim().toLowerCase();
+      const parentId = parseInt(this.parentId, 10) || Number(this.parentId) || 2688288;
+
+      // الصيغة الأولى: المعيارية للوكلاء
+      let res = await this.postAuth("/global/api/User/registerPlayer", {
         player: {
-          login: String(params.login).trim(),
-          password: String(params.password).trim(),
-          email: String(params.email).trim().toLowerCase(),
-          parentId: String(this.parentId).trim(),
+          login,
+          password,
+          email,
+          parentId,
         },
       });
 
-      if (res && (res.status || res.result)) {
+      if (res && (res.status === true || (res.result && typeof res.result === "object"))) {
+        return { success: true };
+      }
+
+      // الصيغة الثانية: إرسال parentId كـ string
+      res = await this.postAuth("/global/api/User/registerPlayer", {
+        player: {
+          login,
+          password,
+          email,
+          parentId: String(this.parentId),
+        },
+      });
+
+      if (res && (res.status === true || (res.result && typeof res.result === "object"))) {
+        return { success: true };
+      }
+
+      // الصيغة الثالثة: إرسال الحقول مسطحة
+      res = await this.postAuth("/global/api/User/registerPlayer", {
+        login,
+        password,
+        email,
+        parentId,
+      });
+
+      if (res && (res.status === true || (res.result && typeof res.result === "object"))) {
         return { success: true };
       }
 
