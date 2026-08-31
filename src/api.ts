@@ -9,6 +9,7 @@ export class Texas4WinApi {
   private parentId: string;
   private cookieJar: string = "";
   private isSignedIn: boolean = false;
+  private scraperApiKey: string = "";
 
   constructor() {
     let rawUrl = (process.env.API_BASE_URL || "https://agents.texas4win.com").trim();
@@ -20,6 +21,7 @@ export class Texas4WinApi {
     this.username = process.env.AGENT_USERNAME || "Bero@yahoo.com";
     this.password = process.env.AGENT_PASSWORD || "Aazzam@318";
     this.parentId = process.env.PARENT_ID || "2688288";
+    this.scraperApiKey = (process.env.SCRAPER_API_KEY || "00acfebcc34a0df66a59f0abddf28243").trim();
 
     if (process.env.COOKIE) {
       this.cookieJar = process.env.COOKIE;
@@ -35,7 +37,7 @@ export class Texas4WinApi {
         "Origin": "https://agents.texas4win.com",
         "Referer": "https://agents.texas4win.com/",
       },
-      timeout: 30000,
+      timeout: 45000,
       withCredentials: true,
     });
 
@@ -68,29 +70,68 @@ export class Texas4WinApi {
   }
 
   /**
+   * تنفيذ طلب مع تجاوز Cloudflare تلقائياً عبر ScraperAPI
+   */
+  private async executeRequest<T = any>(endpoint: string, body: any): Promise<ApiResponse<T>> {
+    const targetUrl = `${this.baseUrl}${endpoint}`;
+
+    if (this.scraperApiKey) {
+      const scraperUrl = `http://api.scraperapi.com/?api_key=${this.scraperApiKey}&url=${encodeURIComponent(
+        targetUrl
+      )}&keep_headers=true`;
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "Accept": "*/*",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Origin": "https://agents.texas4win.com",
+        "Referer": "https://agents.texas4win.com/",
+      };
+
+      if (this.cookieJar) {
+        headers["Cookie"] = this.cookieJar;
+      }
+
+      const res = await axios.post<ApiResponse<T>>(scraperUrl, body, {
+        headers,
+        timeout: 45000,
+      });
+
+      const setCookie = res.headers["set-cookie"];
+      if (setCookie && Array.isArray(setCookie)) {
+        const newCookies = setCookie.map((c: string) => c.split(";")[0]).join("; ");
+        this.cookieJar = this.cookieJar ? `${this.cookieJar}; ${newCookies}` : newCookies;
+      }
+
+      return res.data;
+    } else {
+      const res = await this.client.post<ApiResponse<T>>(endpoint, body);
+      return res.data;
+    }
+  }
+
+  /**
    * تسجيل الدخول في المنصة
    */
   public async signIn(): Promise<boolean> {
     try {
-      console.log(`[BOT-API] Attempting agent sign in to: ${this.baseUrl}/global/api/User/signIn`);
+      console.log(`[BOT-API] Attempting agent sign in to: ${this.baseUrl}/global/api/User/signIn via ScraperAPI`);
 
-      const response = await this.client.post<ApiResponse<{ type: number; message: string }>>(
-        "/global/api/User/signIn",
-        {
-          username: this.username,
-          password: this.password,
-        }
-      );
+      const data = await this.executeRequest<{ type: number; message: string }>("/global/api/User/signIn", {
+        username: this.username,
+        password: this.password,
+      });
 
-      console.log(`[BOT-API] SignIn Response Status:`, response.status, `Data:`, JSON.stringify(response.data));
+      console.log(`[BOT-API] SignIn Response:`, JSON.stringify(data));
 
-      if (response.data && (response.data.status || response.data.result)) {
+      if (data && (data.status || data.result)) {
         this.isSignedIn = true;
         console.log(`[BOT-API] Signed in successfully!`);
         return true;
       }
 
-      const notif = response.data?.notification?.[0]?.content;
+      const notif = data?.notification?.[0]?.content;
       throw new Error(notif || "فشل التحقق من بيانات تسجيل الدخول في السيرفر");
     } catch (error: any) {
       const resp = error?.response;
@@ -98,17 +139,6 @@ export class Texas4WinApi {
         `[BOT-API] SignIn Error: HTTP ${resp?.status || "NO_RESPONSE"} |`,
         resp?.data ? JSON.stringify(resp.data) : error.message
       );
-
-      try {
-        const altResp = await this.client.post("/global/api/UserApi/signIn", {
-          username: this.username,
-          password: this.password,
-        });
-        if (altResp.data?.status) {
-          this.isSignedIn = true;
-          return true;
-        }
-      } catch (_) {}
 
       const msg =
         resp?.data?.notification?.[0]?.content ||
@@ -130,9 +160,9 @@ export class Texas4WinApi {
 
     try {
       console.log(`[BOT-API] Sending POST to: ${this.baseUrl}${endpoint}`);
-      const res = await this.client.post<ApiResponse<T>>(endpoint, body);
-      console.log(`[BOT-API] POST ${endpoint} Response:`, JSON.stringify(res.data));
-      return res.data;
+      const data = await this.executeRequest<T>(endpoint, body);
+      console.log(`[BOT-API] POST ${endpoint} Response:`, JSON.stringify(data));
+      return data;
     } catch (error: any) {
       const status = error?.response?.status;
       console.error(`[BOT-API] POST ${endpoint} Error HTTP ${status}:`, error?.response?.data || error.message);
@@ -148,7 +178,7 @@ export class Texas4WinApi {
   }
 
   /**
-   * 1. إنشاء حساب جديد للاعب
+   * 1. إنشاء حساب جديد للاعب (Register Player)
    */
   public async registerPlayer(params: {
     login: string;
@@ -289,7 +319,7 @@ export class Texas4WinApi {
   }
 
   /**
-   * 4. إيداع رصيد
+   * 4. إيداع وشحن رصيد للاعب
    */
   public async depositToPlayer(params: {
     playerId: string;
@@ -334,7 +364,7 @@ export class Texas4WinApi {
   }
 
   /**
-   * 5. سحب رصيد
+   * 5. سحب رصيد من اللاعب
    */
   public async withdrawFromPlayer(params: {
     playerId: string;
@@ -380,7 +410,7 @@ export class Texas4WinApi {
   }
 
   /**
-   * 6. أرصدة محافظ الوكيل
+   * 6. أرصدة محافظ وخزينة الوكيل
    */
   public async getAgentWallets(): Promise<
     Array<{
