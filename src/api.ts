@@ -11,7 +11,12 @@ export class Texas4WinApi {
   private isSignedIn: boolean = false;
 
   constructor() {
-    this.baseUrl = (process.env.API_BASE_URL || "https://agents.texas4win.com").replace(/\/$/, "");
+    let rawUrl = (process.env.API_BASE_URL || "https://agents.texas4win.com").trim();
+    if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
+      rawUrl = `https://${rawUrl}`;
+    }
+    this.baseUrl = rawUrl.replace(/\/$/, "");
+
     this.username = process.env.AGENT_USERNAME || "Bero@yahoo.com";
     this.password = process.env.AGENT_PASSWORD || "Aazzam@318";
     this.parentId = process.env.PARENT_ID || "2688288";
