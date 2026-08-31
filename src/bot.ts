@@ -82,6 +82,8 @@ export class TexasBot {
     // معالج زر إنشاء حساب
     this.bot.callbackQuery("register_player", async (ctx: MyContext) => {
       const from = ctx.from;
+      if (!from) return;
+
       await ctx.answerCallbackQuery("جاري إنشاء الحساب في السيرفر...");
       await ctx.reply("⏳ جاري إنشاء حسابك في المنصة، يرجى الانتظار ثوانٍ...");
 
@@ -138,6 +140,7 @@ export class TexasBot {
     // معالج استعلام الرصيد
     this.bot.callbackQuery("check_balance", async (ctx: MyContext) => {
       const from = ctx.from;
+      if (!from) return;
       const user = this.users.get(from.id);
 
       if (!user?.texasPlayerId) {
@@ -190,6 +193,7 @@ export class TexasBot {
     // معالج بدء الإيداع
     this.bot.callbackQuery("deposit", async (ctx: MyContext) => {
       const from = ctx.from;
+      if (!from) return;
       const user = this.users.get(from.id);
       await ctx.answerCallbackQuery();
 
@@ -209,6 +213,7 @@ export class TexasBot {
     // معالج بدء السحب
     this.bot.callbackQuery("withdraw", async (ctx: MyContext) => {
       const from = ctx.from;
+      if (!from) return;
       const user = this.users.get(from.id);
       await ctx.answerCallbackQuery();
 
