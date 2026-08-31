@@ -22,7 +22,7 @@ export class Texas4WinApi {
     this.password = process.env.AGENT_PASSWORD || "Aazzam@318";
     this.parentId = process.env.PARENT_ID || "2688288";
     this.scraperApiKey = (process.env.SCRAPER_API_KEY || "00acfebcc34a0df66a59f0abddf28243").trim();
-    this.sessionId = `session_${Math.floor(100000 + Math.random() * 900000)}`;
+    this.sessionId = `sess_${Math.floor(100000 + Math.random() * 900000)}`;
 
     if (process.env.COOKIE) {
       this.cookieJar = process.env.COOKIE;
@@ -66,7 +66,7 @@ export class Texas4WinApi {
     const targetUrl = `${this.baseUrl}${endpoint}`;
 
     const headers: Record<string, string> = {
-      "Content-Type": "application/json;charset=UTF-8",
+      "Content-Type": "application/json",
       "Accept": "application/json, text/plain, */*",
       "X-Requested-With": "XMLHttpRequest",
       "User-Agent":
@@ -151,7 +151,7 @@ export class Texas4WinApi {
     }
 
     try {
-      console.log(`[BOT-API] Sending POST to: ${this.baseUrl}${endpoint}`);
+      console.log(`[BOT-API] Sending POST to: ${this.baseUrl}${endpoint} Body:`, JSON.stringify(body));
       const data = await this.executeRequest<T>(endpoint, body);
       console.log(`[BOT-API] POST ${endpoint} Response:`, JSON.stringify(data));
       return data;
@@ -176,7 +176,7 @@ export class Texas4WinApi {
       const email = String(params.email).trim().toLowerCase();
       const parentId = parseInt(this.parentId, 10) || Number(this.parentId) || 2688288;
 
-      // الصيغة الأولى: المعيارية للوكلاء
+      // 1. المسار الرسمي لإنشاء اللاعب
       let res = await this.postAuth("/global/api/User/registerPlayer", {
         player: {
           login,
@@ -190,13 +190,13 @@ export class Texas4WinApi {
         return { success: true };
       }
 
-      // الصيغة الثانية: إرسال parentId كـ string
-      res = await this.postAuth("/global/api/User/registerPlayer", {
+      // 2. تجربة مسار UserApi/registerPlayer
+      res = await this.postAuth("/global/api/UserApi/registerPlayer", {
         player: {
           login,
           password,
           email,
-          parentId: String(this.parentId),
+          parentId,
         },
       });
 
@@ -204,12 +204,14 @@ export class Texas4WinApi {
         return { success: true };
       }
 
-      // الصيغة الثالثة: إرسال الحقول مسطحة
-      res = await this.postAuth("/global/api/User/registerPlayer", {
-        login,
-        password,
-        email,
-        parentId,
+      // 3. تجربة مسار createPlayer
+      res = await this.postAuth("/global/api/User/createPlayer", {
+        player: {
+          login,
+          password,
+          email,
+          parentId,
+        },
       });
 
       if (res && (res.status === true || (res.result && typeof res.result === "object"))) {
