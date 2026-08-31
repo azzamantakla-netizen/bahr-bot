@@ -9,6 +9,7 @@ export class Texas4WinApi {
   private cookieJar: string = "";
   private isSignedIn: boolean = false;
   private scraperApiKey: string = "";
+  private sessionId: string = "";
 
   constructor() {
     let rawUrl = (process.env.API_BASE_URL || "https://agents.texas4win.com").trim();
@@ -21,6 +22,7 @@ export class Texas4WinApi {
     this.password = process.env.AGENT_PASSWORD || "Aazzam@318";
     this.parentId = process.env.PARENT_ID || "2688288";
     this.scraperApiKey = (process.env.SCRAPER_API_KEY || "00acfebcc34a0df66a59f0abddf28243").trim();
+    this.sessionId = `session_${Math.floor(100000 + Math.random() * 900000)}`;
 
     if (process.env.COOKIE) {
       this.cookieJar = process.env.COOKIE;
@@ -28,26 +30,45 @@ export class Texas4WinApi {
   }
 
   /**
-   * دمج الكوكيز الجديدة من الردود
+   * استخراج وتحديث الكوكيز من ردود السيرفر
    */
   private updateCookies(setCookieHeader: any) {
     if (!setCookieHeader) return;
     const cookiesArray = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
-    const newCookies = cookiesArray.map((c: string) => c.split(";")[0].trim()).join("; ");
-    if (newCookies) {
-      this.cookieJar = this.cookieJar ? `${this.cookieJar}; ${newCookies}` : newCookies;
+    const cookieMap = new Map<string, string>();
+
+    if (this.cookieJar) {
+      this.cookieJar.split(";").forEach((pair) => {
+        const [k, ...v] = pair.split("=");
+        if (k && v.length > 0) {
+          cookieMap.set(k.trim(), v.join("=").trim());
+        }
+      });
     }
+
+    cookiesArray.forEach((header) => {
+      const part = header.split(";")[0].trim();
+      const [k, ...v] = part.split("=");
+      if (k && v.length > 0) {
+        cookieMap.set(k.trim(), v.join("=").trim());
+      }
+    });
+
+    const combined: string[] = [];
+    cookieMap.forEach((v, k) => combined.push(`${k}=${v}`));
+    this.cookieJar = combined.join("; ");
   }
 
   /**
-   * تنفيذ طلب عبر ScraperAPI أو الاتصال المباشر
+   * تنفيذ طلب موجه مع الحفاظ التام على الجلسة والكوكيز
    */
   private async executeRequest<T = any>(endpoint: string, body: any): Promise<ApiResponse<T>> {
     const targetUrl = `${this.baseUrl}${endpoint}`;
 
     const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      "Accept": "*/*",
+      "Content-Type": "application/json;charset=UTF-8",
+      "Accept": "application/json, text/plain, */*",
+      "X-Requested-With": "XMLHttpRequest",
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
       "Origin": "https://agents.texas4win.com",
@@ -61,7 +82,7 @@ export class Texas4WinApi {
     if (this.scraperApiKey) {
       const scraperUrl = `http://api.scraperapi.com/?api_key=${this.scraperApiKey}&url=${encodeURIComponent(
         targetUrl
-      )}&keep_headers=true&session_number=texas_agent_session`;
+      )}&keep_headers=true&session_number=${this.sessionId}`;
 
       const res = await axios.post<ApiResponse<T>>(scraperUrl, body, {
         headers,
@@ -98,7 +119,7 @@ export class Texas4WinApi {
 
       if (data && (data.status || data.result)) {
         this.isSignedIn = true;
-        console.log(`[BOT-API] Signed in successfully! Session Cookies:`, this.cookieJar || "Stored in Session");
+        console.log(`[BOT-API] Signed in successfully! Session Cookies:`, this.cookieJar);
         return true;
       }
 
@@ -122,10 +143,10 @@ export class Texas4WinApi {
   }
 
   /**
-   * إرسال طلب موثق
+   * إرسال طلب موثق مع إعادة المحاولة الذكية
    */
   private async postAuth<T = any>(endpoint: string, body: any, isRetry = false): Promise<ApiResponse<T>> {
-    if (!this.isSignedIn && !this.cookieJar) {
+    if (!this.isSignedIn || !this.cookieJar) {
       await this.signIn();
     }
 
@@ -133,6 +154,14 @@ export class Texas4WinApi {
       console.log(`[BOT-API] Sending POST to: ${this.baseUrl}${endpoint}`);
       const data = await this.executeRequest<T>(endpoint, body);
       console.log(`[BOT-API] POST ${endpoint} Response:`, JSON.stringify(data));
+
+      if (data && data.status === false && !isRetry) {
+        console.warn(`[BOT-API] Server returned status: false on ${endpoint}. Refreshing session...`);
+        this.isSignedIn = false;
+        await this.signIn();
+        return this.postAuth<T>(endpoint, body, true);
+      }
+
       return data;
     } catch (error: any) {
       const status = error?.response?.status;
