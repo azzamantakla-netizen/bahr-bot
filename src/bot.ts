@@ -1,7 +1,19 @@
 import "dotenv/config";
+import http from "http";
 import { Bot, Context, session, SessionFlavor, InlineKeyboard } from "grammy";
 import { api } from "./api";
 import { UserState } from "./types";
+
+// تشغيل سيرفر ويب خفيف لكي يكتشف Render أن الخدمة Live وتتحول للأخضر
+const PORT = process.env.PORT || 10000;
+http
+  .createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Texas4Win Bot is Live and Running 24/7 🚀");
+  })
+  .listen(PORT, () => {
+    console.log(`[SERVER] Health check listening on port ${PORT}`);
+  });
 
 interface SessionData {
   step: "idle" | "awaiting_deposit_player" | "awaiting_deposit_amount" | "awaiting_withdraw_player" | "awaiting_withdraw_amount";
