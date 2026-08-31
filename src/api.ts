@@ -1,8 +1,7 @@
-import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse } from "axios";
+import axios, { AxiosInstance } from "axios";
 import { ApiResponse } from "./types";
 
 export class Texas4WinApi {
-  private client: AxiosInstance;
   private baseUrl: string;
   private username: string;
   private password: string;
@@ -26,87 +25,59 @@ export class Texas4WinApi {
     if (process.env.COOKIE) {
       this.cookieJar = process.env.COOKIE;
     }
-
-    this.client = axios.create({
-      baseURL: this.baseUrl,
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "*/*",
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Origin": "https://agents.texas4win.com",
-        "Referer": "https://agents.texas4win.com/",
-      },
-      timeout: 45000,
-      withCredentials: true,
-    });
-
-    const appendCookies = (setCookie: any) => {
-      if (setCookie && Array.isArray(setCookie)) {
-        const newCookies = setCookie.map((c: string) => c.split(";")[0]).join("; ");
-        this.cookieJar = this.cookieJar ? `${this.cookieJar}; ${newCookies}` : newCookies;
-      }
-    };
-
-    // حفظ وتحديث الكوكيز
-    this.client.interceptors.response.use(
-      (response: AxiosResponse) => {
-        appendCookies(response.headers["set-cookie"]);
-        return response;
-      },
-      (error: any) => {
-        appendCookies(error?.response?.headers?.["set-cookie"]);
-        return Promise.reject(error);
-      }
-    );
-
-    // إرفاق الكوكيز مع كل طلب
-    this.client.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-      if (this.cookieJar && config.headers) {
-        config.headers.set("Cookie", this.cookieJar);
-      }
-      return config;
-    });
   }
 
   /**
-   * تنفيذ طلب مع تجاوز Cloudflare تلقائياً عبر ScraperAPI
+   * دمج الكوكيز الجديدة من الردود
+   */
+  private updateCookies(setCookieHeader: any) {
+    if (!setCookieHeader) return;
+    const cookiesArray = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
+    const newCookies = cookiesArray.map((c: string) => c.split(";")[0].trim()).join("; ");
+    if (newCookies) {
+      this.cookieJar = this.cookieJar ? `${this.cookieJar}; ${newCookies}` : newCookies;
+    }
+  }
+
+  /**
+   * تنفيذ طلب عبر ScraperAPI أو الاتصال المباشر
    */
   private async executeRequest<T = any>(endpoint: string, body: any): Promise<ApiResponse<T>> {
     const targetUrl = `${this.baseUrl}${endpoint}`;
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Accept": "*/*",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Origin": "https://agents.texas4win.com",
+      "Referer": "https://agents.texas4win.com/",
+    };
+
+    if (this.cookieJar) {
+      headers["Cookie"] = this.cookieJar;
+    }
+
     if (this.scraperApiKey) {
       const scraperUrl = `http://api.scraperapi.com/?api_key=${this.scraperApiKey}&url=${encodeURIComponent(
         targetUrl
-      )}&keep_headers=true`;
-
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        "Accept": "*/*",
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Origin": "https://agents.texas4win.com",
-        "Referer": "https://agents.texas4win.com/",
-      };
-
-      if (this.cookieJar) {
-        headers["Cookie"] = this.cookieJar;
-      }
+      )}&keep_headers=true&session_number=texas_agent_session`;
 
       const res = await axios.post<ApiResponse<T>>(scraperUrl, body, {
         headers,
         timeout: 45000,
       });
 
-      const setCookie = res.headers["set-cookie"];
-      if (setCookie && Array.isArray(setCookie)) {
-        const newCookies = setCookie.map((c: string) => c.split(";")[0]).join("; ");
-        this.cookieJar = this.cookieJar ? `${this.cookieJar}; ${newCookies}` : newCookies;
-      }
-
+      this.updateCookies(res.headers["set-cookie"]);
       return res.data;
     } else {
-      const res = await this.client.post<ApiResponse<T>>(endpoint, body);
+      const res = await axios.post<ApiResponse<T>>(targetUrl, body, {
+        headers,
+        timeout: 45000,
+        withCredentials: true,
+      });
+
+      this.updateCookies(res.headers["set-cookie"]);
       return res.data;
     }
   }
@@ -127,7 +98,7 @@ export class Texas4WinApi {
 
       if (data && (data.status || data.result)) {
         this.isSignedIn = true;
-        console.log(`[BOT-API] Signed in successfully!`);
+        console.log(`[BOT-API] Signed in successfully! Session Cookies:`, this.cookieJar || "Stored in Session");
         return true;
       }
 
@@ -188,10 +159,10 @@ export class Texas4WinApi {
     try {
       const res = await this.postAuth("/global/api/User/registerPlayer", {
         player: {
-          login: params.login,
-          password: params.password,
-          email: params.email,
-          parentId: this.parentId,
+          login: String(params.login).trim(),
+          password: String(params.password).trim(),
+          email: String(params.email).trim().toLowerCase(),
+          parentId: String(this.parentId).trim(),
         },
       });
 
