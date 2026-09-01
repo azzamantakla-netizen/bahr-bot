@@ -66,7 +66,7 @@ export class Texas4WinApi {
     const targetUrl = `${this.baseUrl}${endpoint}`;
 
     const headers: Record<string, string> = {
-      "Content-Type": "application/json",
+      "Content-Type": "application/json;charset=UTF-8",
       "Accept": "application/json, text/plain, */*",
       "X-Requested-With": "XMLHttpRequest",
       "User-Agent":
@@ -174,38 +174,9 @@ export class Texas4WinApi {
       const login = String(params.login).trim();
       const password = String(params.password).trim();
       const email = String(params.email).trim().toLowerCase();
-      const parentId = parseInt(this.parentId, 10) || Number(this.parentId) || 2688288;
+      const parentId = String(this.parentId).trim();
 
-      // 1. المسار الرسمي لإنشاء اللاعب
-      let res = await this.postAuth("/global/api/User/registerPlayer", {
-        player: {
-          login,
-          password,
-          email,
-          parentId,
-        },
-      });
-
-      if (res && (res.status === true || (res.result && typeof res.result === "object"))) {
-        return { success: true };
-      }
-
-      // 2. تجربة مسار UserApi/registerPlayer
-      res = await this.postAuth("/global/api/UserApi/registerPlayer", {
-        player: {
-          login,
-          password,
-          email,
-          parentId,
-        },
-      });
-
-      if (res && (res.status === true || (res.result && typeof res.result === "object"))) {
-        return { success: true };
-      }
-
-      // 3. تجربة مسار createPlayer
-      res = await this.postAuth("/global/api/User/createPlayer", {
+      const res = await this.postAuth("/global/api/User/registerPlayer", {
         player: {
           login,
           password,
