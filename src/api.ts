@@ -22,7 +22,8 @@ export class Texas4WinApi {
     this.password = process.env.AGENT_PASSWORD || "Aazzam@318";
     this.parentId = process.env.PARENT_ID || "2688288";
     this.scraperApiKey = (process.env.SCRAPER_API_KEY || "00acfebcc34a0df66a59f0abddf28243").trim();
-    this.sessionId = `sess_${Math.floor(100000 + Math.random() * 900000)}`;
+    // تثبيت معرف الجلسة لتبقى كوكيز تسجيل الدخول مشتركة وثابتة بين كل الطلبات
+    this.sessionId = `sess_${this.username.replace(/[^a-zA-Z0-9]/g, "")}_main`;
 
     if (process.env.COOKIE) {
       this.cookieJar = process.env.COOKIE;
@@ -66,7 +67,7 @@ export class Texas4WinApi {
     const targetUrl = `${this.baseUrl}${endpoint}`;
 
     const headers: Record<string, string> = {
-      "Content-Type": "application/json;charset=UTF-8",
+      "Content-Type": "application/json",
       "Accept": "application/json, text/plain, */*",
       "X-Requested-With": "XMLHttpRequest",
       "User-Agent":
@@ -80,6 +81,7 @@ export class Texas4WinApi {
     }
 
     if (this.scraperApiKey) {
+      // إرسال عبر ScraperAPI مع الحفاظ على الهيدرز واستخدام جلسة مشتركة ثابتة
       const scraperUrl = `http://api.scraperapi.com/?api_key=${this.scraperApiKey}&url=${encodeURIComponent(
         targetUrl
       )}&keep_headers=true&session_number=${this.sessionId}`;
@@ -176,12 +178,27 @@ export class Texas4WinApi {
       const email = String(params.email).trim().toLowerCase();
       const parentId = String(this.parentId).trim();
 
-      const res = await this.postAuth("/global/api/User/registerPlayer", {
+      // الصيغة الأولى: الشكل الرسمي لـ Network Payload
+      let res = await this.postAuth("/global/api/User/registerPlayer", {
         player: {
           login,
           password,
           email,
           parentId,
+        },
+      });
+
+      if (res && (res.status === true || (res.result && typeof res.result === "object"))) {
+        return { success: true };
+      }
+
+      // الصيغة الثانية: تجربة إرسال parentId كرقم number
+      res = await this.postAuth("/global/api/User/registerPlayer", {
+        player: {
+          login,
+          password,
+          email,
+          parentId: parseInt(parentId, 10),
         },
       });
 
