@@ -101,11 +101,11 @@ export class TexasBot {
       await ctx.answerCallbackQuery("جاري إنشاء الحساب في السيرفر...");
       await ctx.reply("⏳ جاري إنشاء حسابك في المنصة، يرجى الانتظار ثوانٍ...");
 
-      // توليد اسم مستخدم عشوائي متوافق مع قواعد Texas4Win
+      // توليد اسم مستخدم بسيط ونظيف متوافق تماماً مع شروط Texas4Win (أحرف وأرقام فقط)
       const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-      const generatedUsername = `tx_${from.id.toString().slice(-4)}${randomSuffix}`;
-      const generatedPassword = `Tx@${Math.floor(100000 + Math.random() * 900000)}`;
-      const generatedEmail = `user${from.id}${randomSuffix}@gmail.com`;
+      const generatedUsername = `usr${from.id.toString().slice(-4)}${randomSuffix}`;
+      const generatedPassword = `Pass${Math.floor(100000 + Math.random() * 900000)}`;
+      const generatedEmail = `user${from.id.toString().slice(-4)}${randomSuffix}@gmail.com`;
 
       const result = await api.registerPlayer({
         login: generatedUsername,
